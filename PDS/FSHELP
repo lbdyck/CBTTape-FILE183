@@ -1,0 +1,55 @@
+/************************************************************** REXX **\00010000
+|*                                                                    *|00020000
+|* Module Name: FSHELP                                                *|00030000
+|*                                                                    *|00040000
+|* Descriptive Name:  Issue HELP command under ISPF and display       *|00050000
+|*                    output using the BROWSE service available       *|00060000
+|*                    in the STEMEDIT utility program.                *|00070000
+|*                                                                    *|00080000
+|* Status: R200                                                       *|00090000
+|*                                                                    *|00100000
+|* Function: This EXEC helps ISPF users trap the output of the        *|00110000
+|*           standard TSO/E HELP command and display its output       *|00120000
+|*           via the STEMEDIT routine.                                *|00130000
+|*                                                                    *|00140000
+|*           The user can then enter the V command to display the     *|00150000
+|*           result of the HELP command with VIEW instead of BROWSE.  *|00160000
+|*           Unlike BROWSE, VIEW allows the user to enter commands    *|00170000
+|*           such as CUT or CREATE, and EDIT macros, such as ROUTE.   *|00180000
+|*                                                                    *|00190000
+|*           FSHELP can only be used in ISPF, as a TSO command or     *|00200000
+|*           an EDIT macro.                                           *|00210000
+|*                                                                    *|00220000
+|* Author: Gilbert Saint-Flour <carlos@gsf-soft.com>                  *|00230000
+|*         http://gsf-soft.com/Freeware/                              *|00240000
+|*                                                                    *|00250000
+|* Syntax: FSHELP                                                     *|00260000
+|*           parameters    Name of TSO command and options            *|00270000
+|*                                                                    *|00280000
+|* Example:  FSHELP LISTCAT ALL          ; EDIT Macro                 *|00290000
+|*           TSO %FSHELP LISTDS          ; TSO Command                *|00300000
+|*                                                                    *|00310000
+|* Environment: TSO/E V2                                              *|00320000
+|*              ISPF/PDF 2.3                                          *|00330000
+|*              STEMEDIT  http://gsf-soft.com/Freeware/STEMEDIT.shtml *|00340000
+|*                                                                    *|00350000
+|*200 New version with STEMEDIT                                       *|00360000
+\**********************************************************************/00370000
+"ISPEXEC CONTROL ERRORS RETURN"        /* Prevent MACRO RC=20 ISRE771 */00380000
+"ISPEXEC ISREDIT MACRO (parms)"                                         00390000
+IF rc>0 THEN ARG parms                      /* Invoked as TSO %FSHELP */00400000
+UPPER parms; cmd="HELP" parms                                           00410000
+RC=OUTTRAP("LINE."); cmd; cc=rc; rc=OUTTRAP("OFF")                      00420000
+                                                                        00430000
+SIGNAL ON SYNTAX                            /* STEMEDIT not available */00440000
+CALL STEMEDIT "BROWSE","LINE.",,,cmd        /* Display HELP Output    */00450000
+EXIT cc                                                                 00460000
+                                                                        00470000
+SYNTAX:                            /* STEMEDIT function not available */00480000
+  error=rc                                                              00490000
+  'ISPEXEC CONTROL DISPLAY LINE START(1)'                               00500000
+  SAY 'REXX error' error 'in line' sigl':' errortext(error)             00510000
+  SAY sourceline(sigl)                                                  00520000
+  SAY ''                                                                00530000
+  DO i=1 TO QUEUED(); PARSE PULL line; SAY line ; END                   00540000
+  EXIT                                                                  00550000

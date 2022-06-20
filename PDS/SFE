@@ -1,0 +1,41 @@
+/*************************************************************** REXX */00010000
+/*                                                                    */00020000
+/* Module Name: SFE                                                   */00030000
+/*                                                                    */00040000
+/* Descriptive Name: Invoke Search-For Extended utility               */00050000
+/*                                                                    */00060000
+/* Status: R100                                                       */00070000
+/*                                                                    */00080000
+/* Function: This REXX exec can be issued as an EDIT macro            */00090000
+/*           or from the Data Set List panel to invoke the            */00100000
+/*           Search-For Extended utility for the current data set.    */00110000
+/*                                                                    */00120000
+/* Author: Gilbert Saint-Flour <carlos@gsf-soft.com>                  */00130000
+/*                                                                    */00140000
+/* Environment: ISPF/PDF V4.2 or above                                */00150000
+/*                                                                    */00160000
+/* Operation: see below                                               */00170000
+/*                                                                    */00180000
+/*         Enter SFE as a line command on the DSLIST panel or as a    */00190000
+/*         primary command in EDIT or VIEW to enter the Search-For    */00200000
+/*         Extended utility and search the current data set.          */00210000
+/*                                                                    */00220000
+/**********************************************************************/00230000
+ADDRESS 'ISPEXEC'                                                       00240000
+"CONTROL ERRORS RETURN"                                                 00250000
+"ISREDIT MACRO (srf4file)"            /* invoked from EDIT/VIEW?      */00260000
+IF rc=0 THEN DO                                                         00270000
+  IF srf4file='' THEN DO                                                00280000
+    "ISREDIT (DSN) = DATASET"         /* current data set             */00290000
+    IF rc>0 THEN EXIT rc                                                00300000
+    srf4file="'"DSN"'"                                                  00310000
+    END                                                                 00320000
+  END                                                                   00330000
+ELSE                                                                    00340000
+  ARG srf4file                        /* 1st arg must be dsn          */00350000
+IF srf4file='' THEN EXIT 4            /* no dsn, quit                 */00360000
+srf4mem='*'                           /* members(*)                   */00370000
+src4wkpl='Y'                          /* Call SFE from work-place     */00380000
+"VPUT (src4wkpl srf4file srf4mem)"                                      00390000
+"SELECT PGM(ISRSEPRM) PARM(S4) SCRNAME(SRCHFORE) "                      00400000
+IF zerrmsg\='' THEN "SETMSG MSG("zerrmsg")"                             00410000

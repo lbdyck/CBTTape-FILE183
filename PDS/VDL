@@ -1,0 +1,155 @@
+/*************************************************************** REXX */00010000
+/*                                                                    */00020000
+/* Module Name: VDL                                                   */00030000
+/*                                                                    */00040000
+/* Descriptive Name:  VIEW Data set List.                             */00050000
+/*                                                                    */00060000
+/* Status: R102                                                       */00070002
+/*                                                                    */00080000
+/* Function: This REXX program makes the list of data set created     */00090000
+/*           by DSLIST available as data in a VIEW session.           */00100000
+/*                                                                    */00110000
+/*           Using VDL is faster than using the SAVE command to       */00120000
+/*           store the dsnames into a data set then editing it.       */00130000
+/*                                                                    */00140000
+/*           VDL retrieves the dsnames from the table internally      */00150000
+/*           built by the DSLIST utility, copies the dsnames to a     */00160000
+/*           stemmed variable, then invokes STEMVIEW to VIEW the      */00170000
+/*           resulting data set list with each data set name in       */00180000
+/*           pos 1 of a data record.                                  */00190000
+/*                                                                    */00200000
+/* Author: Gilbert Saint-Flour <carlos@gsf-soft.com>                  */00210000
+/*                                                                    */00220000
+/* Environment: ISPF/PDF V3                                           */00230000
+/*              STEMVIEW R105                                         */00240000
+/*                                                                    */00250000
+/* Operation: VDL must be invoked from the DSLIST screen, either as   */00260000
+/*            a line command or as a TSO command, such as  TSO %VDL   */00270000
+/*                                                                    */00280000
+/* Change Activity:                                                   */00290000
+/*  R101 Misc changes                                                 */00300001
+/*  R102 Stop using DTB in ISPF 5.9 and above                         */00310002
+/*                                                                    */00320000
+/**********************************************************************/00330000
+ADDRESS 'ISPEXEC'; "CONTROL ERRORS RETURN"                              00340000
+              /*---------------------------------------*/               00350000
+              /* Retrieve the name of the DSLIST table */               00360000
+              /*---------------------------------------*/               00370000
+TCB    = PTR(540)                  /* TCB (EXEC COMMAND)    PSATOLD  */ 00380000
+TCB    = PTR(TCB+132)              /* TCB (ISPTASK)         TCBOTC   */ 00390000
+FSA    = PTR(TCB+112)              /* FIRST SAVE AREA       TCBFSA   */ 00400000
+R1     = PTR(FSA+24)               /* ISPTASK'S R1                   */ 00410000
+TLD    = PTR(R1)                   /* TLD ADDRESS                    */ 00420000
+dta    = PTR(tld+076)              /* DTA address                    */ 00430002
+table  = STORAGE(D2X(dta+12),8)    /* Name of temp table    DSL12345 */ 00440002
+"VGET ZENVIR"                      /* Retrieve ISPF Version          */ 00450002
+IF LEFT(Zenvir,8) < 'ISPF 5.9' THEN DO                                  00460002
+  dtb    = PTR(dta+016)            /* DTB address                    */ 00470002
+  IF dtb=0 THEN                                                         00480002
+    dtb  = PTR(dta+044)            /* OPEN Table Chain               */ 00490002
+  IF STORAGE(D2X(dtb),3) /= 'DTB' THEN DO                               00500002
+    SAY 'Error: Table name could not be located (DTB)' zenvir           00510002
+    EXIT 12                                                             00520002
+    END                                                                 00530002
+  table = STORAGE(D2X(dtb+6),8)    /* Name of temp table    DSL12345 */ 00540002
+  END                                                                   00550002
+                                                                        00560000
+"TBQUERY" table "KEYS(KEYS) NAMES(NAMES) NAMENUM(NAMENUM)",             00570000
+                "ROWNUM(ROWNUM) KEYNUM(KEYNUM) POSITION(CRP)"           00580000
+IF rc>0 THEN SIGNAL TBQUERY_Failed                                      00590000
+              /*---------------------------------------*/               00600000
+              /* Scan the DSLIST table and build array */               00610000
+              /*---------------------------------------*/               00620000
+"TBTOP" table                      /* start from the top             */ 00630000
+IF rc>0 THEN EXIT rc                                                    00640000
+                                                                        00650000
+DO N=1 TO rownum                   /* read all the table entries     */ 00660000
+  "TBSKIP" table                                                        00670000
+  IF rc>0 THEN LEAVE                                                    00680000
+  space=''; attributes=''; dates=''                                     00690000
+  IF zurecfm='FF'X THEN DO                                              00700000
+     space=COPIES(' ',20)                                               00710001
+     attributes = zuorg                                                 00720000
+     END                                                                00730000
+  ELSE                                                                  00740000
+    IF zuobtatt='Y' THEN DO                                             00750000
+      attributes = LEFT(zuorg,4) LEFT(zurecfm,4) zulrecl zublksiz       00760001
+      IF zuobtspc='Y' THEN DO                                           00770000
+        space      = zusize zuus || '%' zux zudevice                    00780001
+        IF zuobtdat='Y' THEN                                            00790000
+          dates      = zucdate zuedate zurdate                          00800000
+        END                                                             00810000
+      END                                                               00820000
+  ds.n = LEFT(zudsns,44) zudvol space attributes dates                  00830000
+  ds.n = LEFT(ds.n,132) zuobtatt zuobtspc zuobtdat                      00840000
+END                                                                     00850000
+"TBSKIP" table "ROW("CRP")"        /* re-position the table          */ 00860000
+                 /*-------------------*/                                00870000
+                 /* Display the array */                                00880000
+                 /*-------------------*/                                00890000
+SIGNAL ON SYNTAX                  /*    STEMVIEW not available     */   00900000
+CALL STEMVIEW 'VIEW','ds.',1,rownum,"Data set name list"                00910000
+EXIT rc                                                                 00920000
+                                                                        00930000
+SYNTAX:                            /* STEMVIEW FUNCTION NOT AVAILABLE */00940000
+  'CONTROL DISPLAY LINE START(1)'                                       00950000
+  SAY 'REXX error' rc 'in line' sigl':' errortext(rc)                   00960000
+  SAY sourceline(sigl)                                                  00970000
+  SAY ''                                                                00980000
+  DO i=1 TO rownum; SAY ds.i ; END                                      00990000
+  EXIT                                                                  01000000
+                  /*----------------*/                                  01010000
+                  /*  Sub-routines  */                                  01020000
+                  /*----------------*/                                  01030000
+                                                                        01040000
+PTR: RETURN C2D(BITAND(STORAGE(D2X(ARG(1)),4),'7FFFFFFF'X))             01050000
+                                                                        01060000
+Invalid_Environment:                                                    01070000
+  ZEDSMSG = 'Invalid environment'                                       01080000
+  ZEDLMSG = 'This command must be invoked from the Data Set List',      01090000
+            'utility; the current panel is' panel'.'                    01100000
+  "SETMSG MSG(ISRZ001)"                                                 01110000
+  EXIT 12                                                               01120000
+                                                                        01130000
+TBQUERY_Failed:                                                         01140000
+  ZEDSMSG = 'TBQUERY failed'                                            01150000
+  ZEDLMSG = 'TBQUERY' table 'service failed with RC=' rc                01160000
+  "SETMSG MSG(ISRZ001)"                                                 01170000
+  EXIT 12                                                               01180000
+                                                                        01190000
+        /*------------------------------------*/                        01200000
+        /* Variables (for documentation only) */                        01210000
+        /*------------------------------------*/                        01220000
+                                                                        01230000
+  SAY 'KEYS='KEYS 'NAMES='NAMES 'NAMENUM='NAMENUM                       01240000
+  SAY 'ROWNUM='ROWNUM 'KEYNUM='KEYNUM 'POSITION='CRP                    01250000
+                                                                        01260000
+  ZUBLKSIZ      ZDLBLKSZ                                                01270000
+  ZUCDATE       ZDLCDATE                                                01280000
+  ZUCDAT2                                                               01290000
+  ZUDEVICE      ZDLDEV                                                  01300000
+  ZUDMVOL       ZDLMVOL                                                 01310000
+  ZUDSNS        ZDLDSN                                                  01320000
+  ZUDSPACU                                                              01330000
+  ZUDVOL        ZDLVOL                                                  01340000
+  ZUDXSTAT      ZDLXSTAT                                                01350000
+  ZUEDATE       ZDLEDATE                                                01360000
+  ZUEDAT2                                                               01370000
+  ZULCMDL                                                               01380000
+                ZDLCMD                                                  01390000
+  ZULMSG                                                                01400000
+                ZDLMSG                                                  01410000
+  ZULOCVOL                                                              01420000
+                ZDLCAT                                                  01430000
+  ZULRECL       ZDLLRECL                                                01440000
+  ZUOBTATT                                                              01450000
+  ZUOBTDAT                                                              01460000
+  ZUOBTSPC                                                              01470000
+  ZUORG         ZDLDSORG                                                01480000
+  ZURDATE       ZDLRDATE                                                01490000
+  ZURDAT2                                                               01500000
+  ZURECFM       ZDLRECFM                                                01510000
+  ZUSIZE        ZDLSIZE                                                 01520000
+  ZUSTAT                                                                01530000
+  ZUUS          ZDLUSED                                                 01540000
+  ZUX           ZDLEXT                                                  01550000

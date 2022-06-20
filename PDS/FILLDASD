@@ -1,0 +1,227 @@
+//GILBERTF JOB (ACCT#),FILLDASD,                                        00010000
+// NOTIFY=&SYSUID,                                                      00020000
+// CLASS=A,MSGCLASS=H,COND=(0,NE)                                       00030000
+//HLASM  EXEC  PGM=ASMA90,PARM=(OBJECT,NODECK,NOESD,NORLD,NOXREF)       00040000
+*********************************************************************** 00050000
+*                                                                     * 00060000
+* MODULE NAME = FILLDASD                                              * 00070000
+*                                                                     * 00080000
+* DESCRIPTIVE NAME = Fill free DASD space with binary zeroes          * 00090000
+*                                                                     * 00100000
+* STATUS = R201                                                       * 00110001
+*                                                                     * 00120000
+* FUNCTION = This assembler program fills the free space that exists  * 00130000
+*            on DASD volumes with binary zeroes.                      * 00140000
+*            FILLDASD uses DYNALLOC to allocate temporary data sets   * 00150000
+*            and fills the tracks with binary zeroes.                 * 00160000
+*            If a volume serial is specified in the PARM, then only   * 00170000
+*            the free space of the specified volume is cleared.       * 00180000
+*            Otherwise, FILLDASD tries to allocate space on all the   * 00190000
+*            available volumes (i.e. PUBLIC, STORAGE, or SMS-managed).* 00200000
+*                                                                     * 00210000
+* AUTHOR = Gilbert Saint-Flour <carlos@gsf-soft.com>                  * 00220001
+*                                                                     * 00230000
+* NOTES = SEE BELOW                                                   * 00240000
+*                                                                     * 00250000
+*    DEPENDENCIES = STRING macro                                      * 00260000
+*                                                                     * 00270000
+*    AUTHORIZATION = NONE                                             * 00280000
+*                                                                     * 00290000
+*    RESTRICTIONS = NONE                                              * 00300000
+*                                                                     * 00310000
+* MODULE TYPE = PROCEDURE, (CSECT TYPE)                               * 00320000
+*                                                                     * 00330000
+*    PROCESSOR = IBM Assembler H                                      * 00340000
+*                IBM HIGH LEVEL ASSEMBLER/MVS                         * 00350000
+*                                                                     * 00360000
+*    MODULE SIZE = 2K                                                 * 00370000
+*                                                                     * 00380000
+*    ATTRIBUTES = NOREUS, RMODE 24, AMODE 24,                         * 00390001
+*                 PROBLEM STATE, KEY 8                                * 00400000
+*                                                                     * 00410000
+* OPERATION = See Examples below:                                     * 00420000
+*                                                                     * 00430000
+*   Clear free space on TEMP01                                        * 00440000
+*                                                                     * 00450000
+*     //FILLDASD EXEC PGM=FILLDASD,PARM=TEMP01                        * 00460000
+*     //SYSPRINT DD SYSOUT=*                                          * 00470000
+*                                                                     * 00480000
+*   Clear free space on all available packs:                          * 00490000
+*                                                                     * 00500000
+*     //FILLDASD EXEC PGM=FILLDASD                                    * 00510000
+*     //SYSPRINT DD SYSOUT=*                                          * 00520000
+*                                                                     * 00530000
+* PARAMETERS = None                                                   * 00540000
+*                                                                     * 00550000
+* RETURN-CODES = SEE BELOW                                            * 00560000
+*                                                                     * 00570000
+*        0       OK                                                   * 00580000
+*        8       OPEN or CLOSE failed                                 * 00590000
+*                                                                     * 00600000
+* CHANGE LOG = SEE BELOW                                              * 00610001
+*                                                                     * 00620001
+*201 SYNAD                                                            * 00630001
+*********************************************************************** 00640000
+FILLDASD CSECT                                                          00650000
+FILLDASD AMODE 24                                                       00660001
+         DC    C'GSF Utilities - FILLDASD R201 ',0H'0'                  00670001
+BEGIN    LR    R12,R15                 BASE REG                         00680000
+         USING BEGIN,R12                                                00690000
+         L     R2,0(,R1)               A(JCLPARM)                       00700000
+*                                                                       00710000
+*        Retrieve optional volume serial from the parm                  00720000
+*                                                                       00730000
+         LH    R3,0(,R2)               L'JCLPARM                        00740000
+         LTR   R3,R3                   VOLSER SPECIFIED IN THE PARM?    00750000
+         BZ    OPENPRT                 NO, JUMP                         00760000
+         STRING (2(R2),(R3)),INTO=VOLSER SAVE VOLUME SERIAL             00770000
+         MVC   RTVOL,=AL2(DALVLSER)    VOLUME SERIAL IS KNOWN           00780000
+*                                                                       00790000
+*        Print title line                                               00800000
+*                                                                       00810000
+OPENPRT  OPEN  (SYSPRINT,OUTPUT)                                        00820000
+         LTR   R15,R15                 OPEN OK?                         00830000
+         BNZ   EOJ                     NO, EXIT                         00840000
+         TIME  DEC                     GET DATE & TIME                  00850000
+         STM   R0,R1,TIMEDATE          SAVE TIME AND DATE               00860000
+         STRING '1GSF Utilities - FILLDASD R200 - PARM=''',            X00870000
+               (2(R2),(R3)),''' ',(TIMEDATE+4,P,YYYY-MM-DD),           X00880000
+               1X,(TIMEDATE+0,1,X),'.',(TIMEDATE+1,1,X),INTO=PRTLINE    00890000
+         PUT   SYSPRINT,PRTLINE        WRITE TITLE LINE                 00900000
+*                                                                       00910000
+*        Set up DYNALLOC request block                                  00920000
+*                                                                       00930000
+         LA    R8,S99RB1               DYNALLOC REQUEST BLOCK           00940000
+         USING S99RB,R8                                                 00950000
+         MVI   S99RBLN,S99RBEND-S99RB  LENGTH                           00960000
+         MVI   S99VERB,S99VRBAL        ALLOCATE                         00970000
+         LA    R0,=A(WKUNIT,TRK,PRIME,RTVOL,RTDDN,CONTIG+VL)            00980000
+         ST    R0,S99TXTPP             TEXT UNIT POINTERS               00990000
+*---------------------------------------------------------------------* 01000000
+*        Main Loop: Allocate temporary DASD data sets                 * 01010000
+*        and fill them up with X'00'                                  * 01020000
+*---------------------------------------------------------------------* 01030000
+*LOOP                                                                   01040000
+ALLOC    LA    R1,=A(S99RB1+VL)        S99RBPTR                         01050000
+         DYNALLOC                                                       01060000
+         LTR   R15,R15                 dynalloc ok?                     01070000
+         BNZ   HALVE                   no, try smaller size             01080000
+         MVC   DCBDISK+40(8),DDNAME    MOVE DDNAME INTO DCB             01090000
+         OPEN  (DCBDISK,OUTPUT)        OPEN TEMP DATA SET               01100000
+         LTR   R15,R15                 OPEN OK?                         01110000
+         BNZ   EOJ                     NO, EXIT                         01120000
+         L     R1,DCBDISK+44           DEB                              01130000
+         LH    R3,046(,R1)             # of tracks actually allocated   01140000
+         STRING 1X,%TIME,'ALLOCATED DDN=',DDNAME,                      X01150000
+               ' VOL=',VOLSER,                                         X01160000
+               ' TRACKS=',((R3),,L),                                   X01170000
+               INTO=PRTLINE                                             01180000
+         PUT   SYSPRINT,PRTLINE        WRITE A PRINT LINE               01190000
+         LR    R0,R3                   TALLY TRACKS                     01200000
+         AL    R0,TOTTRACKS            TALLY TRACKS                     01210000
+         ST    R0,TOTTRACKS            TALLY TRACKS                     01220000
+         ALR   R3,R3                   # OF BLOCKS                      01230000
+         SLR   R0,R0                                                    01240000
+         LH    R1,DCBDISK+62           BLKSIZE                          01250000
+         LH    R2,DCBDISK+82           LRECL                            01260000
+         DR    R0,R2                   RECORDS/BLOCK                    01270000
+         MR    R2,R1                   # OF RECORDS                     01280000
+*--LOOP                                                                 01290000
+PUTDISK  PUT   DCBDISK                 LOCATE A DISK RECORD             01300000
+         BCT   R3,PUTDISK              FILL UP THE TRACKS               01310000
+*--LOOP                                                                 01320000
+         CLOSE DCBDISK                 CLOSE DISK DCB                   01330000
+         FREEPOOL DCBDISK              free buffer pool                 01340000
+         B     ALLOC                                                    01350000
+HALVE    SLR   R2,R2                                                    01360000
+         ICM   R2,B'0111',PRIMEQTY     # OF TRACKS                      01370000
+         SRL   R2,1                    HALVE                            01380000
+         STCM  R2,B'0111',PRIMEQTY     # OF TRACKS                      01390000
+         LTR   R2,R2                   ZERO?                            01400000
+         BP    ALLOC                   NO, CONTINUE                     01410000
+*ENDLOOP                                                                01420000
+         STRING '0',%TIME,'TOTAL TRACKS WRITTEN: ',(TOTTRACKS,F,L),    X01430000
+               INTO=PRTLINE                                             01440000
+         PUT   SYSPRINT,PRTLINE        WRITE LAST PRINT LINE            01450000
+         CLOSE SYSPRINT                CLOSE PRINT DCB                  01460000
+EOJ      SVC   3                       EOJ                              01470000
+*---------------------------------------------------------------------* 01480001
+*                                                                     * 01490001
+*        Error routine to trap hardware errors (EQC)                  * 01500001
+*                                                                     * 01510001
+*        //DD1 DD DSN=SYS1.VDATA33.CYL-01EF.TRK-000B,DISP=(,CATLG),   * 01520001
+*        //  DSORG=PSU,RECFM=F,BLKSIZE=80,                            * 01530001
+*        //  UNIT=3390,VOL=SER=DATA33,SPACE=(ABSTR,(1,7436))          * 01540001
+*                                                                     * 01550001
+*---------------------------------------------------------------------* 01560001
+SYNAD1   LR    R10,R14                 return address                   01570001
+         SYNADAF ACSMETH=QSAM          get error message                01580001
+         LR    R2,R1                   addr of SYNAD message            01590001
+         STRING '0',%TIME,(50(R2),128-50),INTO=PRTLINE                  01600001
+         PUT   SYSPRINT,PRTLINE        WRITE SYNAD MESSAGE              01610001
+**       STRING '0',%TIME,(DCBDISK+8,4,X),INTO=PRTLINE                  01620001
+         LA    R0,8                    L'CCCCHHHH                       01630001
+         LA    R1,111(,R2)             CCCCHHHH                         01640001
+*LOOP                                                                   01650001
+SYNAD2   CLI   0(R1),C'F'              A-F ?                            01660001
+         BH    SYNAD2N                 NO, ITERATE                      01670001
+         IC    R14,0(,R1)              yes, X'C1' -> X'CA'              01680001
+         LA    R14,9(,R14)             yes, X'C1' -> X'CA'              01690001
+         STC   R14,0(,R1)              yes, X'C1' -> X'CA'              01700001
+SYNAD2N  LA    R1,1(,R1)               BUMP INDEX UP                    01710001
+         BCT   R0,SYNAD2               ITERATE                          01720001
+*ENDLOOP                                                                01730001
+         PACK  DWD(3),111(5,R2)        CCCC..                           01740001
+         LH    R4,DWD                  CCCC                             01750001
+         MH    R4,=H'15'               cylinders -> tracks              01760001
+         PACK  DWD+2(3),111+4(5,R2)    HHHH..                           01770001
+         AH    R4,DWD+2                add tracks                       01780001
+         STRING '0',%TIME,'Bad track at CCHH=',(DWD,4,X),              X01790001
+               ' VOL=SER=',VOLSER,',SPACE=(ABSTR,(1,',((R4),,L),'))',  X01800001
+               INTO=PRTLINE                                             01810001
+         PUT   SYSPRINT,PRTLINE        WRITE CCHH                       01820001
+         SYNADRLS                      free error message and save area 01830001
+         BR    R10                     goback to PUT macro              01840001
+*---------------------------------------------------------------------* 01850000
+*        CONSTANTS AND DATA                                           * 01860000
+*---------------------------------------------------------------------* 01870000
+WKUNIT   DC    AL2(DALUNIT,1,8),CL8'SYSALLDA'                           01880000
+TRK      DC    AL2(DALTRK,0)                                            01890000
+PRIME    DC    AL2(DALPRIME,1,L'PRIMEQTY)                               01900000
+PRIMEQTY DC    FL3'10000'                                               01910000
+RTVOL    DC    AL2(DALRTVOL,1,L'VOLSER)                                 01920000
+VOLSER   DC    C'123456'                                                01930000
+RTDDN    DC    AL2(DALRTDDN,1,L'DDNAME)                                 01940000
+DDNAME   DC    CL8' '                                                   01950000
+CONTIG   DC    AL2(DALSPFRM,1,1),X'08'                                  01960000
+DWD      DS    D                                                        01970001
+DCBDISK  DCB   DSORG=PS,MACRF=PL,DDNAME=*,RECFM=FB,LRECL=80,BUFNO=10,  X01980001
+               SYNAD=SYNAD1                                             01990001
+SYSPRINT DCB   DSORG=PS,MACRF=PM,DDNAME=SYSPRINT,RECFM=FBA,LRECL=121    02000000
+S99RB1   DC    XL(S99RBEND-S99RB)'00'                                   02010000
+TIMEDATE DS    2F                    TIME MACRO                         02020000
+TOTTRACKS DS   F                                                        02030000
+PRTLINE  DS    CL121                                                    02040000
+VL       EQU   X'80000000'           END OF LIST                        02050000
+         IEFZB4D0                    S99RB                              02060000
+         IEFZB4D2                    KEY TABLE                          02070000
+         YREGS                                                          02080000
+         STRING GENERATE                                                02090000
+         END   BEGIN                                                    02100000
+//SYSPRINT DD SYSOUT=*                                                  02120000
+//SYSLIB   DD DSN=SYS1.MACLIB,DISP=SHR                                  02130000
+//         DD DSN=CBTTAPE.FILE183.PDS,DISP=SHR       STRING             02140000
+//SYSUT1   DD UNIT=VIO,SPACE=(CYL,2)                                    02150000
+//SYSLIN   DD UNIT=VIO,SPACE=(TRK,1),DISP=(,PASS),BLKSIZE=3200          02160000
+//*                                                                     02170000
+//*       clear free space on VOL=OS39M1                                02180000
+//*                                                                     02190000
+//GO      EXEC PGM=LOADER,PARM='NOPRINT/OS39M1'                         02200000
+//SYSLIN   DD DSN=*.HLASM.SYSLIN,DISP=(OLD,PASS)                        02210000
+//SYSPRINT DD SYSOUT=*                                                  02220000
+//*                                                                     02230000
+//*       clear free space on SMS-managed volumes                       02240000
+//*                                                                     02250000
+//GO      EXEC PGM=LOADER,PARM='NOPRINT'                                02260000
+//SYSLIN   DD DSN=*.HLASM.SYSLIN,DISP=(OLD,PASS)                        02270000
+//SYSPRINT DD SYSOUT=*                                                  02280000

@@ -1,0 +1,398 @@
+//GILBERTC JOB (ACCT#),USERCMDS,                                        00010005
+// NOTIFY=&SYSUID,                                                      00020000
+// CLASS=A,MSGCLASS=H,REGION=4M                                         00030000
+//**********************************************************************00040000
+//*                                                                    *00050000
+//*    This job creates the USERCMDS command table                     *00060005
+//*    from a set of in-line commands.                                 *00070000
+//*                                                                    *00080000
+//*    Check existing tables with the ISPF/PDF 3.9 option              *00090005
+//*                                                                    *00100005
+//*    If USERCMDS conflicts with an existing table, try SITECMDS      *00110005
+//*                                                                    *00120005
+//*    http://gsf-soft.com/Freeware/USERCMDS.shtml                     *00130005
+//*                                                                    *00140000
+//**********************************************************************00150000
+//LOADCMDS EXEC PGM=IKJEFT01                                            00160000
+//*--------------------------------------------------------------------*00170000
+//*                                                                    *00180000
+//*        UPDATE THESE DSNAMES FOR YOUR SITE                          *00190000
+//*                                                                    *00200000
+//*--------------------------------------------------------------------*00210000
+//ISPMLIB  DD DSN=ISP.SISPMENU,DISP=SHR               <== MESSAGES      00220000
+//ISPTLIB  DD DSN=ISP.SISPTENU,DISP=SHR               <== TABLES        00230000
+//*                                                                     00240000
+//SYSEXEC  DD DSN=CBTTAPE.FILE183.PDS,DISP=SHR        <== EXECUTE CMD   00250005
+//*                                                                     00270000
+//ISPTABL  DD DSN=userid.ISPF.ISPPROF,DISP=SHR        <== OUTPUT        00280006
+//*                                                                     00320000
+//ISPPROF  DD UNIT=VIO,SPACE=(800,(1,1,1)),DISP=(,PASS),                00330000
+//            RECFM=FB,LRECL=80,BLKSIZE=800                             00340001
+//ISPPLIB  DD DSN=*.ISPPROF,DISP=(OLD,DELETE),VOL=REF=*.ISPPROF         00350001
+//ISPSLIB  DD DSN=*.ISPPROF,DISP=(OLD,DELETE),VOL=REF=*.ISPPROF         00360001
+//*                                                                     00370000
+//SYSTSPRT DD SYSOUT=*                                                  00380000
+//ISPLOG   DD SYSOUT=*,RECFM=F,LRECL=121                                00390001
+//SYSTSIN  DD  *                                                        00400000
+ISPSTART CMD(%EXECUTE EXEC)            /* Execute in-line REXX exec */  00410005
+table='USERCMDS'                         /* table name (xxxxCMDS) */    00420005
+  /*******************************************************************/ 00430005
+  /*                Create new command table                         */ 00440005
+  /*******************************************************************/ 00450005
+ADDRESS 'ISPEXEC'                                                       00460005
+"TBCREATE" table,                                                       00470005
+  "NAMES(ZCTVERB ZCTTRUNC ZCTACT ZCTDESC)",                             00480005
+  "WRITE REPLACE LIBRARY(ISPPROF)"                                      00490005
+IF RC > 0 THEN SIGNAL SPFERROR                                          00500005
+  /*******************************************************************/ 00510005
+  /*             read table entries from //updates dd                */ 00520005
+  /*******************************************************************/ 00530005
+ADDRESS TSO,                                                            00540005
+  "EXECIO * DISKR UPDATES (FINIS STEM updates."                         00550005
+  /*******************************************************************/ 00560005
+  /*             load table entries into new table                   */ 00570005
+  /*******************************************************************/ 00580005
+DO I = 1 TO updates.0                                                   00590005
+  line=STRIP(LEFT(updates.I,72))                                        00600005
+  SAY line                                                              00610005
+  PARSE VAR line ZCTVERB ZCTTRUNC ZCTACT                                00620005
+  I=I+1                                                                 00630005
+  line=LEFT(updates.I,72)                                               00640005
+  SAY line                                                              00650005
+  ZCTDESC=STRIP(line)                                                   00660005
+  "TBADD" table                                                         00670005
+  IF RC > 0 THEN SIGNAL SPFERROR                                        00680005
+END                                                                     00690005
+                                                                        00700005
+"TBCLOSE" table "LIBRARY(ISPTABL)"                                      00710005
+IF RC > 0 THEN SIGNAL SPFERROR                                          00720005
+                                                                        00730005
+EXIT                                                                    00740005
+                                                                        00750005
+SPFERROR:                                                               00760005
+  IF ZERRMSG \= '' THEN "LOG MSG("ZERRMSG")"                            00770005
+  EXIT 12                                                               00780005
+//*---------------------------------------------------------------------00790000
+//*                                                                     00800000
+//*       THESE ARE THE COMMANDS THAT WILL BE LOADED                    00810000
+//*       INTO THE xxxxCMDS TABLE.                                      00820005
+//*                                                                     00830000
+//*---------------------------------------------------------------------00840000
+//UPDATES  DD  *                                                        00850000
+BOOKMGR  5 SELECT CMD(%BOOKMGR)                                         00860000
+           BOOK-MANAGER/READ                                            00870000
+BR       0 SELECT PGM(FASTPATH) PARM(BROWSE,&ZPARM)                     00880000
+           FAST PATH COMMAND: BROWSE                                    00890000
+CLIST    0 SELECT PGM(FASTPATH) PARM(E,&ZUSER..CLIST(&ZPARM),STD)       00900000
+           EDIT "USERID.CLIST"                                          00910000
+CNTL     0 SELECT PGM(FASTPATH) PARM(CNTL,&ZPARM,CNTL)                  00920001
+           EDIT ISPCTL0 DATA SET, EVEN IF VIO                           00930000
+CONNECT  4 SELECT PGM(FASTPATH) PARM(WSCON)                             00940000
+           ESTABLISH CONNECTION TO THE WORK-STATION                     00950000
+CRASH    0 SELECT PGM(FASTPATH) PARM(CRASH,&ZPARM)                      00960000
+           QUICK EXIT FROM ISPF                                         00970000
+DITTO    3 SELECT CMD(%NEWAPPL DITTO) NEWAPPL(DUT)                      00980000
+           INVOKE DITTO/MVS DIALOGS                                     00990000
+DUMPMSTR 5 SELECT CMD(%NEWAPPL M4DM &ZPARM)                             01000000
+           DUMP-MASTER (MACRO 4)                                        01010000
+D2X      0 SELECT PGM(FASTPATH) PARM(REXXT,SAY D2X(&ZPARM))             01020000
+           FAST PATH COMMAND: DEC-TO-HEX CONVERSION                     01030000
+ED       0 SELECT PGM(FASTPATH) PARM(EDIT,&ZPARM)                       01040000
+           FAST PATH COMMAND: EDIT                                      01050000
+ENQ      0 SELECT CMD(ENQ) MODE(FSCR)                                   01060000
+           ENQ COMMAND                                                  01070000
+EXEC     0 SELECT PGM(FASTPATH) PARM(E,&ZUSER..EXEC(&ZPARM),STD)        01080000
+           EDIT "USERID.EXEC"                                           01090000
+FM       2 SELECT CMD(%NEWAPPL FM) NEWAPPL(FMN)                         01100004
+           IBM File Manager                                             01110004
+FSHELP   3 SELECT PGM(FASTPATH) PARM(TSOFS,HELP &ZPARM)                 01120005
+           FULL-SCREEN TSO HELP                                         01130005
+FSPASTE  0 SELECT PGM(FASTPATH) PARM(FSPASTE)                           01140000
+           FULL-SCREEN PASTE                                            01150000
+FSPRINT  4 SELECT PGM(FASTPATH) PARM(TSOFS,PRINT IDS('%DSNAME') DUMP    01160006
+           FULL-SCREEN PRINT                                            01170006
+HANDBOOK 5 SELECT PGM(FASTPATH) PARM(B,GILBERT.HANDBOOK(&ZPARM))        01180003
+           ON-LINE MACRO LISTING                                        01190000
+HSM      0 SELECT CMD(%NEWAPPL HSM) NEWAPPL(HSM)                        01200000
+           INVOKE HSM DIALOGS                                           01210000
+ICQ      0 SELECT CMD(%NEWAPPL ICQ) NEWAPPL(ICQ)                        01220000
+           INVOKE TSO/E DIALOGS                                         01230000
+ICS      0 SELECT PGM(FASTPATH) PARM(ICS,&ZPARM)                        01240000
+           FAST PATH COMMAND: ICS                                       01250000
+IND$FILE 0 SELECT CMD(IND$FILE &ZPARM) MODE(FSCR)                       01260000
+           PC/3270                                                      01270000
+IPADDR   0 SELECT PGM(FASTPATH) PARM(TSOFS,%IPADDR)                     01280003
+           DISPLAY IP ADDRESS OF TCP/IP TERMINAL                        01290003
+IPCS     4 SELECT CMD(%NEWAPPL IPCS) NEWAPPL(BLSG)                      01300000
+           INVOKE IPCS COMMAND                                          01310000
+ISMF     0 SELECT CMD(%NEWAPPL ISMF) NEWAPPL(DGT)                       01320000
+           IBM Storage Management Facility                              01330005
+JCL      0 SELECT PGM(FASTPATH) PARM(E,&ZUSER..JCL(&ZPARM),STD)         01340000
+           EDIT "USERID.JCL"                                            01350000
+LC       0 SELECT PGM(FASTPATH) PARM(TSOFS,LISTCAT ENT('%DSNAME') ALL)  01360000
+           FULL-SCREEN LISTCAT                                          01370000
+LINKMAP  5 SELECT PGM(FASTPATH) PARM(TSOCMD,%LINKMAP '%DSNAME')         01380003
+           GSF-SOFT LINKMAP                                             01390002
+LISTBC   5 SELECT CMD(LISTBC &ZPARM) MODE(FSCR)                         01400000
+           FULL SCREEN TSO LISTBC                                       01410000
+LM       2 SELECT PGM(FASTPATH) PARM(TSOCMD,%LINKMAP '%DSNAME')         01420003
+           GSF-SOFT LINKMAP                                             01430002
+LMCOPY   3 SELECT PANEL(LMCOPY) NEWAPPL(ISR)                            01440000
+           ISSUE LMCOPY COMMAND                                         01450000
+LOAD     0 SELECT PGM(FASTPATH) PARM(LOAD,&ZPARM)                       01460000
+           MAKE A PROGRAM RESIDENT IN MEMORY                            01470000
+LOCK     0 SELECT CMD(LOCKTERM) MODE(FSCR)                              01480000
+           LOCK TSO TERMINAL                                            01490000
+LOGOFF   5 SELECT PGM(FASTPATH) PARM(CRASH,LOGOFF)                      01500000
+           QUICK LOGOFF OUT OF ISPF                                     01510000
+LOGON    0 SELECT PGM(FASTPATH) PARM(CRASH,LOGON &ZPARM)                01520000
+           QUICK LOGOFF OUT OF ISPF                                     01530000
+MACLIB   3 SELECT PGM(FASTPATH) PARM(MACLIB,&ZPARM,STD)                 01540000
+           FAST PATH COMMAND: VIEW MACLIB/MODGEN MACRO                  01550000
+MSGS     0 SELECT PGM(FASTPATH) PARM(E,&ZUSER..MSGS(&ZPARM),STD)        01560000
+           EDIT "USERID.MSGS"                                           01570000
+NETSTAT  4 SELECT PGM(FASTPATH) PARM(NETSTAT,&ZPARM)                    01580000
+           FAST PATH COMMAND: FULL-SCREEN NETSTAT                       01590000
+NEWAPPL  4 SELECT CMD(%NEWAPPL &ZPARM)                                  01600000
+           GSF TEST                                                     01610000
+OPENCMDS 5 SELECT PGM(FASTPATH) PARM(OPENCMDS,&ZPARM)                   01620000
+           FAST PATH COMMAND: OPEN CMD TABLE                            01630000
+PANELS   4 SELECT PGM(FASTPATH) PARM(E,&ZUSER..PANELS(&ZPARM),STD)      01640000
+           EDIT "USERID.PANELS"                                         01650000
+PARMLIB  5 SELECT PGM(FASTPATH) PARM(PARMLIB,&ZPARM,STD)                01660000
+           FAST PATH COMMAND: EDIT SYS1.PARMLIB                         01670000
+PDF      0 SELECT PANEL(ISR@PRIM) OPT(&ZPARM) NEWAPPL(ISR)              01680000
+           PDF MAIN MENU                                                01690000
+PDS      0 SELECT CMD(%NEWAPPL PDS)                                     01700000
+           PDS UTILITY                                                  01710000
+RACF     0 SELECT CMD(%NEWAPPL RACF) NEWAPPL(RACF)                      01720000
+           INVOKE RACF DIALOGS                                          01730000
+RECEIVE  4 SELECT CMD(RECEIVE &ZPARM) MODE(FSCR)                        01740000
+           TSO INTERACTIVE TRANSMIT/RECEIVE FACILITY                    01750000
+REXXTRY  5 SELECT PGM(FASTPATH) PARM(REXXTRY,&ZPARM)                    01760000
+           FAST PATH COMMAND: TRY A REXX EXEC                           01770000
+RMFMON   3 SELECT CMD(RMFMON &ZPARM) MODE(FSCR)                         01780000
+           RMF                                                          01790000
+RMM      0 SELECT CMD(%NEWAPPL RMM) NEWAPPL(EDG)                        01800000
+           INVOKE DFSMSRMM INTERFACE                                    01810000
+SDSF     2 SELECT PGM(FASTPATH) PARM(SDSF,&ZPARM)                       01820000
+           FAST PATH COMMAND: SDSF                                      01830000
+SEND     0 SELECT CMD(%GSFSEND &ZPARM) NEWAPPL(ISR)                     01840001
+           FULL SCREEN TSO SEND                                         01850000
+SHOWDASD 5 SELECT CMD(%SHOWDASD &ZPARM) NEWAPPL(ISR)                    01860001
+           INVOKE SHOWDASD DIALOG                                       01870001
+SHOWJPAQ 5 SELECT PGM(FASTPATH) PARM(TSOFS,SHOWJPAQ)                    01880005
+           Invoke SHOWJPAQ Command in TSOFS Mode                        01890005
+SHOWMVS  5 SELECT CMD(SHOWMVS &ZPARM) MODE(FSCR)                        01900000
+           INVOKE SHOWMVS PROGRAM                                       01910000
+SHOWZOS  5 SELECT CMD(SHOWZOS &ZPARM) MODE(FSCR)                        01920005
+           Invoke SHOWzOS Utility Program                               01930005
+SKELS    4 SELECT PGM(FASTPATH) PARM(E,&ZUSER..SKELS(&ZPARM),STD)       01940000
+           EDIT "USERID.SKELS"                                          01950000
+SMPE     3 SELECT CMD(%NEWAPPL SMPE) NEWAPPL(GIM)                       01960000
+           INVOKE SMP/E DIALOGS                                         01970000
+SYSID    0 SELECT PGM(FASTPATH) PARM(SYSID,&ZPARM)                      01980000
+           DISPLAY SYSTEM ID AND SCREEN NUMBER ON EVERY PANEL           01990000
+TASID    0 SELECT PGM(TASID) PARM(&ZPARM) NEWAPPL(ISR)                  02000000
+           DOUG NADEL'S TASID PROGRAM                                   02010000
+TIME     0 SELECT PGM(FASTPATH) PARM(TIME)                              02020000
+           DISPLAY TIME AND DATE                                        02030000
+TSOFS    4 SELECT PGM(FASTPATH) PARM(TSOFS,&ZPARM)                      02040000
+           FULL-SCREEN TSO COMMAND                                      02050000
+UNLOAD   0 SELECT PGM(FASTPATH) PARM(UNLOAD,&ZPARM)                     02060000
+           REMOVE A PROGRAM FROM MEMORY                                 02070000
+UTIL     2 SELECT PGM(FASTPATH) PARM(UTIL,&ZPARM)                       02080000
+           FAST PATH COMMAND: PDF UTILITIES                             02090000
+VI       0 SELECT PGM(FASTPATH) PARM(VIEW,&ZPARM)                       02100000
+           FAST PATH COMMAND: VIEW                                      02110000
+VERASE   0 SELECT PGM(FASTPATH) PARM(VERASE,&ZPARM)                     02120000
+           REMOVE VARIABLES FROM THE PROFILE                            02130000
+WHOAMI   3 SELECT CMD(%WHOAMI &ZPARM)                                   02140000
+           DISPLAY SYSTEM ID AND USER ID IN LARGE LETTERS               02150000
+WP       0 SELECT PGM(FASTPATH) PARM(WP,&ZPARM)                         02160000
+           FAST PATH COMMAND: ISPF WORKPLACE                            02170000
+XMIT     0 SELECT CMD(%GSFXMIT &ZPARM) NEWAPPL(ISR)                     02180001
+           FULL SCREEN TSO XMIT                                         02190000
+X2D      0 SELECT PGM(FASTPATH) PARM(REXXT,SAY X2D(&ZPARM))             02200000
+           FAST PATH COMMAND: HEX-TO-DEC CONVERSION                     02210000
+ZDEL     0 SELECT PGM(FASTPATH) PARM(ZDEL,&ZPARM)                       02220000
+           DISPLAY/SET COMMAND DELIMITER                                02230000
+/*                                                                      02240004
+//                                                                      02250005
+//         Optional commands                                            02260005
+//                                                                      02270005
+CA1      0 SELECT CMD(%NEWAPPL CA1) NEWAPPL(TMS)                        02280000
+           INVOKE CA-1 ISPF INTERFACE                                   02290000
+CCCA     0 SELECT CMD(%NEWAPPL CCCA) NEWAPPL(ABJ)                       02300000
+           COBOL CONVERSION                                             02310000
+CZXMSG   0 SELECT PGM(CZX2PMID) PARM(&ZPARM) NOFUNC                     02320000
+           DISPLAY MVS-MS MESSAGE                                       02330000
+DDLIST   0 SELECT PGM(ISRDDN) NEWAPPL(ISR) SUSPEND SCRNAME(DDLIST)      02340005
+           FULL SCREEN TSO LISTALC                                      02350000
+DOC      0 SELECT PGM(PGMEDBRO) PARM(E,DOC,&ZPARM,TEXT)                 02360000
+           EDIT A DOCLIB MEMBER                                         02370000
+ELIPS    3 SELECT CMD(%NEWAPPL LIBR) NEWAPPL(LIB@)                      02380000
+           INVOKE LIBRARIAN /ELIPS PANELS                               02390000
+EPIC     0 SELECT CMD(%NEWAPPL EPIC) NEWAPPL(EPIC)                      02400000
+           INVOKE EPIC/MVS PANELS                                       02410000
+FAULT    2 SELECT CMD(%NEWAPPL FAULT) NEWAPPL(IDI)                      02420002
+           IBM FAULT ANALYSER                                           02430002
+FILEAID  5 SELECT CMD(%NEWAPPL FILEAID &ZPARM)                          02440000
+           FILEAID UTILITY (COMPUWARE)                                  02450000
+IPT      0 SELECT PGM(PGMEDBRO) PARM(E,IPT,&ZPARM,STD)                  02460000
+           EDIT A DJCLIPT MEMBER                                        02470000
+JOBTRAC  4 SELECT CMD(%NEWAPPL JOBTRAC) NEWAPPL(LJT)                    02480000
+           INVOKE JOBTRAC APPLICATION                                   02490000
+LIBR     3 SELECT CMD(%NEWAPPL LIBR) NEWAPPL(LIB@)                      02500000
+           INVOKE LIBRARIAN /ELIPS PANELS                               02510000
+MAIL     0 SELECT CMD(%NEWAPPL MAIL) NEWAPPL(MAIL)                      02520000
+           TSO/MAIL                                                     02530000
+MEMOS    4 SELECT PGM(PGMEDBRO) PARM(E,MEMO,&ZPARM,TEXT)                02540000
+           EDIT A MEMO                                                  02550000
+OMEGAMON 4 SELECT CMD(%NEWAPPL OMEG)                                    02560000
+           OMEGAMON                                                     02570000
+PCS      2 SELECT PANEL(PCS@PRIM) OPT(&ZPARM)                           02580001
+           PRISM-CS PRIMARY MENU                                        02590001
+PDB      0 SELECT CMD(%APPLPDB SITE(&ZPARM) ) NEWAPPL(CZXG)             02600000
+           CORTEX-PDB V5R2M1                                            02610000
+PDSMATCH 4 SELECT CMD(%PDSMATCH) NEWAPPL(ISR)                           02620000
+           MIKE NEWELL'S PDSMATCH DIALOG                                02630000
+PGM      0 SELECT CMD(%XYZ2L053 &ZPARM) NEWAPPL(CZX)                    02640000
+           INVOKE PROGRAM MANAGEMENT PANEL OUTSIDE MVS-MS               02650000
+PRINTWAY 6 SELECT CMD(%NEWAPPL PRINTWAY) NEWAPPL(ANF)                   02660000
+           IP PRINTWAY                                                  02670000
+QW       0 SELECT CMD(%NEWAPPL QW &ZPARM)                               02680000
+           MVS/QUICKREF                                                 02690000
+RDR      0 SELECT PGM(PGMEDBRO) PARM(E,RDR,&ZPARM,STD)                  02700000
+           EDIT A DJCLRDR MEMBER                                        02710000
+SAR      0 SELECT CMD(%NEWAPPL SAR &ZPARM) NEWAPPL(SAR)                 02720000
+           INVOKE SYSOUT ARCHIVAL AND RETRIEVAL SYSTEM                  02730000
+SCRIPT   3 SELECT PGM(ISRFPR) PARM((ISRFP09) 9) NEWAPPL(ISR) NEWPOOL    02740000
+           ISSUE SCRIPT COMMAND                                         02750000
+SELECT   0 SELECT &ZPARM                                                02760000
+           GSF TEST                                                     02770000
+STARTOOL 6 SELECT CMD(%NEWAPPL STARTOOL)                                02780000
+           STARTOOL UTILITY (SERENA)                                    02790000
+SYSVIEW  4 SELECT CMD(%NEWAPPL SYSVIEW)                                 02800000
+           PREVAIL/XP (ALIAS SYSVIEW, PCOMMAND)                         02810000
+TEL      0 SELECT PGM(FASTPATH) PARM(B,GSFSOFT.GSF-ENV.TEXT(TEL))       02820004
+           BROWSE THE TELEPHONE DIRECTORY                               02830000
+TEXT     0 SELECT PGM(FASTPATH) PARM(E,&ZUSER..TEXT(&ZPARM),STD)        02840000
+           EDIT "USERID.TEXT"                                           02850000
+TLMS     0 SELECT CMD(%NEWAPPL TLMS) NEWAPPL(TLMS)                      02860000
+           INVOKE TLMS PANELS (NO SPLIT SCREEN)                         02870000
+TXT      0 SELECT PGM(PGMEDBRO) PARM(E,TXT,&ZPARM,STD)                  02880000
+           EDIT A DTXTPRMT MEMBER                                       02890000
+USL      0 SELECT PGM(PGMEDBRO) PARM(E,USL,&ZPARM,STD)                  02900000
+           EDIT A USERLIB MEMBER                                        02910000
+VOLS     0 SELECT CMD(%GSFVOLS &ZPARM) NEWAPPL(ISR)                     02920001
+           VOLS COMMAND                                                 02930000
+                                                                        02940005
+//         More optional commands in FASTPATH format                    02950005
+//         You have to convert them to the above format to use them     02960005
+                                                                        02970005
+         ISPCMDS VERB=CMDList,                                         X02980005
+               TRUNC=4,                                                X02990005
+               ACT='SELECT CMD(%CMDLIST &&ZPARM)',                     X03000005
+               DESC='Display ISPF PROFILE Commands'                     03010005
+*                                                                       03020005
+         ISPCMDS VERB=CMDMaint,                                        X03030005
+               TRUNC=4,                                                X03040005
+               ACT='SELECT CMD(%CMDMAINT &&ZPARM)',                    X03050005
+               DESC='Maintain ISPF PROFILE Commands'                    03060005
+*                                                                       03070005
+*        ISPCMDS VERB=EJes,                                             03080005
+*              TRUNC=2,                                                 03090005
+*              ACT='SELECT CMD(%@EJES,&&ZPARM) NEWAPPL(EJEP)',          03100005
+*              DESC='(E)JES SYSOUT Viewing'                             03110005
+*                                                                       03120005
+         ISPCMDS VERB=FLASHer,                                         X03130005
+               TRUNC=5,                                                X03140005
+               ACT='SELECT CMD(%FLASHER,&&ZPARM) NEWAPPL(TFLP)',       X03150005
+               DESC='OMS-Flash SYSOUT Viewing'                          03160005
+*                                                                       03170005
+         ISPCMDS VERB=IPCS,                                            X03180005
+               ACT='SELECT CMD(%@IPCS &&ZPARM) NOCHECK LANG(CREX)',    X03190005
+               DESC='IBM IPCS Problem Analysis tool'                    03200005
+*                                                                       03210005
+         ISPCMDS VERB=ISPF,                                            X03220005
+               ACT='SELECT PGM(ISPSTRT) PARM(&&ZPARM) NEWAPPL(ISR)',   X03230005
+               DESC='Stack ISPF'                                        03240005
+*                                                                       03250005
+         ISPCMDS VERB=ISMF,                                            X03260005
+               ACT='SELECT CMD(%ISMF &&ZPARM) NOCHECK LANG(CREX)',     X03270005
+               DESC='IBM Storage Management Facility tool'              03280005
+*                                                                       03290005
+         ISPCMDS VERB=JCLlib,                                          X03300005
+               TRUNC=3,                                                X03310005
+               ACT='SELECT PGM(FASTPATH) PARM(JCLLIB,&&ZPARM,STD)',    X03320005
+               DESC='Fast Path Command: JCLLIB'                         03330005
+*                                                                       03340005
+         ISPCMDS VERB=MXI,                                             X03350005
+               ACT='SELECT CMD(%CBTSTUFF MXI &&ZPARM)',                X03360005
+               DESC='MVS Extended Information'                          03370005
+*                                                                       03380005
+         ISPCMDS VERB=MXIDS,                                           X03390005
+               TRUNC=4,                                                X03400005
+               ACT='SELECT CMD(%CBTSTUFF MXI DS &&ZPARM)',             X03410005
+               DESC='MVS Extended Information, Dataset Utility'         03420005
+*                                                                       03430005
+         ISPCMDS VERB=MUcmd,                                           X03440005
+               TRUNC=2,                                                X03450005
+               ACT='SELECT CMD(%MU &&ZPARM) NEWAPPL(ISP)',             X03460005
+               DESC='Invoke Member Utility REXX against a PDS'          03470005
+*                                                                       03480005
+         ISPCMDS VERB=PDS,                                             X03490005
+               ACT='SELECT PGM(PDS) PARM(PDS &&ZPARM ISPMODE)',        X03500005
+               DESC='Call CBT PDS Command'                              03510005
+*                                                                       03520005
+         ISPCMDS VERB=PROClib,                                         X03530005
+               TRUNC=4,                                                X03540005
+               ACT='SELECT PGM(FASTPATH) PARM(PROCLIB,&&ZPARM,STD,E)', X03550005
+               DESC='Fast Path Command: View PROCLIB Member'            03560005
+*                                                                       03570005
+         ISPCMDS VERB=RLISTa,                                          X03580005
+               TRUNC=5,                                                X03590005
+               ACT='SELECT CMD(%RLISTA &&ZPARM VIEW(TRUE))',           X03600005
+               DESC='View Dataset Allocations'                          03610005
+*                                                                       03620005
+         ISPCMDS VERB=RMFiii,                                          X03630005
+               TRUNC=3,                                                X03640005
+               ACT='SELECT CMD(RMFSTART &&ZPARM) MODE(FSCR)',          X03650005
+               DESC='RMF III Start Command'                             03660005
+*                                                                       03670005
+         ISPCMDS VERB=SMPe,                                            X03680005
+               TRUNC=3,                                                X03690005
+               ACT='SELECT CMD(%SMPE VERSION(CURRENT) &&ZPARM)',       X03700005
+               DESC='Current version of SMP/E'                          03710005
+*                                                                       03720005
+         ISPCMDS VERB=USS,                                             X03730005
+               ACT='SELECT CMD(%USS &&ZPARM) NEWAPPL(BPX)',            X03740005
+               DESC='Display USS@PRIM Panel and allocate USS DSNs'      03750005
+*                                                                       03760005
+         ISPCMDS VERB=GRoup,                                           X03770005
+               TRUNC=2,                                                X03780005
+               ACT='SELECT PANEL(GRP@PRIM) OPT(&&ZPARM)',              X03790005
+               DESC='Display GRP@PRIM Panel'                            03800005
+*                                                                       03810005
+         ISPCMDS VERB=USer,                                            X03820005
+               TRUNC=2,                                                X03830005
+               ACT='SELECT PANEL(USR@PRIM) OPT(&&ZPARM)',              X03840005
+               DESC='Display USR@PRIM Panel'                            03850005
+*                                                                       03860005
+         ISPCMDS VERB=XL,                                              X03870005
+               ACT='SELECT SUSPEND PGM(XL) MODE(FSCR) PARM(&&ZPARM)',  X03880005
+               DESC='Do a DSN List using template, ala 3.4'             03890005
+*                                                                       03900005
+         ISPCMDS VERB=OMVS,                                            X03910005
+               ACT='SELECT CMD(OMVS)',                                 X03920005
+               DESC='Startup OMVS Shell'                                03930005
+*                                                                       03940005
+         ISPCMDS VERB=IShell,                                          X03950005
+               TRUNC=2,                                                X03960005
+               ACT='SELECT CMD(%$ISHELL)',                             X03970005
+               DESC='Startup ISPF IShell OMVS Interface'                03980005
+*                                                                       03990005
+         ISPCMDS VERB=ISPFTEST,                                        X04000005
+               ACT='SELECT PGM(ISPYXDR) PARM(&&ZAPPLID)',              X04010005
+               DESC='Startup ISPF Dialog Test Interface'                04020005

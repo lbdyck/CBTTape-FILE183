@@ -1,0 +1,602 @@
+/*************************************************************** REXX */00010000
+/*                                                                    */00020000
+/* MODULE NAME = NEWAPPL                                              */00030000
+/*                                                                    */00040000
+/* DESCRIPTIVE NAME = Start a new ISPF application                    */00050000
+/*                                                                    */00060000
+/* STATUS = R123                                                      */00070022
+/*                                                                    */00080000
+/* FUNCTION = NEWAPPL uses LIBDEF and ALTLIB to define application    */00090000
+/*            libraries and issues the SELECT service.                */00100000
+/*                                                                    */00110000
+/* AUTHOR   =  Gilbert Saint-Flour <carlos@gsf-soft.com>              */00120022
+/*                                                                    */00130000
+/* Dependencies = TSO/E V2                                            */00140000
+/*                ISPF/PDF V3, V4 or V5                               */00150021
+/*                LLIBDEF R300 (optional)                             */00160021
+/*                                                                    */00170000
+/* SYNTAX   =  NEWAPPL                                                */00180000
+/*                 application                                        */00190000
+/*                 parameters                                         */00200000
+/*                                                                    */00210000
+/**********************************************************************/00220000
+ARG Product Parm                                                        00230000
+ADDRESS 'ISPEXEC'; "CONTROL ERRORS RETURN"                              00240000
+/**********************************************************************/00250000
+/***                        IBM Products                            ***/00260000
+/**********************************************************************/00270000
+SELECT                                                                  00280000
+  WHEN Product='BOOK' THEN DO                           /*BOOK Manager*/00290000
+    CALL Switch_Applid 'EOXR'                                           00300005
+    CALL LIBDEF 'ISPMLIB' 'EOY.SEOYMENU'                                00310013
+    CALL LIBDEF 'ISPPLIB' 'EOY.SEOYPENU'                                00320013
+    CALL LIBDEF 'ISPTLIB' 'EOY.SEOYTENU'                                00330013
+    CALL LIBDEF 'ISPLLIB' 'EOY.SEOYLOAD' 'EOY.SEOYLPA'                  00340021
+    CALL ALTLIB 'CLIST'   'EOY.SEOYCLIB'                                00350013
+    ADDRESS TSO "CALL 'GSFSOFT.LOAD(LLIBDEF3)'"                         00360021
+    "SELECT CMD(%EOXVSTRT" Parm") MODE(FSCR)"                           00370021
+    END                                                                 00380000
+  WHEN Product='CCCA' THEN DO                           /*   CCCA    */ 00390000
+    CALL Switch_Applid 'ABJ'                                            00400000
+    CALL LIBDEF 'ISPMLIB' 'ABJ.H09F210.SABJMLIB'                        00410014
+    CALL LIBDEF 'ISPPLIB' 'ABJ.H09F210.SABJPLIB'                        00420014
+    CALL LIBDEF 'ISPSLIB' 'ABJ.H09F210.SABJSLIB'                        00430014
+    CALL LIBDEF 'ISPTLIB' 'ABJ.H09F210.SABJTLIB'                        00440014
+    CALL LIBDEF 'ISPLLIB' 'ABJ.H09F210.SABJMOD1'                        00450014
+    CALL ALTLIB 'CLIST'   'ABJ.H09F210.SABJCLST'                        00460014
+  /*                                                                    00470014
+    ABJNVSH = 'SYS1.COBCONV.V1R6M0' /* NON-VSAM SHARED    */            00480000
+    ABJNVPR = 'MVS0016'             /* NON-VSAM PRIVATE   */            00490000
+    ABJVSSH = 'MVS0016'             /*     VSAM SHARED    */            00500000
+    ABJVSPR = 'MVS0016'             /*     VSAM PRIVATE   */            00510000
+    ABJUNIT = 'SYSALLDA'            /* work data sets     */            00520000
+    "VPUT (ABJNVSH ABJNVPR ABJVSSH ABJVSPR ABJUNIT) PROFILE"            00530000
+   */                                                                   00540014
+    "SELECT PANEL(ABJ@M2)"                                              00550000
+    END                                                                 00560000
+  WHEN Product='DB2I' THEN DO                           /*  DB2I     */ 00570000
+    CALL Switch_Applid 'DSNE'                                           00580000
+    CALL LIBDEF 'ISPPLIB' 'DB2.V3R1M0.SDSNSPFP',                        00590000
+                          'DB2.V3R1M0.SDSNPFPE'                         00600000
+    CALL LIBDEF 'ISPMLIB' 'DB2.V3R1M0.SDSNSPFM'                         00610000
+    CALL LIBDEF 'ISPLLIB' 'DB2.V3R1M0.SDSNLOAD'                         00620000
+    CALL ALTLIB 'CLIST'   'DB2.V3R1M0.SDSNCLST'                         00630000
+    "SELECT PANEL(DSNEPRI)"                                             00640000
+    END                                                                 00650000
+  WHEN Product='DFSORT' THEN DO                         /*  DF/SORT  */ 00660000
+    CALL Switch_Applid 'ICE'                                            00670000
+    CALL LIBDEF 'ISPMLIB' 'SYS1.DFSORT.V1R12M0.ICEISPM',                00680000
+                          'SYS1.DFSORT.V1R12M0.ICEDGTM'                 00690000
+    CALL LIBDEF 'ISPPLIB' 'SYS1.DFSORT.V1R12M0.ICEISPP',                00700000
+                          'SYS1.DFSORT.V1R12M0.ICEDGTP'                 00710000
+    CALL LIBDEF 'ISPSLIB' 'SYS1.DFSORT.V1R12M0.ICEISPS',                00720000
+                          'SYS1.DFSORT.V1R12M0.ICEDGTS'                 00730000
+    CALL LIBDEF 'ISPTLIB' 'SYS1.DFSORT.V1R12M0.ICEISPT',                00740000
+                          'SYS1.DFSORT.V1R12M0.ICEDGTT'                 00750000
+    CALL LIBDEF 'ISPLLIB' 'SYS1.DFSORT.V1R12M0.ICEISPL',                00760000
+                          'SYS1.DFSORT.V1R12M0.ICEDGTL'                 00770000
+    CALL ALTLIB 'CLIST'   'SYS1.DFSORT.V1R12M0.ICEISPC'                 00780000
+    "SELECT PANEL(ICESPRIM) NEWAPPL(ICE) PASSLIB"                       00790000
+    END                                                                 00800000
+  WHEN Product='DITTO' THEN DO                          /*   DITTO   */ 00810000
+    CALL Allocate 'DUTPLIB' 'SYS1.SDITPLIB'                             00820005
+    CALL Allocate 'DUTPROF' USERID()'.DUTPROF'                          00830000
+    "SELECT CMD(DITTO) MODE(FSCR)"                                      00840000
+    END                                                                 00850000
+  WHEN Product='FAULT' THEN DO                     /* Fault Analyzer */ 00860022
+    CALL Switch_Applid 'IDI'                                            00870022
+    CALL LIBDEF 'ISPPLIB' 'IDI.SIDIPLIB'                                00880022
+    CALL LIBDEF 'ISPMLIB' 'IDI.SIDIMLIB'                                00890022
+    CALL LIBDEF 'ISPSLIB' 'IDI.SIDISLIB'                                00900022
+    CALL LIBDEF 'ISPTLIB' 'IDI.SIDITLIB'                                00910022
+    CALL ALTLIB 'EXEC'    'IDI.SIDIEXEC'                                00920022
+    "SELECT PGM(IDIPDDIR) SCRNAME(FAULTA)"                              00930022
+    END                                                                 00940022
+  WHEN Product='FM' THEN DO                         /* File Manager */  00950023
+    CALL Switch_Applid 'FMN'                                            00960023
+    CALL LIBDEF 'ISPPLIB' 'SYS1.IFM.SFMNPENU'                           00970023
+    CALL LIBDEF 'ISPMLIB' 'SYS1.IFM.SFMNMENU'                           00980023
+    CALL LIBDEF 'ISPSLIB' 'SYS1.IFM.SFMNSLIB'                           00990023
+    CALL LIBDEF 'ISPTLIB' 'SYS1.IFM.SFMNTENU'                           01000023
+  /*CALL LIBDEF 'ISPLLIB' 'SYS1.IFM.LINKLIB' */                         01010023
+    CALL ALTLIB 'EXEC'    'SYS1.IFM.SFMNEXEC'                           01020023
+    "SELECT PANEL(FMNSTASK) SCRNAME(FILEMGR)"                           01030023
+    END                                                                 01040023
+  WHEN Product='HCD' THEN DO                            /*   HCD     */ 01050000
+    CALL Switch_Applid 'HCD'                                            01060000
+    CALL LIBDEF 'ISPLLIB' 'SYS1.SCBDHENU' 'SYS1.NUCLEUS'                01070000
+  /*CALL LIBDEF 'ISPMLIB' 'SYS1.SCBDMENU'   */                          01080000
+  /*CALL LIBDEF 'ISPPLIB' 'SYS1.SCBDPENU'   */                          01090000
+  /*CALL LIBDEF 'ISPTLIB' 'SYS1.SCBDTENU'   */                          01100000
+    CALL ALTLIB 'CLIST'   'SYS1.SCBDCLST'                               01110000
+    ADDRESS TSO "ALLOC DD(LIBTRACE) SYSOUT REUSE"                       01120000
+    ADDRESS TSO "CALL 'GSFSOFT.LOAD(LLIBDEF3)'"                         01130021
+    "SELECT CMD(%CBDCHCD) MODE(FSCR)"                                   01140021
+    END                                                                 01150000
+  WHEN Product='ICQ' THEN DO                            /*   TSO/E   */ 01160000
+    CALL Switch_Applid 'ICQ'                                            01170000
+    CALL LIBDEF 'ISPPLIB' 'ICQ.ICQPLIB'                                 01180021
+    CALL LIBDEF 'ISPMLIB' 'ICQ.ICQMLIB'                                 01190021
+    CALL LIBDEF 'ISPSLIB' 'ICQ.ICQSLIB'                                 01200021
+    CALL LIBDEF 'ISPTLIB' 'ICQ.ICQTLIB'                                 01210021
+    CALL ALTLIB 'CLIST'   'ICQ.ICQCCLIB'                                01220021
+    CALL ALLOCATE 'ICQAATAB' 'ICQ.ICQAATAB'                             01230021
+    CALL ALLOCATE 'ICQAMTAB' 'ICQ.ICQAMTAB'                             01240021
+    CALL ALLOCATE 'ICQANTAB' 'ICQ.ICQANTAB'                             01250021
+    CALL ALLOCATE 'ICQAPTAB' 'ICQ.ICQAPTAB'                             01260021
+    CALL ALLOCATE 'ICQCMTAB' 'ICQ.ICQCMTAB'                             01270021
+    "SELECT CMD(ICQAMLI0 APPLNAME(ICQADMIN)) NEWAPPL(ICQ) PASSLIB"      01280000
+    END                                                                 01290000
+  WHEN Product='IPCS' THEN DO                           /*   IPCS    */ 01300000
+    ADDRESS TSO "EXEC 'SYS1.SBLSCLI0(BLSCLIBD)'"                        01310000
+    END                                                                 01320000
+  WHEN Product='IPCS$' THEN DO                          /*   IPCS    */ 01330000
+    CALL Switch_Applid 'BLSG'                                           01340000
+    CALL LIBDEF 'ISPPLIB' 'SYS1.SBLSPNL0'                               01350000
+    CALL LIBDEF 'ISPMLIB' 'SYS1.SBLSMSG0'                               01360000
+    CALL LIBDEF 'ISPSLIB' 'SYS1.SBLSKEL0'                               01370000
+    CALL LIBDEF 'ISPTLIB' 'SYS1.SBLSTBL0'                               01380000
+    CALL ALTLIB 'CLIST'   'SYS1.SBLSCLI0'                               01390000
+    "SELECT PGM(BLSG) PARM(PANEL(BLSPPRIM))",                           01400012
+                  " NEWAPPL(BLSG) PASSLIB"                              01410000
+    END                                                                 01420000
+  WHEN Product='ISMF' THEN DO                           /*   ISMF    */ 01430000
+    CALL Switch_Applid 'DGT'                                            01440000
+    CALL LIBDEF 'ISPPLIB' 'SYS1.DGTPLIB'                                01450000
+    CALL LIBDEF 'ISPMLIB' 'SYS1.DGTMLIB'                                01460000
+    CALL LIBDEF 'ISPSLIB' 'SYS1.DGTSLIB'                                01470000
+    CALL LIBDEF 'ISPTLIB' 'SYS1.DGTTLIB'                                01480000
+    CALL ALTLIB 'CLIST'   'SYS1.DGTCLIB'                                01490013
+    "SELECT PGM(DGTFMD01)"                                              01500012
+    END                                                                 01510000
+  WHEN Product='OMVS' THEN DO                           /*   OMVS    */ 01520011
+    CALL Switch_Applid 'BPXW'                                           01530011
+    CALL LIBDEF 'ISPPLIB' 'SYS1.SBPXPENU'                               01540011
+    CALL LIBDEF 'ISPMLIB' 'SYS1.SBPXMENU'                               01550011
+    CALL LIBDEF 'ISPTLIB' 'SYS1.SBPXTENU'                               01560011
+    CALL ALTLIB 'EXEC'    'SYS1.SBPXEXEC'                               01570011
+    "SELECT CMD(OMVS) MODE(FSCR)"                                       01580015
+    END                                                                 01590011
+  WHEN Product='ISHELL' THEN DO                         /*   ISHELL  */ 01600011
+    CALL Switch_Applid 'BPXW'                                           01610011
+    CALL LIBDEF 'ISPPLIB' 'SYS1.SBPXPENU'                               01620011
+    CALL LIBDEF 'ISPMLIB' 'SYS1.SBPXMENU'                               01630011
+    CALL LIBDEF 'ISPTLIB' 'SYS1.SBPXTENU'                               01640011
+    CALL ALTLIB 'EXEC'    'SYS1.SBPXEXEC'                               01650011
+    "SELECT CMD(%ISHELL) MODE(FSCR)"                                    01660015
+    END                                                                 01670011
+  WHEN Product='OEDIT' THEN DO                          /* OMVS EDIT */ 01680015
+    CALL Switch_Applid 'BPXW'                                           01690015
+    CALL LIBDEF 'ISPPLIB' 'SYS1.SBPXPENU'                               01700015
+    CALL LIBDEF 'ISPMLIB' 'SYS1.SBPXMENU'                               01710015
+    CALL LIBDEF 'ISPTLIB' 'SYS1.SBPXTENU'                               01720015
+    CALL ALTLIB 'EXEC'    'SYS1.SBPXEXEC'                               01730015
+    "SELECT CMD(%OEDIT) MODE(FSCR)"                                     01740015
+    END                                                                 01750015
+  WHEN Product='OBROWSE' THEN DO                      /* OMVS BROWSE */ 01760015
+    CALL Switch_Applid 'BPXW'                                           01770015
+    CALL LIBDEF 'ISPPLIB' 'SYS1.SBPXPENU'                               01780015
+    CALL LIBDEF 'ISPMLIB' 'SYS1.SBPXMENU'                               01790015
+    CALL LIBDEF 'ISPTLIB' 'SYS1.SBPXTENU'                               01800015
+    CALL ALTLIB 'EXEC'    'SYS1.SBPXEXEC'                               01810015
+    "SELECT CMD(%OBROWSE) MODE(FSCR)"                                   01820015
+    END                                                                 01830015
+  WHEN Product='PRINTWAY' THEN DO                     /* IP PRINTWAY */ 01840016
+    CALL Switch_Applid 'ANF'                                            01850016
+    CALL LIBDEF 'ISPPLIB' 'ANF.SANFPLIB'                                01860016
+    CALL LIBDEF 'ISPMLIB' 'ANF.SANFMLIB'                                01870016
+    CALL ALTLIB 'EXEC'    'ANF.SANFEXEC'                                01880016
+    "SELECT PANEL(ANFIPM)"                                              01890016
+    END                                                                 01900016
+  WHEN Product='RMM' THEN DO                            /*   RMM     */ 01910001
+    CALL Switch_Applid 'EDG'                                            01920001
+    CALL LIBDEF 'ISPMLIB' 'SYS1.SEDGMENU'                               01930001
+    CALL LIBDEF 'ISPPLIB' 'SYS1.SEDGPENU'                               01940001
+    CALL LIBDEF 'ISPSLIB' 'SYS1.SEDGSKL1'                               01950001
+    CALL LIBDEF 'ISPTLIB' 'SYS1.SEDGTBL1'                               01960001
+    CALL ALTLIB 'EXEC'    'SYS1.SEDGEXE1'                               01970001
+    "SELECT CMD(%EDGRMAIN)"                                             01980012
+    END                                                                 01990001
+  WHEN Product='RACF' THEN DO                           /*   RACF    */ 02000000
+    CALL Switch_Applid 'RACF'                                           02010000
+    CALL LIBDEF 'ISPPLIB' 'SYS1.HRFPANL'                                02020004
+    CALL LIBDEF 'ISPMLIB' 'SYS1.HRFMSG'                                 02030004
+    CALL LIBDEF 'ISPSLIB' 'SYS1.HRFSKEL'                                02040004
+    CALL ALTLIB 'CLIST'   'SYS1.HRFCLST'                                02050004
+    "SELECT PANEL(ICHP00)"                                              02060000
+    END                                                                 02070000
+  WHEN Product='QMF' THEN DO                            /*   QMF     */ 02080000
+    CALL Switch_Applid 'DSQE'                                           02090000
+    CALL LIBDEF 'ISPPLIB' 'QMF.V3R1M1.DSQPLIBE'                         02100000
+    CALL LIBDEF 'ISPMLIB' 'QMF.V3R1M1.DSQMLIBE'                         02110000
+    CALL LIBDEF 'ISPSLIB' 'QMF.V3R1M1.DSQSLIBE'                         02120000
+    CALL LIBDEF 'ISPTLIB' 'QMF.V3R1M1.DSQTLIBE'                         02130000
+    CALL LIBDEF 'ISPLLIB' 'QMF.V3R1M1.DSQLOAD' ,                        02140000
+                          'DB2.V3R1M0.SDSNLOAD'                         02150000
+    CALL ALTLIB 'EXEC'    'QMF.V3R1M1.DSQEXECE'                         02160000
+    CALL ALLOCATE 'ADMGGMAP' 'QMF.V3R1M1.DSQMAPE'                       02170000
+    CALL ALLOCATE 'ADMCFORM' 'QMF.V3R1M1.DSQCHART'                      02180000
+    CALL ALLOCATE 'DSQPNLE'  'QMF.V3R1M1.DSQPNLE'                       02190000
+    ADDRESS TSO "ALLOC DD(DSQDEBUG) SYSOUT(Z)"                          02200000
+    ADDRESS TSO "ALLOC DD(LIBTRACE) SYSOUT(Z)"                          02210000
+    ADDRESS TSO "CALL 'GSFSOFT.LOAD(LLIBDEF3)'"                         02220021
+    "SELECT PGM(DSQQMFE)"                                               02230021
+    END                                                                 02240000
+  WHEN Product='RMF' THEN DO                            /*  RMF III  */ 02250000
+    CALL Switch_Applid 'ERB'                                            02260000
+    CALL ALTLIB 'CLIST'   'SYS1.SERBCLS'                                02270006
+    "SELECT CMD(%ERBRMF3X)"                                             02280012
+    "SELECT CMD(%ERBRMF)"                                               02290012
+    END                                                                 02300000
+  WHEN Product='SDF' THEN DO                            /*  SDF II   */ 02310006
+    CALL Switch_Applid 'DGI'                                            02320006
+    CALL ALTLIB 'EXEC'    'SDF2.V1R4M0.SDGICMD'                         02330006
+    "SELECT CMD(%DGIIXINV)"                                             02340006
+    END                                                                 02350006
+  WHEN Product='SDSF' THEN DO                           /*   SDSF    */ 02360000
+    CALL Switch_Applid 'ISF'                                            02370000
+    CALL LIBDEF 'ISPPLIB' 'SYS1.SISFPLIB'                               02380005
+    CALL LIBDEF 'ISPMLIB' 'SYS1.SISFMLIB'                               02390005
+    CALL LIBDEF 'ISPTLIB' 'SYS1.SISFTLIB'                               02400005
+ /* CALL LIBDEF 'ISPLLIB' 'SYS1.ISFLOAD' 'SYS1.ISFLPA'        */        02410005
+    "SELECT PGM(ISFISP)"                                                02420005
+    END                                                                 02430000
+  WHEN Product='SMPE' THEN DO                           /*  SMP/E    */ 02440000
+    CALL Switch_Applid 'SMPE'                                           02450010
+    CALL LIBDEF 'ISPPLIB' 'GIM.SGIMPENU'                                02460010
+    CALL LIBDEF 'ISPMLIB' 'GIM.SGIMMENU'                                02470010
+    CALL LIBDEF 'ISPSLIB' 'GIM.SGIMSENU'                                02480010
+    X=LISTDSI('ISPPROF' 'FILE')              /* get dsn of ISPPROF */   02490000
+    CALL LIBDEF 'ISPTLIB' 'GIM.SGIMTENU' sysdsname                      02500010
+    CALL Allocate 'SMPTABL' sysdsname                                   02510000
+    "SELECT PGM(GIMISCV)"                                               02520005
+    END                                                                 02530000
+  WHEN Product='TOPS' THEN DO                           /*  TOPS     */ 02540005
+    CALL Switch_Applid 'TOPS'                                           02550005
+    CALL LIBDEF 'ISPPLIB' 'SYS1.SAMPLIB'                                02560005
+    CALL ALTLIB 'CLIST'   'SYS1.SAMPLIB'                                02570005
+    "SELECT CMD(%IEATOPS)"                                              02580005
+    END                                                                 02590005
+/**********************************************************************/02600000
+/***                      Non-IBM Products                          ***/02610000
+/**********************************************************************/02620000
+  WHEN Product='PDS' THEN DO                            /*  CBT tape */ 02630000
+    CALL Switch_Applid 'PDS'                                            02640000
+    CALL LIBDEF 'ISPPLIB' 'GSFSOFT.GSF-ENV.PDS86'                       02650023
+    CALL LIBDEF 'ISPMLIB' 'GSFSOFT.GSF-ENV.PDS86'                       02660023
+    IF parm\='' THEN DO; Pdspdsn=parm; "VPUT Pdspdsn"; END              02670000
+    "SELECT PANEL(PDS@PRIM)"                                            02680000
+    END                                                                 02690000
+  WHEN Product='MAIL' THEN DO                           /*  CBT tape */ 02700000
+    CALL Switch_Applid 'MAIL'                                           02710000
+    CALL LIBDEF 'ISPPLIB' 'IBMUSER.TSOMAIL.PANELS'                      02720017
+    CALL LIBDEF 'ISPMLIB' 'IBMUSER.TSOMAIL.PANELS'                      02730017
+    CALL ALTLIB 'EXEC'    'IBMUSER.TSOMAIL.EXEC'                        02740017
+    "SELECT CMD(%TSOMAIL)"                                              02750000
+    END                                                                 02760000
+  WHEN Product='ABENDAID' THEN DO                       /* Compuware */ 02770000
+    CALL Switch_Applid 'AAUT'                                           02780000
+    CALL LIBDEF 'ISPMLIB' 'STC.CWARE.ISPMLIB'                           02790007
+    CALL LIBDEF 'ISPPLIB' 'STC.CWARE.ISPPLIB'                           02800007
+    CALL LIBDEF 'ISPLLIB' 'SYS1.CWARE.ABAID.LOAD.LIB',                  02810007
+                          'SYS1.CWARE.SHRSERV.LOAD.LIB'                 02820007
+    "SELECT CMD(EXECPGM CWDDSUTL PARM(SPF)) MODE(FSCR)"                 02830007
+    END                                                                 02840000
+  WHEN Product='FILEAID' THEN DO                        /* Compuware */ 02850002
+    CALL Switch_Applid 'FAXE'                                           02860002
+    CALL LIBDEF 'ISPMLIB' 'TPPX.FILEAID.V8R0M0.ISPMLIB'                 02870002
+    CALL LIBDEF 'ISPPLIB' 'TPPX.FILEAID.V8R0M0.ISPPLIB'                 02880002
+    CALL LIBDEF 'ISPSLIB' 'TPPX.FILEAID.V8R0M0.ISPSLIB'                 02890002
+    CALL LIBDEF 'ISPTLIB' 'TPPX.FILEAID.V8R0M0.ISPTLIB'                 02900002
+    CALL LIBDEF 'ISPLLIB' 'TPPX.FILEAID.V8R0M0.LOAD'                    02910002
+    "SELECT PANEL(IFAMU01) OPT("parm")"                                 02920021
+    END                                                                 02930002
+  WHEN Product='M4DM' THEN DO                           /*  MACRO 4  */ 02940002
+    CALL Switch_Applid 'M4DM'                                           02950002
+    CALL LIBDEF 'ISPMLIB' 'TPPX.DUMPMSTR.V4R105.MSGS'                   02960002
+    CALL LIBDEF 'ISPPLIB' 'TPPX.DUMPMSTR.V4R105.PANELS'                 02970002
+    CALL LIBDEF 'ISPTLIB' 'TPPX.DUMPMSTR.V4R105.TABLES'                 02980002
+    CALL LIBDEF 'ISPTABL' 'TPPX.DUMPMSTR.V4R105.TABLES'                 02990002
+    CALL LIBDEF 'ISPLLIB' 'TPPX.DUMPMSTR.V4R105.LOADLIB'                03000002
+    CALL ALTLIB 'CLIST'   'TPPX.DUMPMSTR.V4R105.CLIST'                  03010002
+    CALL ALTLIB 'EXEC'    'TPPX.DUMPMSTR.V4R105.EXEC'                   03020002
+    "SELECT PANEL(DMOMENU)"                                             03030002
+    END                                                                 03040002
+  WHEN Product='INSYNC' THEN DO                         /*  MACRO 4  */ 03050019
+    CALL Switch_Applid '#IS1'                                           03060019
+    CALL LIBDEF 'ISPMLIB' 'IBMUSER.INSYNC.V311.MLIB'                    03070019
+    CALL LIBDEF 'ISPPLIB' 'IBMUSER.INSYNC.V311.PLIB'                    03080019
+    CALL LIBDEF 'ISPSLIB' 'IBMUSER.INSYNC.V311.SLIB'                    03090019
+    CALL LIBDEF 'ISPTLIB' 'IBMUSER.INSYNC.V311.TLIB'                    03100019
+  /*CALL ALTLIB 'EXEC'    'IBMUSER.INSYNC.V311.ELIB' */                 03110020
+    'VGET zscreen'                                                      03120020
+    CALL ALLOCATE '#ELIBDD' || zscreen 'IBMUSER.INSYNC.V311.ELIB'       03130020
+    CALL LIBDEF 'ISPLLIB' 'IBMUSER.INSYNC.V311.LOADLIB'                 03140019
+    "SELECT CMD(INS10" Parm ")"                                         03150019
+    END                                                                 03160019
+  WHEN Product='CHANGEMAN' THEN DO                      /*   Serena  */ 03170000
+    CALL Switch_Applid 'CMN'                                            03180000
+    CALL LIBDEF 'ISPPLIB' 'TPPX.CHGMAN.V4R1M0.FMAINPAN',                03190000
+                          'TPPX.CHGMAN.V4R1M0.FHELPPAN',                03200000
+                          'PROD.CHGMAN.V4R1M0.FCUSTPAN'                 03210000
+    CALL LIBDEF 'ISPSLIB' 'PROD.CHGMAN.V4R1M0.CMNSKELS',                03220000
+                          'TPPX.CHGMAN.V4R1M0.SKELS'                    03230000
+    CALL LIBDEF 'ISPMLIB' 'TPPX.CHGMAN.V4R1M0.MSGS'                     03240000
+  /*CALL LIBDEF 'ISPLLIB' 'TPPX.CHGMAN.V4R1M0.LINKLIB' */               03250000
+    CALL ALTLIB 'CLIST'   'TPPX.CHGMAN.V4R1M0.CLIST'                    03260000
+    "SELECT CMD(CMNINIT) MODE(FSCR)"                                    03270000
+    END                                                                 03280000
+  WHEN Product='STARTOOL' THEN DO                       /*   Serena  */ 03290001
+    CALL Switch_Applid 'ISR'                                            03300000
+    CALL LIBDEF 'ISPPLIB' 'IBMUSER.PDSE610.PANELS'                      03310018
+    CALL LIBDEF 'ISPMLIB' 'IBMUSER.PDSE610.MSGS'                        03320018
+    CALL LIBDEF 'ISPSLIB' 'IBMUSER.PDSE610.SKELS'                       03330018
+    CALL LIBDEF 'ISPLLIB' 'IBMUSER.PDSE610.LOAD',                       03340018
+                          'IBMUSER.PDSE610.TLOD'                        03350018
+    CALL ALTLIB 'CLIST'   'IBMUSER.PDSE610.CLIST'                       03360018
+    "SELECT CMD(STARTOOL) MODE(FSCR)"                                   03370001
+    END                                                                 03380000
+  WHEN Product='COMPAREX' THEN DO                       /*   Serena  */ 03390000
+    CALL Switch_Applid 'CPX'                                            03400000
+    CALL LIBDEF 'ISPMLIB' 'TPPX.COMPAREX.V7R2M0.MSGS'                   03410000
+    CALL LIBDEF 'ISPPLIB' 'TPPX.COMPAREX.V7R2M0.PANELS'                 03420000
+    CALL LIBDEF 'ISPTLIB' 'TPPX.COMPAREX.V7R2M0.TABLES'                 03430000
+    "SELECT PANEL(CPX@PRIM) NEWAPPL(CPX) PASSLIB"                       03440000
+    END                                                                 03450000
+  WHEN Product='CATSCAN' THEN DO                        /* SOFTWORKS */ 03460000
+    CALL Switch_Applid 'CATS'                                           03470000
+    CALL LIBDEF 'ISPMLIB' 'TPPX.CATSCAN.V2R1M1.ISPMLIB'                 03480000
+    CALL LIBDEF 'ISPPLIB' 'TPPX.CATSCAN.V2R1M1.ISPPLIB'                 03490000
+    CALL LIBDEF 'ISPSLIB' 'TPPX.CATSCAN.V2R1M1.ISPSLIB'                 03500000
+ /* CALL LIBDEF 'ISPLLIB' 'SYS2.TPPX.CATSCAN.V2R4M0.LOADLIB' */         03510000
+    CALL ALTLIB 'EXEC'    'TPPX.CATSCAN.V2R1M1.ISPCLIB'                 03520000
+    "SELECT CMD(CSLMAN) MODE(FSCR)"                                     03530000
+    END                                                                 03540000
+  WHEN Product='JCLPREP' THEN DO                        /*   Altare  */ 03550000
+    CALL Switch_Applid 'JPRP'                                           03560000
+    CALL ALTLIB 'CLIST'   'TPPX.JCLPREP.V3R6M0.CLIST'                   03570000
+    "SELECT CMD(%JPRCDLA)"                                              03580000
+    END                                                                 03590000
+  WHEN Product='LEGACY' THEN DO                     /* Knowledgeware */ 03600000
+    CALL Switch_Applid 'LGCY'                                           03610000
+    CALL LIBDEF 'ISPMLIB' 'IBMUSER.LEGACY.R46AA.ISPMLIB',               03620005
+                          'IBMUSER.LEGACY.R46PD.ISPMLIB',               03630005
+                          'IBMUSER.LEGACY.R46PR.ISPMLIB'                03640005
+    CALL LIBDEF 'ISPPLIB' 'IBMUSER.LEGACY.R46AA.ISPPLIB',               03650005
+                          'IBMUSER.LEGACY.R46PD.ISPPLIB',               03660005
+                          'IBMUSER.LEGACY.R46PR.ISPPLIB'                03670005
+    CALL LIBDEF 'ISPSLIB' 'IBMUSER.LEGACY.R46AA.ISPSLIB',               03680005
+                          'IBMUSER.LEGACY.R46PD.ISPSLIB',               03690005
+                          'IBMUSER.LEGACY.R46PR.ISPSLIB'                03700005
+    CALL ALTLIB 'CLIST'   'IBMUSER.LEGACY.R46AA.CLIST',                 03710005
+                          'IBMUSER.LEGACY.R46PD.CLIST',                 03720005
+                          'IBMUSER.LEGACY.R46PR.CLIST'                  03730005
+    "SELECT PANEL(LEGACY)"                                              03740000
+    END                                                                 03750000
+  WHEN Product='SFINDER' THEN DO                        /*  Trilogy  */ 03760000
+    CALL LIBDEF 'ISPMLIB' 'TPPX.SFW.V1R1M0.MESSAGE'                     03770000
+    CALL LIBDEF 'ISPPLIB' 'TPPX.SFW.V1R1M0.PANEL'                       03780000
+    CALL LIBDEF 'ISPSLIB' 'TPPX.SFW.V1R1M0.SKELETON'                    03790000
+    CALL ALTLIB 'CLIST'   'SYS2.ADP.CLISTS'                             03800000
+    "SELECT PANEL(SF@MSTR)"                                             03810000
+    END                                                                 03820000
+  WHEN Product='STROBE' THEN DO                         /*Programmart*/ 03830000
+    CALL Switch_Applid 'STR'                                            03840000
+    CALL LIBDEF 'ISPMLIB' 'TPPX.STROBE.R930.ISPMLIB'                    03850000
+    CALL LIBDEF 'ISPPLIB' 'TPPX.STROBE.R930.ISPPLIB'                    03860000
+    CALL LIBDEF 'ISPSLIB' 'TPPX.STROBE.R930.ISPSLIB'                    03870000
+    "SELECT PGM(STRBISPF)"                                              03880000
+    END                                                                 03890000
+  WHEN Product='TDS'    THEN DO                         /*Apogee Soft*/ 03900000
+    CALL Switch_Applid 'TDS'                                            03910000
+    CALL LIBDEF 'ISPMLIB' 'TPPX.TDM.V1R0M3.ISPMLIB'                     03920000
+    CALL LIBDEF 'ISPPLIB' 'TPPX.TDM.V1R0M3.ISPPLIB'                     03930000
+    "SELECT CMD(CALL 'TPPX.TDM.V1R0M3.LOAD(TDSMAIN)')"                  03940000
+    END                                                                 03950000
+  WHEN Product='TRE'    THEN DO                         /*Apogee Soft*/ 03960000
+    CALL Switch_Applid 'TRE'                                            03970000
+    CALL LIBDEF 'ISPMLIB' 'TPPX.TDM.V1R0M3.ISPMLIB'                     03980000
+    CALL LIBDEF 'ISPPLIB' 'TPPX.TDM.V1R0M3.ISPPLIB'                     03990000
+    "SELECT CMD(CALL 'TPPX.TDM.V1R0M3.LOAD(TREMAIN)')"                  04000000
+    END                                                                 04010000
+  WHEN Product='CORTEX' THEN DO                         /*   SISRO   */ 04020000
+    CALL Switch_Applid 'CZX'                                            04030000
+    CALL LIBDEF 'ISPMLIB' 'CORTEX5.V5R2M1.MESSLIB'                      04040000
+    CALL LIBDEF 'ISPPLIB' 'CORTEX.ADP4.USERLIB' ,                       04050000
+                          'CORTEX.ADP0.USERLIB' ,                       04060000
+                          'CORTEX5.V5R2M1.ISPPLIB'                      04070000
+    CALL LIBDEF 'ISPSLIB' 'CORTEX.ADP4.USERLIB' ,                       04080000
+                          'CORTEX.ADP0.USERLIB' ,                       04090000
+                          'CORTEX5.V5R2M1.ISPSLIB'                      04100000
+    CALL LIBDEF 'ISPLLIB' 'CORTEX.ADP4.EXITLIB' ,                       04110000
+                          'CORTEX.ADP0.EXITLIB' ,                       04120000
+                          'CORTEX5.V5R2M1.LINKLIB'                      04130000
+    ADDRESS TSO "ALLOC DD(SYSTERM) SYSOUT REUSE"                        04140000
+    ADDRESS TSO "ALLOC DD(LIBTRACE) SYSOUT REUSE"                       04150000
+    CALL ALTLIB 'CLIST'   'CORTEX5.V5R2M1.CMDLIB'                       04160000
+    ADDRESS TSO "CALL 'GSFSOFT.LOAD(LLIBDEF3)'"                         04170021
+    "SELECT PGM(CZX2POCV) PARM(AN-,PANEL(CZX2ECTX))"                    04180021
+    END                                                                 04190000
+  WHEN Product='EPIC' THEN DO                           /*  Legent   */ 04200000
+    CALL Switch_Applid 'PXPM'                                           04210000
+    CALL LIBDEF 'ISPPLIB' 'TPPX.PXPM.V3R3M0.EPMPLIB'                    04220000
+    CALL LIBDEF 'ISPTLIB' 'TPPX.PXPM.V3R3M0.EPMTLIB'                    04230000
+    CALL LIBDEF 'ISPMLIB' 'TPPX.PXPM.V3R3M0.EPMMLIB'                    04240000
+    "SELECT PGM(TSIOMS00)"                                              04250000
+    END                                                                 04260000
+  WHEN Product='EPIC32' THEN DO                         /*  Legent   */ 04270000
+    CALL Switch_Applid 'EPIC'                                           04280000
+    CALL LIBDEF 'ISPPLIB' 'TPPX.EPIC.V3R2M0.PLIB'                       04290000
+    CALL LIBDEF 'ISPMLIB' 'TPPX.EPIC.V3R2M0.MLIB'                       04300000
+    CALL LIBDEF 'ISPTLIB' 'TPPX.EPIC.V3R2M0.TLIB'                       04310000
+    "SELECT CMD(TSIOISPF EPIC) MODE(FSCR)"                              04320000
+    END                                                                 04330000
+  WHEN Product='EXPRESS' THEN DO                        /*  Legent   */ 04340000
+    CALL Switch_Applid 'RMO'                                            04350000
+    IF parm='' THEN parm='PROD.RMO'                                     04360000
+    CALL LIBDEF 'ISPPLIB' 'TPPX.RMO.V5R1M3.ISPPLIB'                     04370000
+    CALL LIBDEF 'ISPTLIB' 'TPPX.RMO.V5R1M3.ISPTLIB'                     04380000
+    "SELECT PGM(RMOSPF) PARM("parm") NEWAPPL(RMO) PASSLIB"              04390000
+    END                                                                 04400000
+  WHEN Product='ISM' THEN DO                            /*  Legent   */ 04410000
+    CALL Switch_Applid 'ISM'                                            04420000
+    CALL LIBDEF 'ISPMLIB' 'TPPX.ISM.R381.ISPMLIB'                       04430000
+    CALL LIBDEF 'ISPPLIB' 'TPPX.ISM.R381.ISPPLIB'                       04440000
+    CALL LIBDEF 'ISPSLIB' 'TPPX.ISM.R381.ISPSLIB'                       04450000
+    CALL LIBDEF 'ISPTLIB' 'TPPX.ISM.R381.ISPTLIB'                       04460000
+    CALL ALTLIB 'CLIST'   'TPPX.ISM.R381.CMDPROCF'                      04470000
+    "SELECT PANEL(MI@PRIM)"                                             04480012
+    END                                                                 04490000
+  WHEN Product='JOBTRAC' THEN DO                        /*  Legent   */ 04500000
+    CALL Switch_Applid 'LJT'                                            04510000
+    CALL ALLOCATE 'JOBTRACY' 'PROD.JOBTRAC.CKPT'                        04520000
+    CALL ALLOCATE 'JOBHISTY' 'PROD.JOBTRAC.JOBHIST'                     04530000
+    CALL ALLOCATE 'SEQHISTY' 'PROD.JOBTRAC.JOBHIST.DATA'                04540000
+    CALL ALLOCATE 'CAPTURE' 'PROD.JOBTRAC.CAPTURE'                      04550000
+    CALL ALLOCATE 'TRACPARM' 'PROD.JOBTRAC.PARMLIB'                     04560000
+    CALL ALLOCATE 'TRACS000' 'PROD.JOBTRAC.SCL000'                      04570000
+   CALL ALLOCATE 'TRACJ000' 'PROD.JOBTRAC.JCLLIB' 'PROQ.ADP.APL2.JCLLIB'04580000
+    CALL ALLOCATE 'TRACT000' 'PROD.JOBTRAC.TEMPJCL'                     04590000
+    CALL ALLOCATE 'TRACD000' 'PROD.JOBTRAC.DOCLIB'                      04600000
+    CALL ALLOCATE 'DATEFILE' 'PROD.JOBTRAC.DATELIB'                     04610000
+    CALL LIBDEF 'ISPMLIB' 'TPPX.JOBTRAC.V3R2M0.TRACMLIB'                04620000
+    CALL LIBDEF 'ISPPLIB' 'TPPX.JOBTRAC.V3R2M0.TRACPLIB'                04630000
+    "SELECT PGM(GJTRVSPF)"                                              04640012
+    END                                                                 04650000
+  WHEN Product='QW'   THEN DO                        /* Chicago-Soft */ 04660012
+    CALL Switch_Applid 'QWRF'                                           04670012
+    CALL LIBDEF 'ISPMLIB'   'IBMUSER.QUICKREF.MESSAGES'                 04680017
+    CALL LIBDEF 'ISPPLIB'   'IBMUSER.QUICKREF.PANELS'                   04690017
+    CALL LIBDEF 'ISPLLIB'   'IBMUSER.QUICKREF.LINKLIB'                  04700017
+    CALL ALLOCATE 'QWREFDD' 'IBMUSER.QUICKREF.DATABASE'                 04710017
+    "SELECT PGM(QWIKREF1) PARM("parm")"                                 04720012
+    END                                                                 04730012
+  WHEN Product='SYSVIEW' THEN DO                        /*  Legent   */ 04740007
+    CALL Switch_Applid 'GSVX'                                           04750000
+    CALL LIBDEF 'ISPPLIB' 'TPPX.PCOMMAND.V61.ISPPLIB'                   04760005
+    CALL LIBDEF 'ISPTLIB' 'TPPX.PCOMMAND.V61.ISPTLIB'                   04770005
+    "SELECT CMD(GSVXSPF) MODE(FSCR) NEWAPPL(GSVX) PASSLIB"              04780005
+    END                                                                 04790000
+  WHEN Product='SAR' THEN DO                            /*  Legent   */ 04800000
+    CALL Switch_Applid 'SAR'                                            04810000
+    IF parm='' THEN parm='PROD.SAR'                                     04820000
+    CALL LIBDEF 'ISPTLIB' 'TPPX.SAR.V6R5M3.ISPTLIB'                     04830000
+    CALL LIBDEF 'ISPPLIB' 'TPPX.SAR.V6R5M3.ISPPLIB'                     04840000
+    "SELECT PGM(SARSPF) PARM("parm") NEWAPPL(SAR) PASSLIB"              04850000
+    END                                                                 04860000
+  WHEN Product='TMS' THEN DO                            /*  CA1/TMS  */ 04870000
+    CALL Switch_Applid 'TMS'                                            04880000
+    CALL LIBDEF 'ISPMLIB' 'SYSV.CAI.CAIISPM'                            04890000
+    CALL LIBDEF 'ISPPLIB' 'SYSV.CAI.CAIISPP'                            04900000
+    CALL LIBDEF 'ISPTLIB' 'SYSV.CAI.CAIISPT'                            04910000
+    "SELECT PGM(TMSIOPRI)"                                              04920000
+    END                                                                 04930000
+  WHEN Product='IOA' THEN DO                            /* 4th dim   */ 04940000
+    CALL Switch_Applid 'CTM'                                            04950000
+    CALL LIBDEF 'ISPMLIB' 'SYSP.IOA.ISMSG'                              04960000
+    CALL LIBDEF 'ISPPLIB' 'SYSP.IOA.PANEL'                              04970000
+    CALL LIBDEF 'ISPSLIB' 'SYSP.IOA.SKEL'                               04980000
+    CALL LIBDEF 'ISPTLIB' 'SYSP.IOA.TABLE'                              04990000
+    CALL LIBDEF 'ISPLLIB' 'SYSP.IOA.LOAD'                               05000000
+    CALL ALTLIB 'CLIST'   'SYSP.IOA.CLIST'                              05010000
+    ADDRESS TSO "CALL 'GSFSOFT.LOAD(LLIBDEF3)'"                         05020021
+    "SELECT CMD(%CTOISPF) MODE(FSCR)"                                   05030021
+    END                                                                 05040000
+  WHEN Product='TCPIPM' THEN DO                    /* David Alcock   */ 05050008
+    CALL Switch_Applid 'TCPM'                                           05060008
+    CALL LIBDEF 'ISPPLIB' 'IBMUSER.PACKAGE.TCPIPM.V17'                  05070017
+    CALL ALTLIB 'EXEC'    'IBMUSER.PACKAGE.TCPIPM.V17'                  05080017
+    "SELECT CMD(%TCPIPM)"                                               05090008
+    END                                                                 05100008
+  WHEN Product='FTPB'   THEN DO                    /* Lionel Dyck    */ 05110009
+    CALL Switch_Applid 'FTP'                                            05120009
+    CALL LIBDEF 'ISPPLIB' 'IBMUSER.FTPB.PANELS'                         05130017
+    CALL ALTLIB 'EXEC'    'IBMUSER.FTPB.EXEC'                           05140017
+    "SELECT CMD(%FTPB)"                                                 05150009
+    END                                                                 05160009
+  WHEN Product='MXI'   THEN DO                     /* Rob Scott   */    05170017
+    CALL Switch_Applid 'MXI'                                            05180017
+    CALL LIBDEF 'ISPLLIB' 'IBMUSER.MXI21.LOAD'                          05190017
+    CALL LIBDEF 'ISPPLIB' 'IBMUSER.MXI21.PANELS'                        05200017
+    CALL LIBDEF 'ISPTLIB' 'IBMUSER.MXI21.TABLES'                        05210017
+    "SELECT CMD(MXI) MODE(FSCR)"                                        05220017
+    END                                                                 05230017
+  WHEN Product='IOF'   THEN DO                /* Triangle Systems */    05240021
+    CAlL Switch_Applid 'IOF'                                            05250021
+    CALL LIBDEF 'ISPPLIB' 'ISR.OEM.ISRPLIB'                             05260021
+    CALL LIBDEF 'ISPTLIB' 'ISR.OEM.ISRTLIB'                             05270021
+    CALL LIBDEF 'ISPMLIB' 'ISR.OEM.ISRMLIB'                             05280021
+    CALL LIBDEF 'ISPSLIB' 'ISR.OEM.ISRSLIB'                             05290021
+    CALL ALTLIB 'CLIST'   'ISR.OEM.CLIST'                               05300021
+    "SELECT PGM(IOFSPF) PARM(" parm ")"                                 05310021
+    END                                                                 05320021
+  OTHERWISE SAY 'Product' Product "is not supported"                    05330000
+  END                                                                   05340000
+                                                                        05350000
+IF RC>8 THEN DO                                                         05360000
+  "VGET ZERRMSG"                                                        05370000
+  IF Zerrmsg\='' THEN                                                   05380000
+    "SETMSG MSG("Zerrmsg") COND"                                        05390000
+  END                                                                   05400000
+                                                                        05410000
+IF RC.ISPLLIB=0 THEN "LIBDEF ISPLLIB"                                   05420000
+IF RC.ISPMLIB=0 THEN "LIBDEF ISPMLIB"                                   05430000
+IF RC.ISPPLIB=0 THEN "LIBDEF ISPPLIB"                                   05440000
+IF RC.ISPSLIB=0 THEN "LIBDEF ISPSLIB"                                   05450000
+IF RC.ISPTLIB=0 THEN "LIBDEF ISPTLIB"                                   05460000
+IF RC.CLIST=0   THEN ADDRESS TSO "ALTLIB DEACT APPL(CLIST)"             05470000
+IF RC.EXEC=0    THEN ADDRESS TSO "ALTLIB DEACT APPL(EXEC)"              05480000
+/* IF Ddn_string \= '' THEN ADDRESS TSO "FREE DD(" Ddn_string ")"  */   05490000
+EXIT                                                                    05500000
+/**********************************************************************/05510000
+/***                        Sub-Routines                            ***/05520000
+/**********************************************************************/05530000
+Switch_applid:                                                          05540000
+  ARG Appl                                                              05550000
+  'VGET (ZAPPLID)'                                                      05560000
+  IF Appl\=ZAPPLID THEN DO                                              05570000
+    "SELECT CMD(%"SYSVAR(SYSICMD) Product Parm ") NEWAPPL(" Appl ")"    05580000
+    EXIT RC                                                             05590000
+    END                                                                 05600000
+  Ddn_string=''                                                         05610000
+  RETURN                                                                05620000
+                                                                        05630000
+LIBDEF:                                                                 05640000
+  ARG ddn dsn                                                           05650000
+  ddn2=LEFT(Product,4,'$')||RIGHT(ddn,4)                                05660000
+  CALL Allocate ddn2 dsn                                                05670000
+  "LIBDEF" ddn "LIBRARY ID("ddn2") COND"                                05680000
+  IF RC>8 THEN SIGNAL ERRMSG                                            05690000
+  INTERPRET 'RC.'ddn '=' rc                                             05700000
+  RETURN                                                                05710000
+                                                                        05720000
+ALTLIB:                                                                 05730000
+  ARG ddn dsn                                                           05740000
+  ddn2=LEFT(Product,4,'$')||LEFT(ddn,4)                                 05750000
+  CALL Allocate ddn2 dsn                                                05760000
+  ADDRESS TSO "ALTLIB ACT APPL("ddn") DDNAME("ddn2")"                   05770000
+  INTERPRET 'RC.'ddn '=' rc                                             05780000
+  RETURN                                                                05790000
+                                                                        05800000
+ALLOCATE:                                                               05810000
+  ARG Ddn2 Dsn.1 dsn.2 dsn.3 dsn.4                                      05820000
+  IF LISTDSI(ddn2 'FILE') \= 16 THEN RETURN                             05830000
+  DO i=1 to 4                                                           05840000
+    if dsn.i='' THEN LEAVE                                              05850000
+    dsn.i="'"dsn.i"'"                                                   05860000
+    x=LISTDSI(dsn.i 'NORECALL')                                         05870000
+    IF x=16 & SYSREASON=9 THEN DO                                       05880000
+      SAY "Data Set" dsn.i 'is migrated; do you want to recall it?'     05890000
+      pull x                                                            05900000
+      If left(x,1)='N' then exit                                        05910000
+      END                                                               05920000
+  END                                                                   05930000
+  ADDRESS TSO "ALLOC DD("ddn2") SHR DS("dsn.1 dsn.2 dsn.3 dsn.4 ")"     05940000
+  Ddn_string = Ddn_string ' ' ddn2                                      05950000
+  RETURN                                                                05960000
+                                                                        05970000
+ERRMSG:                                                                 05980000
+  "VGET ZERRMSG"                                                        05990000
+  IF Zerrmsg\='' THEN                                                   06000000
+    "SETMSG MSG("Zerrmsg")"                                             06010000
+  EXIT RC                                                               06020000

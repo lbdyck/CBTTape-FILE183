@@ -1,0 +1,1402 @@
+//SBGOLOBH JOB (ACCT#),DATA-HANDBOOK,                                   00010004
+// CLASS=A,MSGCLASS=X,COND=(0,NE),                                      00020000
+// NOTIFY=&SYSUID                                                       00030000
+//ASMH EXEC PGM=ASMA90,PARM=(OBJECT,NODECK,NOESD,NORLD,NOXREF)          00040004
+DAHB     TITLE 'DATA AREA HANDBOOK GENERATION PROGRAM - V3.1'           00050001
+DAHANDBK START 0                                                        00060000
+         SPACE 1                                                        00070000
+*---------------------------------------------------------------------* 00080000
+* NAME :       DAHANDBK                                               * 00090000
+*---------------------------------------------------------------------* 00100000
+* DESCRIPTIVE NAME : DATA AREA HANDBOOK GENERATOR                     * 00110000
+*---------------------------------------------------------------------* 00120000
+* FUNCTION :   THIS PROGRAM IS DESIGNED TO GENERATE A DATA AREA       * 00130000
+*              HANDBOOK SIMILIAR TO THE MVS DEBUGGING HANDBOOK.       * 00140000
+*              IT DOES THIS BY :                                      * 00150000
+*              1) READING THE OUTPUT OF AN ASSEMBLY OF ALL MAPPING    * 00160000
+*                 MACROS DESIRED TO BE INCLUDED IN THE HANDBOOK.      * 00170000
+*              2) DETERMINING IF IT HAS A MACRO, COMMENT, DATA        * 00180000
+*                 EQUATE OR 'CALLED' MACRO.                           * 00190000
+*              3) DETERMINE IF THERE IS A LABEL, IF SO THEN THAT IS   * 00200000
+*                 USED FOR THE TABLE OF CONTENTS. IF NOT THEN THE     * 00210000
+*                 MACRO ITSELF BECOMES THE NAME FOR THE TOC.          * 00220000
+*              4) SAVES  OFFSET, SYMBOL AND EQU VALUE.                * 00230000
+*                 NOTE : THE EQU VALUE PRINTED IS EDITED FOR ONLY     * 00240000
+*                        THE SIGNIFICANT BYTE.                        * 00250000
+*              5) AT END OF MACRO DEFINITION - SORT THE SAVED         * 00260000
+*                 ENTRIES TO GENERATE A CROSS-REFERENCE USING         * 00270000
+*                 A SLICK BUBBLE SORT.                                * 00280000
+*---------------------------------------------------------------------* 00290000
+* NOTE 1 :     'CALLED' MACROS ARE DETERMINED BY A GENERATED          * 00300000
+*              COMMENT IDENTIFYING THEM WITH 'IATY' IN COL 50         * 00310000
+*              (THIS IS A JES3 CONVENTION ONLY)                       * 00320000
+* NOTE 2 :     ALL CODE IS ASSUMED TO BE PROPERLY ALIGNED             * 00330000
+*---------------------------------------------------------------------* 00340000
+* PARM :       'L=XX,TITLE'                                           * 00350000
+*              WHERE L=XX IS THE PAGE SIZE AND IS OPTIONAL, AND       * 00360000
+*              IF SPECIFIED MUST BE FIRST.                            * 00370000
+*              ACCEPTED XX VALUE IS FROM 20 UP TO 99 INCLUDED.        * 00380000
+*              THE TITLE CONSISTS OF UP TO 45 CHARACTERS TO BE        * 00390000
+*              PRINTED ON THE TOP AND BOTTOM OF EVERY PAGE.           * 00400000
+*              DEFAULTS : 'L=54,DATA AREA HANDBOOK'                   * 00410000
+*---------------------------------------------------------------------* 00420000
+* JCL :        EXEC PGM=DAHANDBK,PARM='L=XX,TITLE INFORMATION'        * 00430000
+*              INPUT  DD : OUTPUT OF ASSEMBLER                        * 00440000
+*              TITLE  DD : GENERATED TABLE OF CONTENTS                * 00450000
+*              OUTPUT DD : GENERATED HANDBOOK                         * 00460000
+*---------------------------------------------------------------------* 00470000
+         EJECT                                                          00480000
+*---------------------------------------------------------------------* 00490000
+* AUTHOR :     LIONEL DYCK                                            * 00500000
+*              ROCKWELL INTERNATIONAL                                 * 00510000
+*              P.O. BOX 2515                                          * 00520000
+*              SEAL BEACH, CALIF 90740                                * 00530000
+*              (213) 594-1125                                         * 00540000
+*---------------------------------------------------------------------* 00550000
+*              THIS PROGRAM IS A QUICK AND DIRTY ATTEMPT TO REMEDY    * 00560000
+*              WHAT IBM DOES NOT SEE AS A PROBLEM. THIS PROGRAM       * 00570000
+*              COMES WITH NO GUARENTEE ALTHOUGH THE AUTHOR WILL BE    * 00580000
+*              HAPPY TO ACCEPT ANY IMPROVEMENTS THAT YOU MAKE.        * 00590000
+*       NOTE : THIS PROGRAM HAS BEEN TESTED WITH THE JES3 1.3.1       * 00600000
+*              MACROS ASSEMBLED USING THE ASSEMBLER H.                * 00610000
+*---------------------------------------------------------------------* 00620000
+         SPACE 1                                                        00630000
+*---------------------------------------------------------------------* 00640000
+* ORIGIN :     EXTRACTED FROM CBT 92 MAR TAPE,                        * 00650000
+*              FILES 437 - SOURCE ASM                                 * 00660000
+*                    435 - MACROS ASM                                 * 00670000
+*---------------------------------------------------------------------* 00680000
+* MODIFIED :   MOINIL P.A.                                            * 00690000
+*              COMPUTING CENTRE                                       * 00700000
+*              J.R.C. ISPRA ESTABLISHMENT                             * 00710000
+*              21020 ISPRA (VA), ITALY                                * 00720000
+*---------------------------------------------------------------------* 00730000
+* NOTES :   1. ALL CODE RELATIVE TO JES3 IS NOW REMOVED (WE DON'T     * 00740000
+*              HAVE IT AT OUR INSTALLATION).                          * 00750000
+*           2. MACROS CODING NEEDS NO MORE TO BE PROPERLY ALIGNED.    * 00760000
+*---------------------------------------------------------------------* 00770000
+* RETURN CODES :                                                      * 00780000
+*         0 - OK, NORMAL TERMINATION                                  * 00790000
+*         4 - "GFDATE" ERROR CODE                                     * 00800000
+*         8 - "GFDATE" ERROR CODE                                     * 00810000
+*        12 - INVALID LENGTH PARM                                     * 00820000
+*             (DROP PARM SIZE BACK TO 45 OR LESS CHARACTERS)          * 00830000
+*        16 - EXCEEDED 4000 ENTRIES TABLE FOR SYMBOLS                 * 00840000
+*             (CHANGE AT LABEL "NETS")                                * 00850000
+*---------------------------------------------------------------------* 00860000
+         EJECT                                                          00870000
+         YREGS                                                          00880000
+*=====================================================================* 00890000
+*        GENERAL REGISTERS USE :                                      * 00900000
+*        -----------------------                                      * 00910000
+*        R0  = WORK REGISTER                                          * 00920000
+*        R1  = CALL PARM POINTER / WORK REGISTER                      * 00930000
+*        R2  = WORK REGISTER                                          * 00940000
+*        R3  = WORK REGISTER                                          * 00950000
+*        R4  = INPUT LINE POINTER                                     * 00960000
+*        R5  = CURRENT TABLE ENTRY POINTER (BXLE)                     * 00970000
+*        R6  = TABLE ENTRY LENGTH (BXLE)                              * 00980000
+*        R7  = LAST TABLE ENTRY POINTER (BXLE)                        * 00990000
+*        R8  = 1) LINK REGISTER (TO PRINT OUTPUT : DATA AREA)         * 01000000
+*              2) COMPARE ENTRY TABLE POINTER (SORT SYMBOLS)          * 01010000
+*              3) 2ND COLUMN ENTRY TABLE POINTER (PRINT SYMBOLS)      * 01020000
+*        R9  = TABLE ENTRIES COUNTER                                  * 01030000
+*        R10 = UNUSED (FREE FOR 3RD BASE REGISTER IF NEEDED)          * 01040000
+*        R11 = 1ST BASE REGISTER                                      * 01050000
+*        R12 = 2ND BASE REGISTER                                      * 01060000
+*        R13 = SAVE AREA POINTER                                      * 01070000
+*        R14 = CALL LINK / WORK REGISTER                              * 01080000
+*        R15 = CALL ENTRY / WORK REGISTER                             * 01090000
+*=====================================================================* 01100000
+         EJECT                                                          01110000
+NETS     EQU   10000               NUMBER ENTRIES TABLE FOR SYMBOLS     01120001
+         SPACE 1                                                        01130000
+         SAVE  (14,12),,'DATA HANDBOOK V3.1'                            01140001
+         LR    R11,R15                                                  01150001
+         USING DAHANDBK,R11                                             01160001
+         LA    R12,4095(,R11)                                           01170001
+         USING DAHANDBK+4095,R12                                        01180001
+         LR    R14,R13                                                  01190001
+         LA    R13,=9C'SAVEAREA'                                        01200001
+         ST    R14,4(,R13)                                              01210001
+         ST    R13,8(,R14)                                              01220001
+         EJECT                                                          01230000
+*=====================================================================* 01240000
+*        PROCESS THE PARM : THE PARM CAN CONTAIN ANY COMMENT TO BE      01250000
+*        PLACED ON THE TOP AND BOTTOM OF EACH PAGE WITH THE DATE        01260000
+         SPACE 1                                                        01270000
+         L     R1,0(R1)            LOAD ADDR OF PARM                    01280000
+         LH    R2,0(R1)            LOAD LENGTH OF PARM                  01290000
+         LTR   R2,R2               LENGTH OF ZERO                       01300000
+         BNP   NOPARM              NO, BYPASS MOVE                      01310000
+         LA    R3,2(R1)                                                 01320000
+         CLC   2(2,R1),=CL2'L='    LINES PER PAGE SPECIFIED ?           01330000
+         BNE   CKLEN                                                    01340000
+         CH    R2,=H'4'                                                 01350000
+         BL    NOPARM                                                   01360000
+         TM    4(R1),C'0'                                               01370000
+         BNO   BADPARM                                                  01380000
+         TM    5(R1),C'0'                                               01390000
+         BNO   BADPARM                                                  01400000
+         PACK  LINEPPG,4(2,R1)                                          01410000
+         SH    R2,=H'5'            REDUCE LENGTH FOR TITLE MOVE         01420000
+         BNP   NOPARM                                                   01430000
+         CLI   6(R1),C','                                               01440000
+         BNE   BADPARM                                                  01450000
+         LA    R3,5(R1)                                                 01460000
+CKLEN    CH    R2,=H'45'           CHECK MAX LENGTH                     01470000
+         BH    BADPARM             INVALID LENGTH PARM                  01480000
+         BCTR  R2,0                SUBTRACT LENGTH BY 1                 01490000
+         LTR   R2,R2                                                    01500000
+         BNP   NOPARM                                                   01510000
+         EX    R2,*+L'*+4          EXECUTE THE MOVE                     01520000
+         B     CKLPPG                                                   01530000
+         MVC   PARM(*-*),0(R3)     <<EXECUTED>>                         01540000
+MVPARM   MVC   0(*-*,R1),PARM      <<EXECUTED>>                         01550000
+NOPARM   LA    R2,17                                                    01560000
+         MVC   PARM(18),=CL18'DATA AREA HANDBOOK'                       01570000
+CKLPPG   CP    LINEPPG,=PL2'+20'                                        01580000
+         BL    BADPARM             INVALID NUMBER OF LINES PER PAGE     01590000
+         EJECT                                                          01600000
+*=====================================================================* 01610000
+*        INITIALIZATION                                                 01620000
+         SPACE 1                                                        01630000
+         MVC   BPARM,PARM                                               01640000
+         MVC   TPARM,PARM                                               01650000
+         LA    R1,L'PARM-1                                              01660000
+         SR    R1,R2                                                    01670000
+         SRL   R1,1                                                     01680000
+         LA    R1,COVPARM(R1)                                           01690000
+         EX    R2,MVPARM                                                01700000
+         SP    LINEPPG,=PL1'+2'    REDUCE BY 2 FOR BOTTOM OF PAGE       01710000
+         ZAP   COLWK,LINEPPG                                            01720000
+         CVB   R5,COLWK            CONVERT TO BINARY                    01730000
+         SH    R5,=H'5'            REDUCE BY 5 LINES                    01740000
+         ST    R5,COL#             SET COLUMN'S LINES PER PAGE          01750000
+         XR    R4,R4                                                    01760000
+         M     R4,=A(SYML)         MULTIPLY BY ENTRY LENGTH             01770000
+         ST    R5,COL2PD           SET 2ND COLUMN POINTER DISPLACEMENT  01780000
+         TIME  DEC,PRVLINE,DATETYPE=MMDDYYYY,LINKAGE=SYSTEM             01790001
+         UNPK  TLDATE+0(5),PRVLINE+10(3)  YYYY%                         01800001
+         MVI   TLDATE+4,C'/'              YYYY/                         01810001
+         UNPK  TLDATE+5(3),PRVLINE+8(2)   YYYY/MM%                      01820001
+         MVI   TLDATE+7,C'/'              YYYY/MM/                      01830001
+         UNPK  TLDATE+8(3),PRVLINE+9(2)   YYYY/MM/DD%                   01840001
+         MVI   TLDATE+10,C' '             YYYY/MM/DD                    01850001
+         MVC   DATE,TLDATE                                              01860000
+         MVC   COVDATE,TLDATE                                           01870000
+        OPEN   (MAPIN,,BOOKOUT,OUTPUT,TITLE,OUTPUT)                     01880000
+         ZAP   COVWK,LINEPPG                                            01890000
+         CVB   R3,COVWK                                                 01900000
+         XR    R2,R2                                                    01910000
+         LA    R1,3                                                     01920000
+         DR    R2,R1                                                    01930000
+         AR    R2,R3                                                    01940000
+         BCTR  R3,0                                                     01950000
+         STM   R2,R3,CV#2                                               01960000
+         LA    R3,2                PRINT TWICE THE COVER PAGE           01970000
+PT1     PUT    TITLE,COV1                                               01980000
+         L     R2,CV#1                                                  01990000
+PT2     PUT    TITLE,BLANKS                                             02000000
+         BCT   R2,PT2                                                   02010000
+        PUT    TITLE,COV2                                               02020000
+         L     R2,CV#2                                                  02030000
+PT3     PUT    TITLE,BLANKS                                             02040000
+         BCT   R2,PT3                                                   02050000
+        PUT    TITLE,COV3                                               02060000
+         BCT   R3,PT1                                                   02070000
+         L     R2,GFTSIZ                                                02080000
+        GETMAIN R,LV=(R2)                                               02090000
+         ST    R1,TABSTA           SAVE TABLE ADDRESS                   02100000
+         A     R1,TABSIZ                                                02110000
+         L     R2,=A(SYML)         LOAD ENTRY LENGTH                    02120000
+         ST    R2,TABENT           SAVE                                 02130000
+         SR    R1,R2                                                    02140000
+         ST    R1,TABEND           SAVE END OF TABLE ADDRESS            02150000
+         USING TBD,R5                                                   02160000
+         LM    R5,R7,TABLM         R5-R6-R7 = TABLE POINTERS (BXLE)     02170000
+         XC    SYM(SYML),SYM       CLEAR TABLE                          02180000
+         BXLE  R5,R6,*-6                                                02190000
+         LM    R5,R7,TABLM         LOAD IT                              02200000
+         XR    R9,R9               R9 = TABLE ENTRIES COUNTER           02210000
+         LA    R4,PRVLINE                                               02220000
+         EJECT                                                          02230000
+*=====================================================================* 02240000
+*        PROCESS INPUT (ASSEMBLY OUTPUT LISTING)                        02250000
+         SPACE 1                                                        02260000
+         USING ASSLNE,R4                                                02270000
+READ     MVC   PRVLINE(ASSLEN),ASSLNE                                   02280000
+        GET    MAPIN                                                    02290000
+         LR    R4,R1               SAVE -> INPUT RECORD                 02300000
+         TM    ASSSTN+4,C'0'       ANYTHING HERE                        02310000
+         BO    *+L'*+14            YES                                  02320000
+         CLC   ASSFLG(2),=CL2'+ '  NO, MAY BE A GENERATED COMMENT ?     02330000
+         BE    GENED               YES                                  02340000
+         B     READ                NO, KEEP LOOKING                     02350000
+         CLI   ASSFLG,C'*'         COMMENT ?                            02360000
+         BE    READ                                                     02370000
+         CLI   ASSFLG,C'+'         GENERATED CARD ?                     02380000
+         BE    GENED               YES                                  02390000
+         CLI   ASSFLG,C' '         POSSIBLE MACRO CARD ?                02400000
+         BNE   READ                NO, IGNORE IT                        02410000
+*--------------------------------- GET MACRO NAME --------------------* 02420000
+         BAS   R14,GTPTR           GO GET POINTERS                      02430000
+         ICM   R1,B'1111',PTROPE                                        02440000
+         BZ    READ                NO MACRO NAME                        02450000
+         CLC   0(4,R1),=CL4'END '  IS THIS THE END ?                    02460000
+         BE    EOF                 YES, WE CAN STOP HERE                02470000
+         CLC   0(5,R1),=CL5'COPY ' IS THIS A COPY ?                     02480000
+         BE    READ                YES, IGNORE IS                       02490000
+         CLC   0(3,R1),=CL3'DS '   IS THIS A DS ?                       02500000
+         BE    READ                YES, IGNORE IS                       02510000
+         CLC   0(3,R1),=CL3'DC '   IS THIS A DC ?                       02520000
+         BE    READ                YES, IGNORE IS                       02530000
+         CLC   0(4,R1),=CL4'EQU '  IS THIS AN EQU ?                     02540000
+         BE    READ                YES, IGNORE IS                       02550000
+         CLC   0(6,R1),=CL6'DSECT ' IS THIS A DSECT CARD ?              02560000
+         BE    READ                YES, IGNORE IT                       02570000
+         CLC   0(6,R1),=CL6'PRINT ' IS THIS A PRINT CARD ?              02580000
+         BE    READ                YES, IGNORE IT                       02590000
+         CLC   0(5,R1),=CL5'PUSH ' IS THIS A PUSH CARD ?                02600000
+         BE    READ                YES, IGNORE IT                       02610000
+         TM    SW1,SWHMC                                                02620000
+         BO    DOSORT                                                   02630000
+         USING DLDSECT,R8                                               02640000
+DOIT     MVC   SOFF,BLANKS                                              02650000
+         MVC   TITLEMCL(L'TITLEMAC),BLANKS                              02660000
+         L     R2,PTROPE           MACRO NAME                           02670000
+         OI    SW1,SWHMC                                                02680000
+         XR    R1,R1                                                    02690000
+         IC    R1,LGHOPE                                                02700000
+         LA    R0,L'TITLEMCO                                            02710000
+         CLR   R1,R0                                                    02720000
+         BNH   *+L'*+2                                                  02730000
+         LR    R1,R0                                                    02740000
+         BCT   R1,*+L'*+6                                               02750000
+         MVC   TITLEMCO(*-*),0(R2) <<EXECUTED>>                         02760000
+         EX    R1,*-6                                                   02770000
+         ICM   R2,B'1111',PTRLAB   LABEL PRESENT ?                      02780000
+         BZ    MVVL                NO                                   02790000
+         XR    R1,R1                                                    02800000
+         IC    R1,LGHLAB                                                02810000
+         LA    R0,L'TITLEMCL                                            02820000
+         CLR   R1,R0                                                    02830000
+         BNH   *+L'*+2                                                  02840000
+         LR    R1,R0                                                    02850000
+         BCT   R1,*+L'*+6                                               02860000
+         MVC   TITLEMCL(*-*),0(R2) <<EXECUTED>>                         02870000
+         EX    R1,*-6                                                   02880000
+MVVL     ICM   R2,B'1111',PTRVAL   ARGUMENT(S) PRESENT ?                02890000
+         BZ    NOVL                NO                                   02900000
+         XR    R1,R1                                                    02910000
+         IC    R1,LGHVAL                                                02920000
+         LA    R0,L'TITLEMCV                                            02930000
+         CLR   R1,R0                                                    02940000
+         BNH   *+L'*+2                                                  02950000
+         LR    R1,R0                                                    02960000
+         BCT   R1,*+L'*+6                                               02970000
+         MVC   TITLEMCV(*-*),0(R2) <<EXECUTED>>                         02980000
+         EX    R1,*-6                                                   02990000
+NOVL     MVC   TLMAC,TITLEMCO                                           03000000
+         MVC   TLMAC2,BLANKS                                            03010000
+         LA    R1,TLMAC2+L'TLMAC2-1                                     03020000
+         LA    R2,TLMAC+L'TLMAC-1                                       03030000
+         LA    R3,L'TLMAC                                               03040000
+MBLM     CLI   0(R2),C' '                                               03050000
+         BE    MINC                                                     03060000
+         MVC   0(1,R1),0(R2)                                            03070000
+         BCTR  R1,0                                                     03080000
+MINC     BCTR  R2,0                                                     03090000
+         BCT   R3,MBLM                                                  03100000
+         LA    R8,OLINE                                                 03110000
+         MVC   DLSYM,TLMAC                                              03120000
+         BAS   R14,MVDEF           GO MOVE DEFINITION                   03130000
+         NOP   0                   NONE, CONTINUE                       03140000
+         OI    SW1,SWTPG                                                03150000
+         ST    R4,CURPTR           SAVE                                 03160000
+         LA    R4,PRVLINE          CHECK IF PRECEEDED BY A DSECT        03170000
+         BAS   R14,GTPTR           GO GET POINTERS                      03180000
+         ICM   R1,B'1111',PTROPE                                        03190000
+         BZ    *+L'*+10            NO OPERATION NAME                    03200000
+         CLC   0(6,R1),=CL6'DSECT ' IS THIS A DSECT CARD ?              03210000
+         BE    PRVDS               YES                                  03220000
+         L     R4,CURPTR           NO, NONE, RESTORE                    03230000
+         LA    R3,OLINE                                                 03240000
+         BAS   R8,PRTPAGE          GO TO PRINT ON A NEW PAGE            03250000
+         B     READ                                                     03260000
+PRVDS    LA    R8,ALINE                                                 03270000
+         MVC   DLDEF(6),=CL6'DSECT ' SAY DSECT                          03280000
+         BAS   R14,MVLAB           GO MOVE LABEL IF ANY                 03290000
+         LTR   R2,R2               ANY LABEL ?                          03300000
+         BNZ   *+L'*+6             YES                                  03310000
+         MVC   SYM,BLANKS          NO, FORCE DUMMY DSECT                03320000
+         MVC   VAL,BLANKS                                               03330000
+         MVC   VAL+1(5),=CL6'DSECT '                                    03340000
+         MVI   VAL,C'-'                                                 03350000
+         MVI   VAL+6,C'-'                                               03360000
+         MVC   OFF,ASSLOC+2        MOVE OFFSET OF LABEL                 03370000
+         MVC   DLSYM,SYM           MOVE TO OUTPUT LINE                  03380000
+         MVC   TITLENMD,DLSYM                                           03390000
+         LA    R3,DLDEF+5                                               03400000
+         BAS   R14,MVCOM           GO SET COMMENT IF ANY                03410000
+         B     DSCMPL              +0 - OK, COMMENT SET                 03420000
+         LA    R3,ALINE            +4 - "WLINE" ALSO SET                03430000
+         BAS   R8,PRTPAGE          GO TO PRINT ON A NEW PAGE            03440000
+         OI    SW1,SWDPG                                                03450000
+         LA    R3,WLINE                                                 03460000
+         BAS   R8,PRTDATA          GO TO PRINT                          03470000
+         B     DSTERM                                                   03480000
+DSCMPL   LA    R3,ALINE                                                 03490000
+         BAS   R8,PRTPAGE          GO TO PRINT ON A NEW PAGE            03500000
+         OI    SW1,SWDPG                                                03510000
+DSTERM   L     R4,CURPTR           RESTORE                              03520000
+         LA    R3,OLINE                                                 03530000
+         BAS   R8,PRTDATA          GO TO PRINT                          03540000
+         BAS   R14,INCRSYM         GO ADJUST TABLE                      03550000
+         B     READ                                                     03560000
+*--------------------------------- MACRO GENERATED LINE --------------* 03570000
+GENED    CLI   ASSGEN,C'*'         GENERATED COMMENT ?                  03580000
+         BE    CKGCM               YES                                  03590000
+         BAS   R14,GTPTR           GO GET POINTERS                      03600000
+         ICM   R1,B'1111',PTROPE   PSEUDO PRESENT ?                     03610000
+         BZ    READ                NO, SKIP THIS RECORD                 03620000
+         CLC   0(5,R1),=CL5'PUSH ' IS THIS A PUSH ?                     03630000
+         BE    READ                YES, SKIP                            03640000
+         CLC   0(4,R1),=CL4'POP '  IS THIS A POP ?                      03650000
+         BE    READ                YES, SKIP                            03660000
+         LA    R8,OLINE                                                 03670000
+         CLC   0(4,R1),=CL4'EQU '  IS THIS AN EQUATE ?                  03680000
+         BE    ISEQU               YES                                  03690000
+         CLC   0(6,R1),=CL6'DSECT ' IS THIS A DSECT ?                   03700000
+         BE    ISDSECT             YES                                  03710000
+         CLC   0(4,R1),=CL4'ORG '  IS THIS AN ORG ?                     03720000
+         BE    ISORG               YES                                  03730000
+         CLC   0(3,R1),=CL3'DS '   A DS ?                               03740000
+         BE    ISDSDC              YES                                  03750000
+         CLC   0(3,R1),=CL3'DC '   A DC ?                               03760000
+         BE    ISDSDC              YES                                  03770000
+         BAS   R14,MVLAB           GO MOVE LABEL IF ANY                 03780000
+         LTR   R2,R2               LABEL PRESENT ?                      03790000
+         BNZ   INST1L              YES                                  03800000
+         ST    R4,CURPTR           SAVE                                 03810000
+         LA    R4,PRVLINE          CHECK PREVIOUS                       03820000
+         CLI   ASSCNT,C' '         WAS CONTINUATION INDICATED ?         03830000
+         BNE   *+L'*+8             YES, THIS IS A COMMENT CONTINUATION  03840000
+         L     R4,CURPTR           NO, RESTORE                          03850000
+         B     INST2L                                                   03860000
+*- - - - COMMENT CONTINUATION LINE - - - - - - - - - - - - - - - - - -* 03870000
+         L     R4,CURPTR           RESTORE                              03880000
+         LA    R1,ASSGEN+L'ASSGEN-1                                     03890000
+         CLI   0(R1),C' '          SEARCH END OF COMMENT                03900000
+         BNE   *+L'*+4                                                  03910000
+         BCT   R1,*-8                                                   03920000
+         L     R2,PTROPE           GET START OF COMMENT                 03930000
+         ST    R2,PTRCOM           SET IT                               03940000
+         SR    R1,R2                                                    03950000
+         LA    R1,1(R1)                                                 03960000
+         STC   R1,LGHCOM           SET LENGTH OF COMMENT                03970000
+         CLI   LGHCOM,L'DLCOMM                                          03980000
+         BH    MVCM2               NOT IN NORMAL TARGET                 03990000
+MVCM1    LA    R3,DLCOMM                                                04000000
+         BCT   R1,*+L'*+6                                               04010000
+         MVC   0(*-*,R3),0(R2)     <<EXECUTED>>                         04020000
+         EX    R1,*-6                                                   04030000
+         LA    R3,OLINE                                                 04040000
+         BAS   R8,PRTDATA          GO TO PRINT                          04050000
+         B     READ                                                     04060000
+MVCM2    BAS   R15,CMPRSS          TRY TO COMPRESS COMMENT              04070000
+         CLI   ZCMPL,L'DLCOMM                                           04080000
+         BH    MVCM3               ALSO NOT IN NORMAL TARGET            04090000
+         XR    R1,R1                                                    04100000
+         IC    R1,ZCMPL                                                 04110000
+         LA    R2,ZCMPR                                                 04120000
+         B     MVCM1                                                    04130000
+MVCM3    CLI   LGHCOM,L'DLCOMM+6                                        04140000
+         BH    MVCM5               NOT IN ALTERNATE TARGET              04150000
+         XR    R1,R1                                                    04160000
+         IC    R1,LGHCOM                                                04170000
+MVCM4    LA    R3,DLCOMM-6                                              04180000
+         B     MVCM1+L'MVCM1                                            04190000
+MVCM5    CLI   ZCMPL,L'DLCOMM+6                                         04200000
+         BH    MVCM6               AGAIN NOT IN ALTERNATE TARGET        04210000
+         XR    R1,R1                                                    04220000
+         IC    R1,ZCMPL                                                 04230000
+         LA    R2,ZCMPR                                                 04240000
+         B     MVCM4                                                    04250000
+MVCM6    XR    R1,R1               WHAT'S THAT ? MOVE IT COMPRESSED     04260000
+         IC    R1,ZCMPL                                                 04270000
+         LA    R3,DLCOMM+L'DLCOMM-1                                     04280000
+         SR    R3,R1                                                    04290000
+         LA    R2,ZCMPR                                                 04300000
+         B     MVCM4                                                    04310000
+*- - - - INSTRUCTION LINE  - - - - - - - - - - - - - - - - - - - - - -* 04320000
+INST1L   MVC   DLSYM,SYM           MOVE TO OUTPUT LINE                  04330000
+         MVC   OFF,ASSLOC+2        MOVE OFFSET OF LABEL                 04340000
+INST2L   MVC   DLOFF,ASSLOC+2      MOVE OFFSET TO OUTPUT LINE           04350000
+         MVC   SOFF,ASSLOC+2       MOVE OFFSET TO SAVE                  04360000
+         LA    R3,DLDEF            -> OUTPUT DEFINITION                 04370000
+         L     R2,PTROPE                                                04380000
+         XR    R1,R1                                                    04390000
+         IC    R1,LGHOPE                                                04400000
+         BCT   R1,*+L'*+6                                               04410000
+         MVC   0(*-*,R3),0(R2)     <<EXECUTED>>                         04420000
+         EX    R1,*-6                                                   04430000
+         LA    R3,2(R1,R3)                                              04440000
+         ICM   R2,B'1111',PTRVAL                                        04450000
+         BZ    INST3L              NONE, SKIP                           04460000
+         XR    R1,R1                                                    04470000
+         IC    R1,LGHVAL                                                04480000
+         BCT   R1,*+L'*+6                                               04490000
+         MVC   0(*-*,R3),0(R2)     <<EXECUTED>>                         04500000
+         EX    R1,*-6                                                   04510000
+         LA    R3,2(R1,R3)                                              04520000
+INST3L   LA    R0,DLCOMM+L'DLCOMM-1                                     04530000
+         LA    R1,2+L'ASSOBJ(R3)                                        04540000
+         CLR   R1,R0                                                    04550000
+         BNH   INST4L                                                   04560000
+         LA    R3,OLINE                                                 04570000
+         BAS   R8,PRTDATA          GO TO PRINT                          04580000
+         LA    R8,OLINE                                                 04590000
+         LA    R3,DLDEF-2          -> OUTPUT DEFINITION                 04600000
+         B     INST4L+L'INST4L                                          04610000
+INST4L   MVI   0(R3),C':'                                               04620000
+         MVC   2(L'ASSOBJ,R3),ASSOBJ                                    04630000
+         LA    R3,2+L'ASSOBJ(R3)                                        04640000
+         CLI   0(R3),C' '                                               04650000
+         BNE   *+L'*+4                                                  04660000
+         BCT   R3,*-8                                                   04670000
+         LA    R1,2(R3)                                                 04680000
+         CLR   R1,R0                                                    04690000
+         BH    *+L'*+8                                                  04700000
+         MVI   2(R3),C'/'                                               04710000
+         LA    R3,2(R3)                                                 04720000
+         BAS   R14,MVCOM           GO SET COMMENT IF ANY                04730000
+         B     INCMPL              +0 - OK, COMMENT SET                 04740000
+         LA    R3,OLINE            +4 - "WLINE" ALSO SET                04750000
+         BAS   R8,PRTDATA          GO TO PRINT                          04760000
+         LA    R3,WLINE                                                 04770000
+         B     INCMPL+L'INCMPL                                          04780000
+INCMPL   LA    R3,OLINE                                                 04790000
+         BAS   R8,PRTDATA          GO TO PRINT                          04800000
+         BAS   R14,INCRSYM         GO ADJUST TABLE                      04810000
+         B     READ                                                     04820000
+*- - - - EQU LINE - - - - - - - -  - - - - - - - - - - - - - - - - - -* 04830000
+ISEQU    BAS   R14,MVLAB           GO MOVE LABEL IF ANY                 04840000
+         LTR   R2,R2               LABEL PRESENT ?                      04850000
+         BZ    READ                NO, WHAT'S THAT, SKIP                04860000
+         MVC   DLSYM,SYM           MOVE TO OUTPUT LINE                  04870000
+         BAS   R14,MVDEF           GO MOVE DEFINITION                   04880000
+         B     READ                NONE, WHAT'S THAT, SKIP              04890000
+         LA    R3,DLDEF+2(R1)                                           04900000
+         CLC   DLDEF(2),=CL2'* '                                        04910000
+         BNE   NOTSELF                                                  04920000
+         MVC   OFF,ASSAD2+1        MOVE OFFSET OF LABEL (= VALUE)       04930000
+         MVC   DLOFF,OFF           MOVE OFFSET TO OUTPUT LINE           04940000
+         MVC   SOFF,OFF            MOVE OFFSET TO SAVE                  04950000
+         B     SETEQU                                                   04960000
+NOTSELF  MVC   OFF,SOFF                                                 04970000
+         OC    VAL,BLANKS          INITIALIZE VAL AS BLANKS             04980000
+         CLI   ASSAD1+3,C'A'                                            04990000
+         BL    NOTFEQU                                                  05000000
+         MVC   VAL(8),ASSAD1+3                                          05010000
+         MVI   VAL+8,C''''                                              05020000
+         LA    R1,8                                                     05030000
+         B     GOTEQU                                                   05040000
+NOTFEQU  CLC   ASSAD2-1(2),=CL2' 0' 3 BYTE EQU ?                        05050000
+         BE    NOT3EQU                                                  05060000
+         MVC   VAL(6),ASSAD2-1                                          05070000
+         MVI   VAL+6,C''''                                              05080000
+         LA    R1,6                                                     05090000
+         CLI   VAL,C' '            BLANK FOR FIRST ?                    05100000
+         BNE   GOTEQU              NO                                   05110000
+         OI    VAL,C'0'            YES, MAKE ZERO                       05120000
+         B     GOTEQU                                                   05130000
+NOT3EQU  CLC   ASSAD2+1(2),=CL2'00' HALF WORD EQU ?                     05140000
+         BE    NOTHEQU                                                  05150000
+         MVC   VAL(4),ASSAD2+1                                          05160000
+         MVI   VAL+4,C''''                                              05170000
+         LA    R1,4                                                     05180000
+         B     GOTEQU                                                   05190000
+NOTHEQU  MVC   VAL(2),ASSAD2+3     ASSUME 1 BYTE EQU                    05200000
+         MVI   VAL+2,C''''                                              05210000
+         LA    R1,2                                                     05220000
+GOTEQU   EX    R1,CMPRVL                                                05230000
+         BE    SETEQU                                                   05240000
+         LA    R0,DLCOMM+L'DLCOMM-1                                     05250000
+         LA    R2,4(R1,R3)                                              05260000
+         CLR   R2,R0                                                    05270000
+         BNH   CPLEQU                                                   05280000
+         LA    R3,OLINE                                                 05290000
+         BAS   R8,PRTDATA          GO TO PRINT                          05300000
+         LA    R8,OLINE                                                 05310000
+         LA    R3,DLDEF-2          -> OUTPUT DEFINITION                 05320000
+         B     CPLEQU+L'CPLEQU                                          05330000
+CPLEQU   MVI   0(R3),C':'                                               05340000
+         MVC   2(2,R3),=CL2'X'''                                        05350000
+         EX    R1,MOVEVL           MOVE EQU VALUE                       05360000
+         LA    R3,5(R1,R3)                                              05370000
+SETEQU   BAS   R14,MVCOM           GO SET COMMENT IF ANY                05380000
+         B     EQCMPL              +0 - OK, COMMENT SET                 05390000
+         LA    R3,OLINE            +4 - "WLINE" ALSO SET                05400000
+         BAS   R8,PRTDATA          GO TO PRINT                          05410000
+         LA    R8,WLINE                                                 05420000
+         B     EQCMPL+L'EQCMPL                                          05430000
+EQCMPL   LA    R3,OLINE                                                 05440000
+         BAS   R8,PRTDATA          GO TO PRINT                          05450000
+         BAS   R14,INCRSYM         GO ADJUST TABLE                      05460000
+         B     READ                                                     05470000
+CMPRVL   CLC   DLVAL(*-*),VAL      <<EXECUTED>>                         05480000
+MOVEVL   MVC   4(*-*,R3),VAL       <<EXECUTED>>                         05490000
+*- - - - DSECT LINE - - - - - - -  - - - - - - - - - - - - - - - - - -* 05500000
+ISDSECT  BAS   R14,MVLAB           GO MOVE LABEL IF ANY                 05510000
+         LTR   R2,R2               LABEL PRESENT ?                      05520000
+         BNZ   *+L'*+6             YES                                  05530000
+         MVC   SYM,BLANKS          NO, FORCE DUMMY DSECT                05540000
+         MVC   DLSYM,SYM           MOVE TO OUTPUT LINE                  05550000
+         MVC   DLDEF(6),=CL6'DSECT ' SAY DSECT                          05560000
+         MVC   VAL,BLANKS                                               05570000
+         MVC   VAL+1(5),=CL6'DSECT '                                    05580000
+         MVI   VAL,C'-'                                                 05590000
+         MVI   VAL+6,C'-'                                               05600000
+         MVC   OFF,ASSLOC+2        MOVE OFFSET OF LABEL                 05610000
+         MVC   DLOFF,OFF           MOVE OFFSET TO OUTPUT LINE           05620000
+         MVC   SOFF,OFF            MOVE OFFSET TO SAVE                  05630000
+         MVC   TITLENMD,DLSYM                                           05640000
+         LA    R3,DLDEF+5                                               05650000
+         OI    SW1,SWDSH+SWABL+SWDPG                                    05660000
+         BAS   R14,MVCOM           GO SET COMMENT IF ANY                05670000
+         B     IDCMPL              +0 - OK, COMMENT SET                 05680000
+         LA    R3,OLINE            +4 - "WLINE" ALSO SET                05690000
+         BAS   R8,PRTDATA          GO TO PRINT                          05700000
+         LA    R3,WLINE                                                 05710000
+         B     IDCMPL+L'IDCMPL                                          05720000
+IDCMPL   LA    R3,OLINE                                                 05730000
+         BAS   R8,PRTDATA          GO TO PRINT                          05740000
+         BAS   R14,INCRSYM         GO ADJUST TABLE                      05750000
+         B     READ                                                     05760000
+*- - - - ORG LINE - - - - - - - -  - - - - - - - - - - - - - - - - - -* 05770000
+ISORG    MVC   DLDEF(4),=CL4'ORG ' SAY ORG                              05780000
+         MVC   DLOFF,ASSAD2+1      MOVE OFFSET TO OUTPUT LINE           05790000
+         ICM   R2,B'1111',PTRVAL   -> INPUT DEFINITION                  05800000
+         BZ    ISORGN              NONE, SKIP                           05810000
+         XR    R1,R1                                                    05820000
+         IC    R1,LGHVAL                                                05830000
+         BCT   R1,*+L'*+6                                               05840000
+         MVC   DLDEF+4(*-*),0(R2)  <<EXECUTED>>                         05850000
+         EX    R1,*-6                                                   05860000
+ISORGN   OI    SW1,SWDSH                                                05870000
+         LA    R3,OLINE                                                 05880000
+         BAS   R8,PRTDATA          GO TO PRINT                          05890000
+         B     READ                                                     05900000
+*- - - - DS-DC LINE - - - - - - -  - - - - - - - - - - - - - - - - - -* 05910000
+ISDSDC   BAS   R14,MVDEF           GO MOVE DEFINITION                   05920000
+         B     READ                NONE, WHAT'S THAT, SKIP              05930000
+         LA    R3,DLDEF+2(R1)                                           05940000
+         BAS   R14,MVLAB           GO MOVE LABEL IF ANY                 05950000
+         LTR   R2,R2               LABEL PRESENT ?                      05960000
+         BZ    *+L'*+12            NO, SKIP                             05970000
+         MVC   DLSYM,SYM           MOVE TO OUTPUT LINE                  05980000
+         MVC   OFF,ASSLOC+2        MOVE OFFSET OF LABEL                 05990000
+         MVC   DLOFF,ASSLOC+2      MOVE OFFSET TO OUTPUT LINE           06000000
+         MVC   SOFF,ASSLOC+2       MOVE OFFSET TO SAVE                  06010000
+         BAS   R14,MVCOM           GO SET COMMENT IF ANY                06020000
+         B     ISCMPL              +0 - OK, COMMENT SET                 06030000
+         LA    R3,OLINE            +4 - "WLINE" ALSO SET                06040000
+         BAS   R8,PRTDATA          GO TO PRINT                          06050000
+         LA    R8,WLINE                                                 06060000
+         B     ISCMPL+L'ISCMPL                                          06070000
+ISCMPL   LA    R3,OLINE                                                 06080000
+         BAS   R8,PRTDATA          GO TO PRINT                          06090000
+         BAS   R14,INCRSYM         GO ADJUST TABLE                      06100000
+         B     READ                                                     06110000
+*- - - - COMMENT LINE - - - - - -  - - - - - - - - - - - - - - - - - -* 06120000
+CKGCM    CLI   ASSGEN+1,C' '       PROCESS CONTINUATION IF ANY          06130000
+         BNE   READ                NOT FOR ME, IGNORE                   06140000
+         CLC   ASSGEN+1(50),BLANKS                                      06150000
+         BE    READ                PROBABLY BLANKS, IGNORE              06160000
+         CLC   ASSGEN+1(20),BLANKS                                      06170000
+         BNE   READ                NOT FOR ME, IGNORE                   06180000
+         BAS   R14,GTPTR           GO GET POINTERS                      06190000
+         LA    R8,OLINE                                                 06200000
+         BAS   R14,MVCOMS          GO SET COMMENT IF ANY                06210000
+         LA    R3,OLINE                                                 06220000
+         BAS   R8,PRTDATA          GO TO PRINT                          06230000
+         B     READ                                                     06240000
+         DROP  R8                                                       06250000
+         DROP  R4                                                       06260000
+         EJECT                                                          06270000
+*=====================================================================* 06280000
+*        PRINT CROSS REFERENCE LIST                                     06290000
+         SPACE 1                                                        06300000
+*------- SORT THE SYMBOLS TABLE                                         06310000
+         SPACE 1                                                        06320000
+EOF      OI    SW2,SWEOF                                                06330000
+         SPACE 1                                                        06340000
+DOSORT   NI    SW1,255-SWHMC                                            06350000
+         LTR   R9,R9               ANY TO SORT                          06360000
+         BNP   OFFCROS             NO, SKIP IT                          06370000
+        PUT    BOOKOUT,DASHLINE                                         06380000
+         BAS   R8,PRTBOTT          GO TO PRINT BOTTOM                   06390000
+         LM    R5,R6,TABSTA        -> TABLE                             06400000
+SORTL1   BCT   R9,*+L'*+4          COUNT OF ENTRIES TO SORT             06410000
+         B     ENDSORT                                                  06420000
+         LR    R7,R9                                                    06430000
+         LA    R8,0(R5,R6)                                              06440000
+         USING TBDBIS,R8                                                06450000
+SORTL2   CLC   SYM,SYMB                                                 06460000
+         BL    BUMPIT                                                   06470000
+         BH    *+L'*+10                                                 06480000
+         CLC   PGE,PGEB                                                 06490000
+         BNH   BUMPIT                                                   06500000
+         XC    SYM(SYML),SYMB      SWAP                                 06510000
+         XC    SYMB(SYML),SYM      ENTRIES                              06520000
+         XC    SYM(SYML),SYMB      QUICKLY                              06530000
+BUMPIT   AR    R8,R6                                                    06540000
+         BCT   R7,SORTL2                                                06550000
+         AR    R5,R6                                                    06560000
+         B     SORTL1                                                   06570000
+         DROP  R8                                                       06580000
+         SPACE 1                                                        06590000
+*------- PRINT THE SYMBOLS TABLE                                        06600000
+         SPACE 1                                                        06610000
+ENDSORT  LM    R5,R7,TABLM                                              06620000
+         LR    R8,R5               -> TO FIRST COLUMN                   06630000
+PSTRT    L     R3,COL#             ENTRIES PER COLUMN VALUE             06640000
+         CLR   R5,R7               END OF TABLE ?                       06650000
+         BH    OFFCROS             YES                                  06660000
+         CLI   SYM,0               NO, NULL ENTRY ?                     06670000
+         BE    OFFCROS             ALL DONE                             06680000
+         A     R8,COL2PD           AND POINT TO 2ND COLUMN              06690000
+         USING TBDBIS,R8                                                06700000
+         AP    PAGECTR,=PL1'+1'                                         06710000
+         UNPK  PAGE(5),PAGECTR                                          06720000
+         OI    PAGE+4,C'0'                                              06730000
+        PUT    BOOKOUT,TL1                                              06740000
+        PUT    BOOKOUT,TLCR                                             06750000
+        PUT    BOOKOUT,BLANKS                                           06760000
+        PUT    BOOKOUT,CTITLE                                           06770000
+        PUT    BOOKOUT,CTD                                              06780000
+PLOOP    CLR   R5,R7               END OF TABLE ?                       06790000
+         BH    ENDTBL              YES                                  06800000
+         CLI   SYM,0               NO, NULL ENTRY ?                     06810000
+         BE    ENDTBL              YES, ALL DONE                        06820000
+         MVC   COLSYM,SYM                                               06830000
+         MVC   COLOFF,OFF                                               06840000
+         MVC   COLPGE,PGE                                               06850000
+         CLI   VAL,C'-'                                                 06860000
+         BNE   *+L'*+10                                                 06870000
+         MVC   COLX1(L'VAL),VAL                                         06880000
+         B     NOVALA                                                   06890000
+         CLI   VAL,C'A'                                                 06900000
+         BL    NOVALA                                                   06910000
+         MVC   COLX1,=CL2'X'''                                          06920000
+         MVC   COLVAL,VAL                                               06930000
+         OC    COLOFF,BLANKS       INSURE REAL CHARACTERS               06940000
+NOVALA   TM    SW2,SWLCB                                                06950000
+         BO    NOVALB                                                   06960000
+         CLR   R8,R7               END OF TABLE ?                       06970000
+         BH    *+L'*+8             YES                                  06980000
+         CLI   SYMB,0              NO, NULL ENTRY ?                     06990000
+         BNE   *+L'*+8             NO                                   07000000
+         OI    SW2,SWLCB           YES                                  07010000
+         B     NOVALB                                                   07020000
+         MVC   COLSYMB,SYMB                                             07030000
+         MVC   COLOFFB,OFFB                                             07040000
+         MVC   COLPGEB,PGEB                                             07050000
+         CLI   VALB,C'-'                                                07060000
+         BNE   *+L'*+10                                                 07070000
+         MVC   COLX1B(L'VALB),VALB                                      07080000
+         B     NOVALB                                                   07090000
+         CLI   VALB,C'A'                                                07100000
+         BL    NOVALB                                                   07110000
+         MVC   COLX1B,=CL2'X'''                                         07120000
+         MVC   COLVALB,VALB                                             07130000
+         OC    COLOFFB,BLANKS      INSURE REAL CHARACTERS               07140000
+         DROP  R8                                                       07150000
+NOVALB  PUT    BOOKOUT,OLINE                                            07160000
+         MVC   OLINE,BLANKS        CLEAR OUTPUT LINE                    07170000
+         AR    R5,R6                                                    07180000
+         AR    R8,R6                                                    07190000
+         BCT   R3,PLOOP                                                 07200000
+         TM    SW2,SWLCB                                                07210000
+         BZ    *+L'*+8                                                  07220000
+ENDTBL   NI    SW2,255-SWLCB                                            07230000
+         OI    SW2,SWECR                                                07240000
+         MVC   BPAGE1,PAGE                                              07250000
+         MVC   BPAGE2,PAGE                                              07260000
+         MVC   BOTMAC1,TLMAC                                            07270000
+         MVC   BOTMAC2,TLMAC2                                           07280000
+         LTR   R3,R3                                                    07290000
+         BNP   DLSTSX                                                   07300000
+CKLSTS   PUT   BOOKOUT,BLANKS                                           07310000
+         BCT   R3,CKLSTS                                                07320000
+DLSTSX  PUT    BOOKOUT,BOTTEMTL                                         07330000
+        PUT    BOOKOUT,BOTTEMTO                                         07340000
+         TM    SW2,SWECR                                                07350000
+         BO    OFFCROS                                                  07360000
+         LR    R5,R8               -> TO NEXT FIRST COLUMN              07370000
+         B     PSTRT                                                    07380000
+         SPACE 1                                                        07390000
+*------- RESET THE SYMBOLS TABLE (BACK TO THE NEXT)                     07400000
+         SPACE 1                                                        07410000
+OFFCROS  TM    SW2,SWEOF                                                07420000
+         BO    STOPALL                                                  07430000
+         NI    SW2,255-SWECR-SWLCB                                      07440000
+         LM    R5,R7,TABLM                                              07450000
+         XC    SYM(SYML),SYM       CLEAR TABLE                          07460000
+         BXLE  R5,R6,*-6                                                07470000
+         LM    R5,R7,TABLM                                              07480000
+         XR    R9,R9               INITIALIAZE COUNTER                  07490000
+         B     DOIT                                                     07500000
+         EJECT                                                          07510000
+*=====================================================================* 07520000
+*        R O U T I N E S                                                07530000
+         SPACE 1                                                        07540000
+         USING ASSLNE,R4                                                07550000
+         SPACE 1                                                        07560000
+*- - - - - - - - - - - - - - - - - GET POINTERS ROUTINE - - - - - - - - 07570000
+*              R0-R1-R2-R3 = WORK REGISTERS                             07580000
+*              R4 = INPUT LINE POINTER                                  07590000
+*              R14 = LINK REGISTER                                      07600000
+*              AT END : POINTERS TO LABEL/OPERATION/VALUE/COMMENT SET   07610000
+GTPTR    LA    R0,L'ASSGEN                                              07620000
+         LA    R1,ASSGEN                                                07630000
+         XC    SCANS(SCANL),SCANS                                       07640000
+         CLI   0(R1),C'*'          COMMENT LINE ?                       07650000
+         BE    GTPTRC1             YES                                  07660000
+         CLI   0(R1),C' '          NO, LABEL PRESENT ?                  07670000
+         BE    GTPTRO1             NO                                   07680000
+         ST    R1,PTRLAB           YES, SET LABEL START POINTER         07690000
+         LR    R3,R1                                                    07700000
+GTPTRL1  LA    R1,1(R1)                                                 07710000
+         BCT   R0,*+L'*+4                                               07720000
+         B     *+L'*+8                                                  07730000
+         CLI   0(R1),C' '                                               07740000
+         BNE   GTPTRL1                                                  07750000
+         LR    R2,R1                                                    07760000
+         SR    R2,R3                                                    07770000
+         STC   R2,LGHLAB           SET LABEL LENGTH                     07780000
+         LTR   R0,R0                                                    07790000
+         BZR   R14                                                      07800000
+GTPTRO1  LA    R1,1(R1)            SEARCH NEXT                          07810000
+         BCT   R0,*+L'*+2                                               07820000
+         BR    R14                                                      07830000
+         CLI   0(R1),C' '                                               07840000
+         BE    GTPTRO1                                                  07850000
+         ST    R1,PTROPE           SET OPERATION POINTER                07860000
+         LR    R3,R1                                                    07870000
+GTPTRO2  LA    R1,1(R1)                                                 07880000
+         BCT   R0,*+L'*+4                                               07890000
+         B     *+L'*+8                                                  07900000
+         CLI   0(R1),C' '                                               07910000
+         BNE   GTPTRO2                                                  07920000
+         LR    R2,R1                                                    07930000
+         SR    R2,R3                                                    07940000
+         STC   R2,LGHOPE           SET OPERATION LENGTH                 07950000
+         LTR   R0,R0                                                    07960000
+         BZR   R14                                                      07970000
+         CLC   0(6,R3),=CL6'DSECT ' IS THIS A DSECT ?                   07980000
+         BE    GTPTRC1             YES                                  07990000
+GTPTRV1  LA    R1,1(R1)            SEARCH NEXT                          08000000
+         BCT   R0,*+L'*+2                                               08010000
+         BR    R14                                                      08020000
+         CLI   0(R1),C' '                                               08030000
+         BE    GTPTRV1                                                  08040000
+         ST    R1,PTRVAL           SET VALUE POINTER                    08050000
+         LR    R3,R1                                                    08060000
+         NI    SW2,255-SWQUO                                            08070000
+GTPTRV2  LA    R1,1(R1)                                                 08080000
+         BCT   R0,*+L'*+4                                               08090000
+         B     GTPTRV5                                                  08100000
+         TM    SW2,SWQUO                                                08110000
+         BO    GTPTRV3                                                  08120000
+         CLI   0(R1),C''''         QUOTE ?                              08130000
+         BNE   GTPTRV4             NO                                   08140000
+         OI    SW2,SWQUO                                                08150000
+         B     GTPTRV2                                                  08160000
+GTPTRV3  CLI   0(R1),C''''         QUOTE ?                              08170000
+         BNE   GTPTRV2             NO                                   08180000
+         NI    SW2,255-SWQUO                                            08190000
+         B     GTPTRV2                                                  08200000
+GTPTRV4  CLI   0(R1),C' '                                               08210000
+         BNE   GTPTRV2                                                  08220000
+GTPTRV5  LR    R2,R1                                                    08230000
+         SR    R2,R3                                                    08240000
+         STC   R2,LGHVAL           SET VALUE LENGTH                     08250000
+         LTR   R0,R0                                                    08260000
+         BZR   R14                                                      08270000
+GTPTRC1  LA    R1,1(R1)            SEARCH NEXT                          08280000
+         BCT   R0,*+L'*+2                                               08290000
+         BR    R14                                                      08300000
+         CLI   0(R1),C' '                                               08310000
+         BE    GTPTRC1                                                  08320000
+         CLI   0(R1),C'-'          COMMENT ALIGNMENT ?                  08330000
+         BE    GTPTRC1             YES                                  08340000
+         CLI   0(R1),C'.'                                               08350000
+         BE    GTPTRC1             YES                                  08360000
+         CLI   0(R1),C','                                               08370000
+         BE    GTPTRC1             YES                                  08380000
+         ST    R1,PTRCOM           SET COMMENT POINTER                  08390000
+         LA    R1,ASSGEN+L'ASSGEN-1                                     08400000
+         CLI   0(R1),C' '                                               08410000
+         BNE   *+L'*+6                                                  08420000
+         BCTR  R1,0                                                     08430000
+         BCT   R0,*-10                                                  08440000
+         STC   R0,LGHCOM           SET COMMENT LENGTH                   08450000
+         BR    R14                                                      08460000
+*- - - - - - - - - - - - - - - - - MOVE LABEL ROUTINE - - - - - - - - - 08470000
+*              R0-R1 = WORK REGISTERS                                   08480000
+*              R2 = LABEL POINTER (AT EXIT)                             08490000
+*              R5 = CURRENT ENTRY TABLE POINTER                         08500000
+*              R14 = LINK REGISTER                                      08510000
+*              AT END : SYMBOL (LABEL) SET IN TABLE                     08520000
+MVLAB    ICM   R2,B'1111',PTRLAB   LABEL PRESENT ?                      08530000
+         BZR   R14                 NO                                   08540000
+         MVC   SYM,BLANKS          YES, MOVE LABEL                      08550000
+         LA    R0,L'SYM                                                 08560000
+         XR    R1,R1                                                    08570000
+         IC    R1,LGHLAB                                                08580000
+         CLR   R1,R0                                                    08590000
+         BNH   *+L'*+2                                                  08600000
+         LR    R1,R0               TRUNCATE LABEL                       08610000
+         BCT   R1,*+L'*+6                                               08620000
+         MVC   SYM(*-*),0(R2)      <<EXECUTED>>                         08630000
+         EX    R1,*-6                                                   08640000
+         BR    R14                                                      08650000
+*- - - - - - - - - - - - - - - - - MOVE DEFINITION ROUTINE  - - - - - - 08660000
+*              R1 = DEFINITION LENGTH - 1 (AT EXIT + 4)                 08670000
+*              R2 = DEFINITION POINTER (AT EXIT + 4)                    08680000
+*              R8 = OUTPUT LINE POINTER                                 08690000
+*              R14 = LINK REGISTER                                      08700000
+*                    RETURN : +0 - NONE                                 08710000
+*                             +4 - DEFINITION SET IN CURRENT LINE       08720000
+         USING DLDSECT,R8                                               08730000
+MVDEF    ICM   R2,B'1111',PTRVAL   -> INPUT DEFINITION                  08740000
+         BZR   R14                 NONE, BACK                           08750000
+         XR    R1,R1                                                    08760000
+         IC    R1,LGHVAL                                                08770000
+         BCT   R1,*+L'*+6                                               08780000
+         MVC   DLDEF(*-*),0(R2)    <<EXECUTED>>                         08790000
+         EX    R1,*-6                                                   08800000
+         B     4(R14)                                                   08810000
+*- - - - - - - - - - - - - - - - - MOVE COMMENT ROUTINE - - - - - - - - 08820000
+*              R0-R1-R2 = WORK REGISTERS                                08830000
+*              R3 = CURRENT LINE CHECK POINTER                          08840000
+*              R8 = OUTPUT LINE POINTER                                 08850000
+*              R14 = LINK REGISTER                                      08860000
+*              R15 = WORK REGISTER                                      08870000
+*                    RETURN : +0 - OK, COMMENT SET IN CURRENT LINE      08880000
+*                             +4 - COMMENT SET IN "WLINE"               08890000
+MVCOM    OC    PTRCOM,PTRCOM                                            08900000
+         BZR   R14                 NONE                                 08910000
+         CLI   0(R3),C' '                                               08920000
+         BNE   *+L'*+4                                                  08930000
+         BCT   R3,*-8                                                   08940000
+         LA    R3,3(R3)            ADDRESS WHERE SET COMMENT            08950000
+         LA    R0,DLCOMM+L'DLCOMM                                       08960000
+         SR    R0,R3                                                    08970000
+         STC   R0,LAVSP            LENGTH OF AVAILABLE SPACE            08980000
+         CLC   LGHCOM,LAVSP                                             08990000
+         BH    MVCOM5              AVAILABLE SPACE TOO SHORT            09000000
+         CLI   LGHCOM,L'DLCOMM                                          09010000
+         BH    MVCOM3              NOT IN NORMAL TARGET                 09020000
+         XR    R1,R1                                                    09030000
+         IC    R1,LGHCOM                                                09040000
+         L     R2,PTRCOM                                                09050000
+MVCOM1   LA    R0,DLCOMM                                                09060000
+         CLR   R3,R0                                                    09070000
+         BNL   MVCOM2                                                   09080000
+         LR    R3,R0                                                    09090000
+MVCOM2   BCT   R1,*+L'*+6                                               09100000
+         MVC   0(*-*,R3),0(R2)     <<EXECUTED>>                         09110000
+         EX    R1,*-6                                                   09120000
+         BR    R14                                                      09130000
+MVCOM3   BAS   R15,CMPRSS          TRY TO COMPRESS COMMENT              09140000
+         CLI   ZCMPL,L'DLCOMM                                           09150000
+         BH    MVCOM4              ALSO NOT IN NORMAL TARGET            09160000
+         XR    R1,R1                                                    09170000
+         IC    R1,ZCMPL                                                 09180000
+         LA    R2,ZCMPR                                                 09190000
+         B     MVCOM1                                                   09200000
+MVCOM4   XR    R1,R1                                                    09210000
+         IC    R1,LGHCOM                                                09220000
+         L     R2,PTRCOM                                                09230000
+         B     MVCOM2                                                   09240000
+MVCOM5   BAS   R15,CMPRSS          TRY TO COMPRESS COMMENT              09250000
+         CLC   ZCMPL,LAVSP                                              09260000
+         BH    MVCOM6              AGAIN AVAILABLE SPACE TOO SHORT      09270000
+         XR    R1,R1                                                    09280000
+         IC    R1,ZCMPL                                                 09290000
+         LA    R2,ZCMPR                                                 09300000
+         B     MVCOM2                                                   09310000
+MVCOM6   MVC   WLINE,BLANKS                                             09320000
+         CLI   LGHCOM,L'DLCOMM                                          09330000
+         BH    MVCOM7              NOT IN NORMAL TARGET                 09340000
+         XR    R1,R1                                                    09350000
+         IC    R1,LGHCOM                                                09360000
+         L     R2,PTRCOM                                                09370000
+         LA    R3,WLINE+(DLCOMM-DLDSECT)                                09380000
+         B     MVCOM2                                                   09390000
+MVCOM7   CLI   ZCMPL,L'DLCOMM                                           09400000
+         BH    MVCOM11             AGAIN NOT IN NORMAL TARGET           09410000
+         LA    R3,WLINE+(DLCOMM-DLDSECT)                                09420000
+MVCOM8   XR    R1,R1                                                    09430000
+         IC    R1,ZCMPL                                                 09440000
+MVCOM9   LA    R2,ZCMPR                                                 09450000
+MVCOM10  BCT   R1,*+L'*+6                                               09460000
+         MVC   0(*-*,R3),0(R2)     <<EXECUTED>>                         09470000
+         EX    R1,*-6                                                   09480000
+         B     4(R14)                                                   09490000
+MVCOM11  CLI   LGHCOM,L'DLCOMM+6                                        09500000
+         BH    MVCOM12             NOT IN ALTERNATE TARGET              09510000
+         LA    R3,WLINE+(DLCOMM-6-DLDSECT)                              09520000
+         XR    R1,R1                                                    09530000
+         IC    R1,LGHCOM                                                09540000
+         L     R2,PTRCOM                                                09550000
+         B     MVCOM10                                                  09560000
+MVCOM12  CLI   ZCMPL,L'DLCOMM+6                                         09570000
+         BH    MVCOM13             AGAIN NOT IN ALTERNATE TARGET        09580000
+         LA    R3,WLINE+(DLCOMM-6-DLDSECT)                              09590000
+         B     MVCOM8                                                   09600000
+MVCOM13  XR    R1,R1               WHAT'S THAT ? MOVE IT COMPRESSED     09610000
+         IC    R1,ZCMPL                                                 09620000
+         LA    R3,WLINE+(DLCOMM+L'DLCOMM-1-DLDSECT)                     09630000
+         SR    R3,R1                                                    09640000
+         B     MVCOM9                                                   09650000
+*------------- "MVCOMS" : SPECIAL PROCESS FOR GENERATED COMMENT         09660000
+MVCOMS   OC    PTRCOM,PTRCOM                                            09670000
+         BZR   R14                 NONE                                 09680000
+         CLI   LGHCOM,L'DLCOMM                                          09690000
+         BH    MVCOMS2             NOT IN NORMAL TARGET                 09700000
+         XR    R1,R1                                                    09710000
+         IC    R1,LGHCOM                                                09720000
+         L     R2,PTRCOM                                                09730000
+MVCOMS1  BCT   R1,*+L'*+6                                               09740000
+         MVC   DLCOMM(*-*),0(R2)   <<EXECUTED>>                         09750000
+         EX    R1,*-6                                                   09760000
+         BR    R14                                                      09770000
+MVCOMS2  BAS   R15,CMPRSS          TRY TO COMPRESS COMMENT              09780000
+         CLI   ZCMPL,L'DLCOMM                                           09790000
+         BH    MVCOMS3             ALSO NOT IN NORMAL TARGET            09800000
+         LA    R2,ZCMPR                                                 09810000
+         XR    R1,R1                                                    09820000
+         IC    R1,ZCMPL                                                 09830000
+         B     MVCOMS1                                                  09840000
+MVCOMS3  CLI   ZCMPL,L'DLCOMM+6                                         09850000
+         BH    MVCOMS4             AGAIN NOT IN ALTERNATE TARGET        09860000
+         XR    R1,R1                                                    09870000
+         IC    R1,ZCMPL                                                 09880000
+         LA    R2,ZCMPR                                                 09890000
+         BCT   R1,*+L'*+6                                               09900000
+         MVC   DLCOMM-6(*-*),0(R2) <<EXECUTED>>                         09910000
+         EX    R1,*-6                                                   09920000
+         BR    R14                                                      09930000
+MVCOMS4  XR    R1,R1               WHAT'S THAT ? MOVE IT COMPRESSED     09940000
+         IC    R1,ZCMPL                                                 09950000
+         LA    R2,ZCMPR                                                 09960000
+         LA    R3,DLCOMM+L'DLCOMM-1                                     09970000
+         SR    R3,R1                                                    09980000
+         BCT   R1,*+L'*+6                                               09990000
+         MVC   0(*-*,R3),0(R2)     <<EXECUTED>>                         10000000
+         EX    R1,*-6                                                   10010000
+         BR    R14                                                      10020000
+*------------- "CMPRSS" : LOCAL COMPRESS SUBROUTINE                     10030000
+CMPRSS   MVC   ZCMPR,BLANKS        R15 = LOCAL LINK REGISTER            10040000
+         MVI   ZCMPL,0             R0-R1-R2 = WORK REGISTERS            10050000
+         XR    R0,R0                                                    10060000
+         IC    R0,LGHCOM                                                10070000
+         LA    R1,ZCMPR                                                 10080000
+         L     R2,PTRCOM                                                10090000
+CMPRSS1  MVC   0(1,R1),0(R2)                                            10100000
+         LA    R1,1(R1)                                                 10110000
+         CLI   0(R2),C' '                                               10120000
+         BE    CMPRSS2                                                  10130000
+         LA    R2,1(R2)                                                 10140000
+         BCT   R0,CMPRSS1                                               10150000
+         B     CMPRSS3                                                  10160000
+CMPRSS2  LA    R2,1(R2)                                                 10170000
+         BCT   R0,*+L'*+4                                               10180000
+         B     CMPRSS3                                                  10190000
+         CLI   0(R2),C' '                                               10200000
+         BE    CMPRSS2                                                  10210000
+         B     CMPRSS1                                                  10220000
+CMPRSS3  LA    R2,ZCMPR                                                 10230000
+         SR    R1,R2                                                    10240000
+         STC   R1,ZCMPL                                                 10250000
+         BR    R15                                                      10260000
+         DROP  R8                                                       10270000
+*- - - - - - - - - - - - - - - - - BUMP TABLE ROUTINE - - - - - - - - - 10280000
+*              R4-R5-R6 = TABLE POINTERS (BXLE)                         10290000
+*              R9 = TABLE ENTRIES COUNTER                               10300000
+*              R14 = LINK REGISTER                                      10310000
+*              AT END : TABLE ENTRY POINTER SET                         10320000
+INCRSYM  CLI   SYM,0               IS ENTRY USED ?                      10330000
+         BER   R14                 NO, RE-USE IT                        10340000
+         MVC   PGE,PAGE            YES, SET CURRENT PAGE                10350000
+         LA    R9,1(R9)            THEN INCREMENT COUNTER               10360000
+         BXLE  R5,R6,0(R14)        BRANCH IF NEXT ENTRY AVAILABLE       10370000
+         B     TBOVFL              NO MORE, END OF TABLE                10380000
+*- - - - - - - - - - - - - - - - - PRINT DATA AREA ROUTINE  - - - - - - 10390000
+*              R0-R1 = WORK REGISTERS                                   10400000
+*              R3 = LINE DATA AREA POINTER                              10410000
+*              R8 = LINK REGISTER                                       10420000
+*              R14-R15 = WORK REGISTERS                                 10430000
+*              AT END : LINE PRINTED AND CLEARED                        10440000
+         USING DLDSECT,R3                                               10450000
+PRTDATA  CLC   DLOFF,BLANKS        <- NORMAL PRINT ENTRY                10460000
+         BE    PRTNDSL                                                  10470000
+        PUT    BOOKOUT,DASHLINE                                         10480000
+PRTNDSL  TM    SW1,SWABL+SWDSH     END OF PAGE CHECK                    10490000
+         BZ    *+L'*+16                                                 10500000
+         BM    *+L'*+6                                                  10510000
+         AP    LINECTR,=PL1'+1'                                         10520000
+         AP    LINECTR,=PL1'+1'                                         10530000
+         AP    LINECTR,=PL1'+1'                                         10540000
+         CP    LINECTR,LINEPPG                                          10550000
+         BL    PRTPUTO                                                  10560000
+         TM    SW1,SWABL+SWDSH                                          10570000
+         BZ    *+L'*+16                                                 10580000
+         BM    *+L'*+6                                                  10590000
+         SP    LINECTR,=PL1'+1'                                         10600000
+         SP    LINECTR,=PL1'+1'                                         10610000
+         SP    LINECTR,=PL1'+1'                                         10620000
+         ST    R8,SVRET                                                 10630000
+         BAS   R8,PRTBOTT          GO TO PRINT BOTTOM                   10640000
+         L     R8,SVRET                                                 10650000
+PRTPAGE  ZAP   LINECTR,=PL1'+4'    <- NEW PAGE PRINT ENTRY              10660000
+         TM    SW1,SWABL+SWDSH                                          10670000
+         BZ    *+L'*+16                                                 10680000
+         BM    *+L'*+6                                                  10690000
+         AP    LINECTR,=PL1'+1'                                         10700000
+         AP    LINECTR,=PL1'+1'                                         10710000
+         AP    PAGECTR,=PL1'+1'                                         10720000
+         UNPK  PAGE(5),PAGECTR                                          10730000
+         OI    PAGE+4,C'0'                                              10740000
+        PUT    BOOKOUT,TL1                                              10750000
+        PUT    BOOKOUT,BLANKS                                           10760000
+        PUT    BOOKOUT,BLANKS                                           10770000
+         CLC   DLOFF,BLANKS                                             10780000
+         BE    PRTPUTO                                                  10790000
+        PUT    BOOKOUT,DASHLINE                                         10800000
+PRTPUTO  TM    SW1,SWABL                                                10810000
+         BZ    PRTNABL                                                  10820000
+        PUT    BOOKOUT,BLANKS                                           10830000
+         NI    SW1,255-SWABL                                            10840000
+PRTNABL  TM    SW1,SWDSH                                                10850000
+         BZ    PRTNDSH                                                  10860000
+        PUT    BOOKOUT,BLANKS                                           10870000
+         NI    SW1,255-SWDSH                                            10880000
+PRTNDSH PUT    BOOKOUT,DLLNE                                            10890000
+         MVC   DLLNE,BLANKS        CLEAR OUTPUT LINE                    10900000
+         TM    SW1,SWTPG                                                10910000
+         BZ    *+L'*+10                                                 10920000
+         MVC   TITLEPAG,PAGE                                            10930000
+         B     *+L'*+12                                                 10940000
+         TM    SW1,SWDPG                                                10950000
+         BZR   R8                                                       10960000
+         MVC   TITLEPGD,PAGE                                            10970000
+         AP    TITLCTR,=PL1'+1'                                         10980000
+         CP    TITLCTR,LINEPPG                                          10990000
+         BNH   PRTNTPT                                                  11000000
+        PUT    TITLE,TITLETL                                            11010000
+        PUT    TITLE,BLANKS                                             11020000
+        PUT    TITLE,TITLE1                                             11030000
+        PUT    TITLE,TITLE2                                             11040000
+        PUT    TITLE,BLANKS                                             11050000
+         ZAP   TITLCTR,=PL1'+3'                                         11060000
+PRTNTPT  TM    SW1,SWTPG                                                11070000
+         BZ    PRTNDPT                                                  11080000
+        PUT    TITLE,TITLEL                                             11090000
+         NI    SW1,255-SWTPG                                            11100000
+         BR    R8                                                       11110000
+PRTNDPT PUT    TITLE,TITLED                                             11120000
+         NI    SW1,255-SWDPG                                            11130000
+         BR    R8                                                       11140000
+         DROP  R3                                                       11150000
+*------- "PRTBOTT" : PRINT BOTTOM OF PAGE (SUBROUTINE)                  11160000
+*              R0-R1 = WORK REGISTERS                                   11170000
+*              R8 = LINK REGISTER                                       11180000
+*              R14-R15 = WORK REGISTERS                                 11190000
+PRTBOTT  MVC   BOTMAC1,TLMAC                                            11200000
+         MVC   BOTMAC2,TLMAC2                                           11210000
+PRTFILL  AP    LINECTR,=PL1'+1'    FILL PAGE                            11220000
+         CP    LINECTR,LINEPPG                                          11230000
+         BNL   PRTLAST                                                  11240000
+        PUT  BOOKOUT,BLANKS                                             11250000
+         B     PRTFILL                                                  11260000
+PRTLAST  MVC   BPAGE1,PAGE         PRINT BOTTOM                         11270000
+         MVC   BPAGE2,PAGE                                              11280000
+        PUT    BOOKOUT,BOTTEMTL                                         11290000
+        PUT    BOOKOUT,BOTTEMTO                                         11300000
+         BR    R8                                                       11310000
+         SPACE 1                                                        11320000
+         DROP  R4                                                       11330000
+         EJECT                                                          11340000
+*=====================================================================* 11350000
+*        TERMINATION - EXIT                                             11360000
+         SPACE 1                                                        11370000
+         DROP  R5                                                       11380000
+STOPALL CLOSE  (MAPIN,,BOOKOUT)                                         11390000
+         L     R2,GFTSIZ                                                11400000
+         L     R3,TABSTA                                                11410000
+        FREEMAIN R,LV=(R2),A=(R3)                                       11420000
+LEAVE    L     R15,RCBACK                                               11430000
+         L     R13,4(,R13)                                              11440001
+         RETURN (14,12),RC=(15)                                         11450001
+         SPACE 1                                                        11460000
+GFDERR   STC   R15,RCBACK+3        GFDATE RC (4/8)                      11470000
+         LA    R15,X'F0'(R15)                                           11480000
+         STC   R15,GFDWTO+(8+24)                                        11490000
+GFDWTO  WTO    '-> "GFDATE" RETURN CODE 0 (CALL SYSTEM PROGRAMMER)',   111500000
+               ROUTCDE=11,DESC=7                                        11510000
+         B     LEAVE                                                    11520000
+BADPARM  MVI   RCBACK+3,12         INVALID LENGTH PARM                  11530000
+        WTO    '-> INVALID L=XX, OR TITLE LENGTH ERROR IN PARM.FIELD', 111540000
+               ROUTCDE=11,DESC=7                                        11550000
+         B     LEAVE                                                    11560000
+TBOVFL   MVI   RCBACK+3,16         END OF TABLE (OVERFLOW)              11570000
+        WTO    '-> OVERFLOW : EXCEEDED 4000 ENTRIES TABLE FOR SYMBOLS',111580000
+               ROUTCDE=11,DESC=7                                        11590000
+         B     STOPALL                                                  11600000
+         EJECT                                                          11610000
+*=====================================================================* 11620000
+*        DCB'S - LITERAL POOL                                           11630000
+         SPACE 1                                                        11640000
+         PRINT NOGEN                                                    11650000
+MAPIN    DCB   DSORG=PS,MACRF=GL,DDNAME=INPUT,EODAD=EOF                 11660000
+BOOKOUT  DCB   DSORG=PS,MACRF=PM,DDNAME=OUTPUT,LRECL=80,RECFM=FBA       11670000
+TITLE    DCB   DSORG=PS,MACRF=PM,DDNAME=TITLE,LRECL=80,RECFM=FBA        11680000
+         PRINT GEN                                                      11690000
+         SPACE 1                                                        11700000
+        LTORG                                                           11710000
+         EJECT                                                          11720000
+*=====================================================================* 11730000
+*        CONSTANTS AND WORK-AREAS                                       11740000
+         SPACE 1                                                        11750000
+COLWK    DC    D'0'                                                     11760000
+COL#     EQU   COLWK,4                                                  11770000
+COL2PD   EQU   COLWK+4,4                                                11780000
+COVWK    DC    D'0'                                                     11790000
+CV#1     EQU   COVWK+4,4                                                11800000
+CV#2     EQU   COVWK,4                                                  11810000
+         SPACE 1                                                        11820000
+TABLM    DS    0F                                                       11830000
+TABSTA   DS    F                   START OF TABLE                       11840000
+TABENT   DS    F                   ENTRY SIZE                           11850000
+TABEND   DS    F                   END OF TABLE                         11860000
+SZTB     EQU   SYML*NETS           SIZE OF TABLE                        11870000
+TABSIZ   DC    A(SZTB)                                                  11880000
+SZGF     EQU   ((SZTB+7)/8)*8      SIZE FOR GET-FREEMAIN                11890000
+GFTSIZ   DC    A(SYML*NETS)                                             11900000
+         SPACE 1                                                        11910000
+RCBACK   DC    F'0'                                                     11920000
+SVRET    DC    F'0'                                                     11930000
+CURPTR   DC    F'0'                                                     11940000
+SCANS    DS    0F =================---> KEEP TOGETHER                   11950000
+PTRLAB   DC    F'0'               =                                     11960000
+PTROPE   DC    F'0'               =                                     11970000
+PTRVAL   DC    F'0'               =                                     11980000
+PTRCOM   DC    F'0'               =                                     11990000
+LGHLAB   DC    XL1'0'             =                                     12000000
+LGHOPE   DC    XL1'0'             =                                     12010000
+LGHVAL   DC    XL1'0'             =                                     12020000
+LGHCOM   DC    XL1'0'             =                                     12030000
+SCANL    EQU   *-SCANS ============                                     12040000
+SOFF     DC    CL4' '              SAVE FOR OFFSET                      12050000
+PAGECTR  DC    PL3'0'                                                   12060000
+LINECTR  DC    PL2'+99'                                                 12070000
+TITLCTR  DC    PL2'+99'                                                 12080000
+LINEPPG  DC    PL2'+54'            LINES PER PAGE                       12090000
+TLMAC    DC    CL8' '                                                   12100000
+TLMAC2   DC    CL8' '                                                   12110000
+PAGE     DC    CL5' '                                                   12120000
+ZCMPR    DC    CL78' '                                                  12130000
+ZCMPL    DC    XL1'0'                                                   12140000
+LAVSP    DC    XL1'0'                                                   12150000
+         SPACE 1                                                        12160000
+SW1      DC    XL1'0'                                                   12170000
+SWHMC    EQU   X'80'               HEAD MACRO PROCESSED (READY)         12180000
+SWDSH    EQU   X'40'               DO DASH LINE AFTER                   12190000
+SWTPG    EQU   X'08'               DO TITLE LINE/PAGE                   12200000
+SWDPG    EQU   X'04'               DO DSECT LINE/PAGE                   12210000
+SWABL    EQU   X'02'               ADDITIONAL BLANK LINE                12220000
+SW2      DC    XL1'0'                                                   12230000
+SWEOF    EQU   X'80'               INPUT EOF DETECTED                   12240000
+SWECR    EQU   X'40'               END OF CROSS REFERENCE               12250000
+SWLCB    EQU   X'20'               END DETECTED ON 2ND COLUMN           12260000
+SWQUO    EQU   X'01'               QUOTE PROCESSING USE                 12270000
+         SPACE 1                                                        12280000
+BLANKS   DS    0CL80                                                    12290000
+         DC    CL80' '                                                  12300000
+         SPACE 1                                                        12310000
+OLINE    DS    0CL80                                                    12320000
+         DC    CL80' '                                                  12330000
+         SPACE 1                                                        12340000
+*- - - - - - - - - - - - - - - --> CROSS REF LINE                       12350000
+COLSYM   EQU   OLINE+2,8           SYMBOL                               12360000
+COLOFF   EQU   OLINE+12,4          OFFSET                               12370000
+COLX1    EQU   OLINE+17,2          VALUE                                12380000
+COLVAL   EQU   OLINE+19,9                                               12390000
+COLPGE   EQU   OLINE+30,5          PAGE                                 12400000
+COLSYMB  EQU   OLINE+45,8          SYMBOL                               12410000
+COLOFFB  EQU   OLINE+55,4          OFFSET                               12420000
+COLX1B   EQU   OLINE+60,2          VALUE                                12430000
+COLVALB  EQU   OLINE+62,9                                               12440000
+COLPGEB  EQU   OLINE+73,5          PAGE                                 12450000
+         SPACE 1                                                        12460000
+DASHLINE DS    0CL80                                                    12470000
+         DC    CL2'+',76C'_',CL2' '                                     12480000
+         SPACE 1                                                        12490000
+TITLETL  DS    0CL80                                                    12500000
+         DC    CL2'1',CL11'CONTENTS :'                                  12510000
+TPARM    DC    CL45' ',CL10' '                                          12520000
+DATE     DC    CL10' ',CL2' '                                           12530000
+         SPACE 1                                                        12540000
+TITLE1   DS    0CL80                                                    12550000
+         DC    CL2' ',CL56'MACRO'                                       12560000
+         DC    CL14'(DSECT   PAGE)',CL1' '                              12570000
+         DC    CL5'PAGE',CL2' '                                         12580000
+         SPACE 1                                                        12590000
+TITLE2   DS    0CL80                                                    12600000
+         DC    CL2'+',70C'_',CL1' '                                     12610000
+         DC    5C'_',CL2' '                                             12620000
+         SPACE 1                                                        12630000
+TITLEL   DS    0CL80                                                    12640000
+         DC    CL2' '                                                   12650000
+TITLEMAC DS    0CL71                                                    12660000
+TITLEMCL DC    CL8' ',CL1' '                                            12670000
+TITLEMCO DC    CL8' ',CL1' '                                            12680000
+TITLEMCV DC    CL52' ',CL1' '                                           12690000
+TITLEPAG DC    CL5' ',CL2' '                                            12700000
+         SPACE 1                                                        12710000
+TITLED   DS    0CL80                                                    12720000
+         DC    CL58' '                                                  12730000
+TITLENMD DC    CL8' ',CL1' '                                            12740000
+TITLEPGD DC    CL5' ',CL8' '                                            12750000
+         SPACE 1                                                        12760000
+BOTTEMTL DS    0CL80                                                    12770000
+         DC    CL2'0'                                                   12780000
+BOTMAC1  DC    CL8' ',CL60' '                                           12790000
+BOTMAC2  DC    CL8' ',CL2' '                                            12800000
+         SPACE 1                                                        12810000
+BOTTEMTO DS    0CL80                                                    12820000
+         DC    CL2' '                                                   12830000
+BPAGE1   DC    CL5' ',CL11' '                                           12840000
+BPARM    DC    CL45' ',CL10' '                                          12850000
+BPAGE2   DC    CL5' ',CL2' '                                            12860000
+         SPACE 1                                                        12870000
+CTITLE   DS    0CL80                                                    12880000
+         DC    CL2' ',CL8'SYMBOL'                                       12890000
+         DC    CL2' ',CL16'OFFSET-VALUE'                                12900000
+         DC    CL2' ',CL5'PAGE',CL5' '                                  12910000
+         DC    CL5' ',CL8'SYMBOL'                                       12920000
+         DC    CL2' ',CL16'OFFSET-VALUE'                                12930000
+         DC    CL2' ',CL5'PAGE',CL2' '                                  12940000
+         SPACE 1                                                        12950000
+CTD      DS    0CL80               UNDERLINE FOR CTITLE                 12960000
+         DC    CL2'+',8C'_',CL2' ',16C'_',CL2' ',5C'_',CL5' '           12970000
+         DC    CL5' ',8C'_',CL2' ',16C'_',CL2' ',5C'_',CL2' '           12980000
+         SPACE 1                                                        12990000
+TLCR     DS    0CL80                                                    13000000
+         DC    CL2' ',CL78'CROSS REFERENCE'                             13010000
+         SPACE 1                                                        13020000
+TL1      DS    0CL80                                                    13030000
+         DC    CL2'1'                                                   13040000
+PARM     DC    CL45' ',CL14' ',CL7'DATE :'                              13050000
+TLDATE   DC    CL10' ',CL2' '                                           13060000
+         SPACE 1                                                        13070000
+COV1     DS    0CL80                                                    13080000
+         DC    CL80'1'                                                  13090000
+         SPACE 1                                                        13100000
+COV2     DS    0CL80                                                    13110000
+         DC    CL5' ',CL15' '                                           13120000
+COVPARM  DC    CL45' ',CL15' '                                          13130000
+         SPACE 1                                                        13140000
+COV3     DS    0CL80                                                    13150000
+         DC    CL5' ',CL29' ',CL7'DATE :'                               13160000
+COVDATE  DC    CL10' ',CL29' '                                          13170000
+         SPACE 1                                                        13180000
+WLINE    DS    0CL80               WORK LINE FOR COMMENT                13190000
+         DC    CL80' '                                                  13200000
+         SPACE 1                                                        13210000
+ALINE    DS    0CL80               ALTERNATE DATA LINE                  13220000
+         DC    CL80' '                                                  13230000
+         SPACE 1                                                        13240000
+PRVLINE  DC    CL(ASSLEN)' '       PREVIOUS LINE CONTENTS               13250000
+         EJECT                                                          13260000
+*=====================================================================* 13270000
+*        DATA DESCRIPTIONS (DSECT'S)                                    13280000
+         SPACE 1                                                        13290000
+ASSLNE   DSECT ,                   INPUT ASSEMBLY LINE POINTERS         13300000
+         DS    CL1                      POSITIONS :                     13310000
+ASSLOC   DS    CL6,1C                      2 -   7                      13320000
+ASSOBJ   DS    CL14,1C                     9 -  16                      13330000
+ASSAD1   DS    CL5,1C                     24 -  28                      13340000
+ASSAD2   DS    CL5,1C                     30 -  34                      13350000
+ASSSTN   DS    CL5                        36 -  40                      13360000
+ASSFLG   DS    CL1                        41                            13370000
+ASSGEN   DS    CL71                       42 - 112                      13380000
+ASSCNT   DS    CL1                       113                            13390000
+         DS    CL8                       114 - 121                      13400000
+ASSLEN   EQU   *-ASSLNE                                                 13410000
+         SPACE 1                                                        13420000
+DLDSECT  DSECT ,                   OUTPUT DATA-LINE POINTERS            13430000
+DLLNE    DS    0CL80               LINE START / LINE LENGTH             13440000
+         DS    CL2                         POSITIONS :  1 -  2          13450000
+DLOFF    DS    CL4                 OFFSET               3 -  6          13460000
+         DS    CL2                                      7 -  8          13470000
+DLSYM    DS    CL8                 LABEL                9 - 16          13480000
+         DS    CL2                                     17 - 18          13490000
+DLDEF    DS    0CL1                DEFINITION                           13500000
+         DS    CL2                                     19 - 20          13510000
+DLVAL    DS    CL9                 EQUATE VALUE        21 - 29          13520000
+         DS    CL6                                     30 - 35          13530000
+DLCOMM   DS    CL42                COMMENTS            36 - 77          13540000
+         DS    CL3                                     78 - 80          13550000
+         SPACE 1                                                        13560000
+TBD      DSECT                                                          13570000
+SYM      DS    CL8                                                      13580000
+OFF      DS    CL4                                                      13590000
+VAL      DS    CL9                                                      13600000
+PGE      DS    CL5                                                      13610000
+SYML     EQU   *-SYM                                                    13620000
+         SPACE 1                                                        13630000
+TBDBIS   DSECT                                                          13640000
+SYMB     DS    CL8                                                      13650000
+OFFB     DS    CL4                                                      13660000
+VALB     DS    CL9                                                      13670000
+PGEB     DS    CL5                                                      13680000
+SYMLB    EQU   *-SYMB                                                   13690000
+         SPACE 2                                                        13700000
+         END                                                            13710000
+//SYSLIB   DD DISP=SHR,DSN=SYS1.MACLIB                                  13720004
+//         DD DISP=SHR,DSN=SYS1.MODGEN                                  13721004
+//*        DD DISP=SHR,DSN=MVS0011.FILE453.PDS                          13730004
+//SYSUT1   DD UNIT=VIO,SPACE=(CYL,2)                                    13740000
+//SYSLIN   DD UNIT=VIO,SPACE=(TRK,1),DISP=(,PASS),DCB=BLKSIZE=3200      13750000
+//SYSPRINT DD SYSOUT=*                                                  13760000
+//*                                                                     13770000
+//LKED    EXEC PGM=HEWLKED,PARM=MAP                                     13780000
+//SYSLIN   DD DSN=*.ASMH.SYSLIN,DISP=(OLD,DELETE)                       13790000
+//SYSLMOD  DD DISP=SHR,DSN=SBGOLOB.LOAD(DAHANDBK)                       13800004
+//SYSPRINT DD SYSOUT=*                                                  13810000
+//*                                                                     13820002
+//ASMH    EXEC PGM=ASMA90,PARM='XREF(SHORT),NODECK,NOOBJECT'            13850004
+//SYSLIB   DD DSN=SYS1.MACLIB,DISP=SHR                                  13860001
+//         DD DSN=SYS1.MODGEN,DISP=SHR                                  13870001
+//SYSUT1   DD UNIT=VIO,DSN=&&SYSUT1,SPACE=(CYL,5)                       13880001
+//*YSPRINT DD SYSOUT=*                                                  13890001
+//SYSPRINT DD UNIT=VIO,SPACE=(CYL,5),DSN=&&ASMLIST,                     13900001
+//            DCB=(RECFM=FBM,DSORG=PS,LRECL=121),                       13910001
+//            DISP=(,PASS,DELETE)                                       13920001
+//SYSIN    DD *                                                         13930001
+         CVT       DSECT=YES,LIST=YES                                   13940001
+TIOT     DSECT                                                          13950001
+         IEFTIOT1                                                       13960001
+         END                                                            13970001
+/*                                                                      13980001
+//DBK     EXEC PGM=DAHANDBK,COND=(4,LT)                                 13990001
+//STEPLIB   DD DSN=SBGOLOB.LOAD,DISP=SHR                                14000004
+//INPUT     DD DSN=&&ASMLIST,DISP=(OLD,DELETE,DELETE)                   14010001
+//TITLE     DD SYSOUT=*                                                 14020001
+//OUTPUT    DD SYSOUT=*                                                 14030001

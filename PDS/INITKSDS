@@ -1,0 +1,630 @@
+//GILBERTI JOB (ACCT#),INITKSDS,                                        00010000
+// NOTIFY=&SYSUID,                                                      00020000
+//*RESTART=GO,                                                          00030000
+// CLASS=A,MSGCLASS=H,COND=(0,NE)                                       00040000
+//HLASM EXEC PGM=ASMA90,PARM=(OBJECT,NODECK,NOESD,NORLD,NOXREF)         00050005
+*PROCESS FLAG(NOPAGE0)                 VSAM Macros                      00060005
+*********************************************************************** 00070000
+*                                                                     * 00080000
+* MODULE NAME = INITKSDS                                              * 00090002
+*                                                                     * 00100002
+* DESCRIPTIVE NAME = Initialize a KSDS                                * 00110002
+*                                                                     * 00120002
+* FUNCTION = INITKSDS switches an empty VSAM KSDS from "create" mode  * 00130005
+*            to "update" mode.  INITKSDS may be invoked as a TSO      * 00140005
+*            command, a batch program, or a subroutine.               * 00150005
+*                                                                     * 00160002
+* STATUS = R105                                                       * 00170005
+*                                                                     * 00180002
+* AUTHOR = Gilbert Saint-Flour <carlos@gsf-soft.com>                  * 00190005
+*                                                                     * 00200002
+* NOTES = SEE BELOW                                                   * 00210002
+*                                                                     * 00220002
+*    DEPENDENCIES = MVS/ESA, OS/390 or z/OS                           * 00230005
+*                                                                     * 00240002
+*    AUTHORIZATION = NONE                                             * 00250002
+*                                                                     * 00260002
+*    RESTRICTIONS = NONE                                              * 00270002
+*                                                                     * 00280002
+* MODULE TYPE = PROCEDURE, (TSO Command Processor)                    * 00290002
+*                                                                     * 00300002
+*    PROCESSOR = IBM OS/ASSEMBLER H VERSION 2 OR                      * 00310002
+*                IBM HIGH LEVEL ASSEMBLER/MVS                         * 00320002
+*                                                                     * 00330002
+*    MODULE SIZE = 4K                                                 * 00340002
+*                                                                     * 00350002
+*    ATTRIBUTES = REENTERABLE, RMODE ANY, AMODE 31,                   * 00360002
+*                 PROBLEM STATE, KEY 8                                * 00370002
+*                                                                     * 00380002
+* OPERATION = See Below                                               * 00390002
+*                                                                     * 00400002
+*        A KSDS is in create mode from the time it is DEFINEd         * 00410002
+*        until a record is written into it.  If a program OPENs       * 00420004
+*        for input, I-O or with STRNO=2 a KSDS in create mode,        * 00430002
+*        OPEN fails with R15=8,ERROR=160.  "Create" mode is also      * 00440002
+*        called "load" mode.                                          * 00450002
+*                                                                     * 00460001
+*        To change its status from "create" mode to "non-create"      * 00470001
+*        mode, a KSDS must be OPEN'd for output, a record must be     * 00480001
+*        written into it, then it must be CLOSEd.  From that point    * 00490001
+*        on, the KSDS may be OPEN'd without restriction.              * 00500001
+*                                                                     * 00510000
+*        INITKSDS proceeds as follows:                                * 00520001
+*                                                                     * 00530001
+*        1. Dynamically ALLOCATE the data set with DISP=SHR           * 00540001
+*           (unless the OLD key-word is specified in which case       * 00550001
+*           DISP=OLD is used).                                        * 00560001
+*                                                                     * 00570001
+*        2. OPEN the data set for output (MACRF=OUT) and check        * 00580001
+*           that it really is a KSDS                                  * 00590001
+*                                                                     * 00600001
+*        3. check that the KSDS contains no records                   * 00610001
+*                                                                     * 00620001
+*        4. WRITE a dummy record                                      * 00630001
+*                                                                     * 00640001
+*        5. CLOSE the data set                                        * 00650001
+*                                                                     * 00660001
+*        6. OPEN the data set again for I-O with MACRF=(IN,OUT)       * 00670001
+*                                                                     * 00680001
+*        7. DELETE the dummy record                                   * 00690001
+*                                                                     * 00700001
+*        8. CLOSE the data set and FREE it up                         * 00710001
+*                                                                     * 00720001
+*        If the RESET option is specified, INITKSDS proceeds          * 00730001
+*        as follows:                                                  * 00740001
+*                                                                     * 00750001
+*        1. ALLOCATE the data set and OPENs it for I-O                * 00760001
+*                                                                     * 00770001
+*        2. DELETE all of the records, one by one                     * 00780002
+*           (this can take a while if the KSDS is big)                * 00790002
+*                                                                     * 00800001
+*        3. CLOSE the data set (which is now empty and in             * 00810001
+*           non-create mode).                                         * 00820001
+*                                                                     * 00830002
+* SYNTAX = See Below                                                  * 00840002
+*                                                                     * 00850002
+*        INITKSDS may be invoked as a TSO command using the           * 00860002
+*        following syntax:                                            * 00870002
+*                                                                     * 00880000
+*            INITKSDS 'data-set-name'                                 * 00890001
+*                      RESET/NORESET/ERASE/DELETE                     * 00900002
+*                      SHR/OLD                                        * 00910000
+*                                                                     * 00920000
+*            'data-set-name' is the data set name of the KSDS.        * 00930001
+*                                                                     * 00940000
+*            'NORESET' specifies that the KSDS has just been          * 00950001
+*            DEFINEd, contains no records, and must be converted to   * 00960002
+*            "non-create" mode by adding/deleting a dummy record.     * 00970002
+*            This is the default.                                     * 00980001
+*                                                                     * 00990001
+*            'RESET' specifies that the KSDS contains records and     * 01000001
+*            that these records should be deleted.  RESET can be      * 01010002
+*            used instead of DELETE/DEFINE/INITKSDS to create an      * 01020002
+*            empty KSDS in non-create mode.  ERASE or DELETE are      * 01030002
+*            equivalent to RESET.                                     * 01040002
+*                                                                     * 01050001
+*            'OLD' specifies that the data-set(s) should be           * 01060001
+*            allocated with DISP=OLD instead of SHR, which is the     * 01070001
+*            default.                                                 * 01080001
+*                                                                     * 01090001
+*        INITKSDS may be invoked as a batch program, using the        * 01100002
+*        following JCL:                                               * 01110002
+*                                                                     * 01120001
+*            //MYJOB   JOB (ACCT#),'JOHN DOE', . . .                  * 01130001
+*            //*                                                      * 01140001
+*            //INITKSDS EXEC PGM=INITKSDS                             * 01150001
+*            //INITKSDS  DD  DSN=my.new.vsam.ksds,DISP=SHR            * 01160001
+*                                                                     * 01170000
+*                                                                     * 01180002
+*        INITKSDS may be also be invoked from an assembler program,   * 01190002
+*        as follows:                                                  * 01200002
+*                                                                     * 01210002
+*                      LA    R1,MYACB                                 * 01220002
+*                      LINK  EP=INITKSDS                              * 01230002
+*            .  .  .  .  .  .  .  .  .  .                             * 01240002
+*            MYACB     ACB   DDNAME=MYDDNAME,MACRF=(IN, . .           * 01250002
+*                                                                     * 01260004
+*          If the VSAM data set is allocated with FREE=CLOSE,         * 01270004
+*          INITKSDS re-allocates it dynamically to initialize it.     * 01280004
+*                                                                     * 01290005
+* RETURN CODES                                                        * 01300005
+*                                                                     * 01310005
+*        RC=0     Successful Completion                               * 01320005
+*        RC=4     IKJPARS error                                       * 01330005
+*        RC=8     Data set is not a KSDS                              * 01340005
+*        RC=12    DYNALLOC error                                      * 01350005
+*                 OPEN error                                          * 01360005
+*                 Data set is not empty                               * 01370005
+*                 ERASE macro failed                                  * 01380005
+*        RC=16    invalid PARM field                                  * 01390005
+*                                                                     * 01400000
+* CHANGE ACTIVITY                                                     * 01410000
+*                                                                     * 01420000
+* 102 INITKSDS may be invoked as a PGM with R1 pointing to an ACB     * 01430002
+* 103 Use alternate DDname when the data set has FREE=CLOSE           * 01440003
+* 104 Complete FREE=CLOSE enhancement, fix others errors.             * 01450004
+* 105 RESET/NORESET can now be specified in the JCL PARM              * 01460005
+*                                                                     * 01470000
+*********************************************************************** 01480002
+INITKSDS CSECT                                                          01490000
+INITKSDS RMODE ANY                                                      01500000
+         SAVE  (14,12),,'GSF UTILITIES - INITKSDS R105'                 01510005
+         LR    R12,R15                 BASE REGISTER                    01520005
+         USING INITKSDS,R12                                             01530005
+*********************************************************************** 01540000
+*        ALLOCATE DYNAMIC STORAGE AREA                                * 01550000
+*********************************************************************** 01560000
+         GETMAIN R,LV=DYNAML           ACQUIRE DYNAMIC STORAGE          01570004
+         ST    R13,4(,R1)                                               01580000
+         ST    R1,8(,R13)                                               01590000
+         LM    R13,R1,8(R13)                                            01600000
+         USING DYNAM,R13                                                01610004
+         LR    R11,R1                  POINT AT CPPL.                   01620000
+         USING CPPL,R11                                                 01630000
+         LA    R14,DYNAM+72            clear dynamic storage            01640004
+         LA    R15,DYNAML-72           clear dynamic storage            01650004
+         SLR   R1,R1                   clear dynamic storage            01660004
+         MVCL  R14,R0                  clear dynamic storage            01670004
+         MVC   IFGACB(MODELACB_LENGTH),MODELACB                         01710004
+         MVC   IFGRPL(MODELRPL_LENGTH),MODELRPL                         01720004
+         MVI   RESET,C'N'              DEFAULT IS 'NORESET'             01730005
+         TM    CPPL,X'80'              AM I INVOKED AS A PROGRAM?       01740000
+         BO    PGM00                   YES, JUMP                        01750000
+*********************************************************************** 01760000
+*        BUILD PARAMETER LIST FOR IKJEFF02                            * 01770000
+*********************************************************************** 01780000
+         ST    R11,MTCPPLP             STORE CPPL ADDRESS IN MTPL       01790000
+         LA    R0,MTCSECTP             MESSAGE SECTION                  01800000
+         ST    R0,MTPLPTR              STORE ADDR IN MTPL               01810000
+         LA    R0,DYNECB               EVENT CONTROL BLOCK              01820000
+         ST    R0,MTECBP               STORE ECB IN MTPL                01830000
+         L     R0,=A(MSGCSECT)         MESSAGE CSECT                    01840000
+         ST    R0,MTCSECTP             STORE ECT IN PPL                 01850000
+         OI    MTSW1,MTPUTLSW          PUTLINE IS NEEDED                01860000
+         OI    MTSW1,MTNHEXSW          XLATE TO DECIMAL                 01870000
+         OI    MTSW2,MTFMT             31-BIT PARM LIST                 01880000
+*********************************************************************** 01890000
+*        BUILD PARSE PARM LIST, CALL IKJPARS                          * 01900000
+*********************************************************************** 01910000
+PARSE000 LA    R1,WORKAREA             POINT TO PPL                     01920004
+         USING PPL,R1                  SET UP ADDRESSABILITY TO PPL     01930000
+         L     R0,CPPLUPT              USER PROFILE TABLE               01940000
+         ST    R0,PPLUPT               STORE UPT ADDRESS IN PPL         01950000
+         L     R0,CPPLECT              ENVIRONMENT CONTROL TABLE        01960000
+         ST    R0,PPLECT               STORE ECT IN PPL                 01970000
+         LA    R0,DYNECB               EVENT CONTROL BLOCK              01980000
+         ST    R0,PPLECB               STORE ECB IN PPL                 01990000
+         MVC   PPLPCL,=A(PCLCSECT)     STORE PCL ADDR INTO PPL          02000000
+         LA    R0,WORD1                ANSWER AREA                      02010004
+         ST    R0,PPLANS               STORE ANSWER ADDRESS IN PPL      02020000
+         L     R0,CPPLCBUF             COMMAND BUFFER                   02030000
+         ST    R0,PPLCBUF              STORE BUFFER ADDRESS IN PPL      02040000
+         L     R15,CVTPTR(,0)          Address of the CVT               02050004
+         L     R15,CVTPARS-CVTMAP(,R15) address of IKJPARS              02060004
+         SYNCH (R15)                   call IKJPARS                     02070004
+         LTR   R2,R15                  CHECK FOR ZERO PARSE RETURN      02080000
+         BNZ   FINISH                  GO AWAY UPSET                    02090000
+         DROP  R1                      WAS PPL                          02100000
+*********************************************************************** 02110000
+*        PROCESS PARSED PARAMETERS                                    * 02120000
+*********************************************************************** 02130000
+         MVI   PGMCMD,C'C'             MODE=CMD                         02140004
+         L     R8,WORD1                LOAD PDL ADDRESS                 02150004
+         USING IKJPARMD,R8             SET UP ADDRESSABILITY TO PDL     02160000
+PARSE100 LA    R14,DSNAME              44-BYTE AREA                     02170000
+         LA    R15,L'DSNAME            GET LENGTH                       02180000
+         L     R0,DSNPCE               GET ADDRESS                      02190000
+         LH    R1,DSNPCE+4             ACTUAL LENGTH OF DSN             02200000
+         ICM   R1,B'1000',=C' '        PADDING                          02210000
+         MVCL  R14,R0                  MOVE DATA SET NAME               02220000
+PARSE200 MVC   STATUS(8),=AL2(DALSTATS,1,1,X'0800') DISP=SHR KEY        02230000
+         CLI   STATPCE+1,2             CHECK FOR 2ND IKJPNAME           02240000
+         BNE   PARSE300                JUMP IF NOT THE 2ND              02250000
+         MVI   STATUS+6,X'01'          DISP=OLD KEY                     02260000
+PARSE300 EQU   *                                                        02270005
+         CLI   RSTPCE+1,2              CHECK FOR 2ND IKJPNAME           02280000
+         BNE   PARSE999                JUMP IF NOT THE 2ND              02290000
+         MVI   RESET,C'R'              2ND IS 'RESET'                   02300000
+         MVI   STATUS+6,X'01'          DISP=OLD KEY                     02310000
+PARSE999 IKJRLSA WORD1                 RELEASE PDL                      02320004
+         B     ALLOC000                allocate and open                02330004
+*********************************************************************** 02340003
+*        INITKSDS IS INVOKED AS A PROGRAM                             * 02350003
+*********************************************************************** 02360003
+PGM00    MVI   PGMCMD,C'P'             MODE=PGM                         02370003
+         CLC   ACBID,CPPL              R1 POINTS TO AN ACB?             02380003
+         BE    PGM50                   yes, jump                        02390005
+*                                                                       02400005
+*        Check PARM when invoked in a JCL step                          02410005
+*                                                                       02420005
+         L     R2,CPPL                 parm address                     02430005
+         CLI   0(R2),0                 parm OK?                         02440005
+         BNE   BADPARM                 no, error                        02450005
+         CLI   1(R2),0                 PARM=''?                         02460005
+         BE    PGM21                   yes, continue                    02470005
+         CLI   1(R2),7                 PARM=NORESET?                    02480005
+         BNE   PGM15                   no, jump                         02490005
+         CLC   =C'NORESET',2(R2)       PARM=NORESET?                    02500005
+         BE    PGM21                   no, jump                         02510005
+PGM15    CLI   1(R2),5                 PARM=RESET?                      02520005
+         BNE   BADPARM                 no, bad parm                     02530005
+         CLC   =C'RESET',2(R2)         PARM=RESET?                      02540005
+         BNE   BADPARM                 no, bad parm                     02550005
+*                                                                       02560005
+PGM20    MVI   RESET,C'R'              PARM='RESET'                     02570005
+PGM21    BAL   R14,GETDSN           <- retrieve dsname                  02580005
+         B     OPEN                    continue                         02590005
+*********************************************************************** 02600005
+*        INITKSDS was invoked as a sub-routine with                   * 02610005
+*        the address of an ACB in R1                                  * 02620005
+*                                                                     * 02630005
+*        If the data set was allocated with FREE=CLOSE,               * 02640005
+*        reallocate it for our own processing.                        * 02650005
+*********************************************************************** 02660005
+PGM50    MVC  ACBDDNM,ACBDDNM-IFGACB+CPPL MOVE DDNAME FROM CALLER'S ACB 02670003
+         BAL   R14,GETDSN           <- retrieve dsname                  02680005
+         LTR   R15,R15                 DD missing?                      02690005
+         BNZ   OPEN                    yes, fail                        02700005
+         L     R1,DSAB1                addr of the DSAB                 02710005
+         TM    DSABFLG2-DSAB(R1),DSABUNAL FREE=CLOSE?                   02720005
+         BZ    OPEN                    no, jump                         02730005
+*********************************************************************** 02740000
+*        Allocate the VSAM data set                                   * 02750005
+*********************************************************************** 02760000
+ALLOC000 LA    R2,WORKAREA             S99RB                            02770004
+         ST    R2,DFS99RBP             S99RBPTR                         02780000
+         OI    DFS99RBP,X'80'          S99RBPND                         02790000
+         LA    R0,=AL1(0,DFSVC99)      PUTLINE ONLY, SVC99              02800000
+         ST    R0,DFIDP                BUILD PARML FOR DAIRFAIL         02810000
+         ST    R11,DFCPPLP             ADDR OF CPPL                     02820000
+*                                                                       02830000
+         LA    R0,L'DSNAME             LENGTH OF INSERT           (1)   02840000
+         ST    R0,MTLEN+00             LENGTH OF INSERT                 02850000
+         LA    R0,DSNAME               RETURN CODE                      02860000
+         ST    R0,MTADDR+00            ADDRESS OF INSERT                02870000
+*                                                                       02880000
+         USING S99RB,R2                                                 02890000
+         XC    S99RB(S99RBEND-S99RB),S99RB  CLEAR DYNALLOC WORK SPACE   02900000
+         MVI   S99RBLN,S99RBEND-S99RB  RB LENGTH                        02910000
+         MVI   S99VERB,S99VRBAL        VERB IS "ALLOCATE"               02920000
+         LA    R0,S99RBEND             END OF RB, START OF T.U. PTRS    02930000
+         ST    R0,S99TXTPP             TEXT UNIT POINTERS               02940000
+*                                                                       02950000
+         OI    S99FLG11,S99NOCNV       DO NOT USE EXISTING DD           02960000
+         OI    S99FLG11,S99NOMNT       DO NOT MOUNT VOLUMES             02970000
+         LA    R14,TU55DDN             DDNAME TEXT UNIT                 02980000
+         MVC   0(6,R14),=AL2(DALRTDDN,1,L'DDNAME) RETURN DDNAME KEY     02990000
+         LA    R15,TU02DSN             DSNAME TEXT UNIT                 03000000
+         MVC   0(6,R15),=AL2(DALDSNAM,1,L'DSNAME) DSNAME KEY            03010000
+         LA    R0,STATUS               ADDRESS OF STATUS KEY            03020000
+         LA    R1,TU57ORG              RETURN DSORG                     03030000
+         MVC   0(6,R1),=AL2(DALRTORG,1,L'DSORG)  DSORG                  03040000
+         STM   R14,R1,S99RBEND+00      FIRST TO THIRD TEXT UNIT PTRS    03050000
+         OI    S99RBEND+12,X'80'       END OF LIST                      03060000
+*                                                                       03070000
+         LA    R1,DFS99RBP             S99RBPTR                         03080000
+         DYNALLOC ,                    ISSUE SVC 99 (ALLOCATE)          03090000
+         LTR   R15,R15                                                  03100000
+         BNZ   MSG99                   ALLOCATION FAILED, EXIT          03110000
+         DROP  R2                      WAS S99RB                        03120000
+         CLC   DSORG,=AL2(ACBDORGA)    DSORG=VS?                        03130000
+         BNE   MSG99NVS                NOT A VSAM DATA SET              03140000
+         MVC   ACBDDNM,DDNAME          MOVE THE RETURNED DDNAME         03150000
+*********************************************************************** 03160000
+*        OPEN THE VSAM DATA SET                                       * 03170000
+*********************************************************************** 03180000
+OPEN     LA    R2,IFGACB               POINT TO ACB                     03190000
+         ST    R2,OPENLIST             MAKE OPEN LIST                   03200000
+         ST    R2,RPLDACB              SET UP RPL                       03210000
+         MVI   OPENLIST,X'80'          FREE=CLOSE OPTION                03220000
+         OPEN  MF=(E,OPENLIST)         OPEN THE ACB                     03230000
+         CH    R15,=H'4'               OPEN OK?                         03240000
+         BH    MSGOPEN                 NO, QUIT                         03250000
+*                                                                       03260000
+         TESTCB ACB=(R2),ATRB=KSDS,    IS THIS A KSDS?                 X03270004
+               MF=(G,WORKAREA,TESTCBL)                                  03280004
+         BNE   MSG99NVS                NOT A VSAM DATA SET              03290000
+*                                                                       03300000
+         SHOWCB ACB=(R2),AREA=(S,MAXRECNO),LENGTH=08,                  X03310001
+               FIELDS=(NLOGR,LRECL),MF=(G,WORKAREA,SHOWCBL)             03320004
+*********************************************************************** 03330000
+*        PROCESS THE OPEN'D DATA SET                                  * 03340000
+*********************************************************************** 03350000
+         L     R0,MAXLRECL             get lrecl                        03360004
+         ST    R0,RPLRLEN              RECORD LENGTH                    03370004
+         GETMAIN RU,LV=(0)             allocate record area             03380004
+         ST    R0,RPLBUFL              BUFFER LENGTH                    03390004
+         ST    R1,RPLAREA              SET UP THE RPL                   03400000
+         ST    R1,RPLARG               SET UP THE RPL                   03410000
+         CLI   RESET,C'R'              OPTION RESET SPECIFIED?          03420000
+         BE    RESET00                 YES, JUMP                        03430000
+*********************************************************************** 03440000
+*        ADD/DELETE A DUMMY RECORD                                      03450000
+*********************************************************************** 03460000
+ADDDEL   ICM   R0,B'1111',MAXRECNO     DATA SET EMPTY?                  03470000
+         BNZ   MSGFULL                 NO, ERROR                        03480000
+         MVC   REQUEST,=C'PUT  '       SET REQUEST FOR MESSAGE          03490000
+         PUT   RPL=IFGRPL              ADD A DUMMY RECORD               03500000
+         LTR   R15,R15                 PUT OK?                          03510000
+         BNZ   MSGREQ                  NO, QUIT                         03520000
+ADDDEL9  CLOSE MF=(E,OPENLIST)         CLOSE THE ACB                    03530000
+         OPEN  MF=(E,OPENLIST)         RE-OPEN THE ACB                  03540000
+         LTR   R15,R15                 OPEN OK?                         03550004
+         BNZ   MSGOPEN                 NO, QUIT                         03560004
+*********************************************************************** 03570000
+*        PROCESS THE 'RESET' FUNCTION (DELETE ALL OF THE RECORDS      * 03580000
+*********************************************************************** 03590000
+*LOOP                                                                   03600000
+RESET00  MVC   REQUEST,=C'GET  '       SET REQUEST FOR MESSAGE          03610000
+         OI    RPLOPT2,RPLUPD          OPTCD=UPD                        03620000
+         GET   RPL=IFGRPL              READ THE FIRST RECORD            03630000
+         LTR   R15,R15                 GET OK?                          03640000
+         BNZ   MSGREQ                  NO, QUIT                         03650000
+RESET20  MVC   REQUEST,=C'ERASE'       SET REQUEST FOR MESSAGE          03660000
+         ERASE RPL=IFGRPL              DELETE THE FIRST RECORD          03670000
+         LTR   R15,R15                 ERASE OK?                        03680000
+         BNZ   MSGREQ                  NO, QUIT                         03690000
+         B     RESET00                                                  03700000
+*ENDLOOP                                                                03710000
+*********************************************************************** 03720000
+*        ISSUE MESSAGES                                               * 03730000
+*********************************************************************** 03740000
+MSG99    MVC   MTMSGID,=C'99  '        DYNALLOC ERROR                   03750000
+         CLI   PGMCMD,C'P'             MODE=PGM ?                       03760004
+         BE    ISSUEMSG                YES, DO NOT CALL DAIRFAIL        03770004
+         ST    R15,RETCODE             RETURN CODE                      03780000
+         LA    R0,RETCODE              RETURN CODE                      03790000
+         ST    R0,DFRCP                RETURN CODE                      03800000
+         LA    R0,=A(0)                NO ADDR FOR IKJEFF02             03810000
+         ST    R0,DFJEFF02             RETURN CODE                      03820000
+         LA    R1,DFPARMS              DAIRFAIL PARM LIST               03830000
+         LINK  EP=IKJEFF18             Call the DAIRFAIL routine        03840004
+         LA    R2,12                   RETURN-CODE                      03850000
+         B     ISSUEMSG                ISSUE MESSAGE                    03860000
+*                                                                       03870000
+MSG99NVS MVC   MTMSGID,=C'NVS '        NON-KSDS                         03880001
+         LA    R2,8                    RETURN-CODE = 8                  03890001
+         B     ISSUEMSG                ISSUE MESSAGE                    03900000
+*                                                                       03910000
+MSGOPEN  MVC   MTMSGID,=C'OPEN'        "OPEN FAILED" MESSAGE            03920000
+         ST    R15,RETCODE             RETURN CODE                      03930000
+*                                                                       03940000
+         LA    R0,L'RETCODE            LENGTH OF INSERT           (2)   03950000
+         ST    R0,MTLEN+08             LENGTH OF INSERT                 03960000
+         OI    MTHIGHL+08,X'80'        XLATE TO DECIMAL                 03970000
+         LA    R0,RETCODE              RETURN CODE                      03980000
+         ST    R0,MTADDR+08            ADDRESS OF INSERT                03990000
+         LA    R2,12                   RETURN-CODE                      04000000
+         B     ISSUEMSG                ISSUE MESSAGE                    04010000
+*                                                                       04020000
+MSGFULL  MVC   MTMSGID,=C'FULL'        NON-EMPTY                        04030000
+         LA    R2,12                   RETURN-CODE                      04040000
+         B     ISSUEMSG                ISSUE MESSAGE                    04050000
+*                                                                       04060000
+MSGREQ   MVC   MTMSGID,=C'REQ '        "ERASE FAILED" MESSAGE           04070000
+         ST    R15,RETCODE             RETURN CODE                      04080000
+*                                                                       04090000
+         LA    R0,L'REQUEST            LENGTH OF INSERT           (1)   04100000
+         ST    R0,MTLEN+00             LENGTH OF INSERT                 04110000
+         LA    R0,REQUEST              RETURN CODE                      04120000
+         ST    R0,MTADDR+00            ADDRESS OF INSERT                04130000
+*                                                                       04140000
+         LA    R0,L'DSNAME             LENGTH OF INSERT           (2)   04150000
+         ST    R0,MTLEN+08             LENGTH OF INSERT                 04160000
+         LA    R0,DSNAME               RETURN CODE                      04170000
+         ST    R0,MTADDR+08            ADDRESS OF INSERT                04180000
+*                                                                       04190000
+         LA    R0,L'RPLFDBK            LENGTH OF INSERT           (3)   04200000
+         ST    R0,MTLEN+16             LENGTH OF INSERT                 04210000
+         OI    MTHIGHL+16,X'80'        XLATE NUMERIC                    04220000
+         OI    MTSW1,MTHEXSW           XLATE TO HEX                     04230000
+         LA    R0,RPLFDBK              RETURN CODE                      04240000
+         ST    R0,MTADDR+16            ADDRESS OF INSERT                04250000
+         LA    R2,12                   RETURN-CODE                      04260000
+         B     ISSUEMSG                ISSUE MESSAGE                    04270004
+*********************************************************************** 04280004
+*        End-of-file on VSAM data set                                 * 04290004
+*********************************************************************** 04300004
+CLOSE    LTR   R15,R15                 CLOSE OK?                        04310004
+***      BNZ   MSGCLOS                 NO, QUIT                         04320004
+         MVC   MTMSGID,=C'00  '        INITKSDS SUCCESSFUL              04330004
+         LA    R2,0                    RC=0                             04340004
+*                                                                       04350000
+ISSUEMSG CLI   PGMCMD,C'P'             MODE=PGM ?                       04360000
+         BE    FINISH                  YES, IGNORE MESSAGE              04370000
+         L     R15,CVTPTR(,0)          Address of the CVT               04380004
+         L     R15,CVTEFF02-CVTMAP(,R15) ADDR OF IKJEFF02               04390004
+         LA    R1,MTPARML              POINT TO PPL                     04400000
+         SYNCH (R15)                   CALL THE MESSAGE ISSUER          04410004
+         B     FINISH                  GO AWAY UPSET                    04420005
+*********************************************************************** 04430000
+*        CLOSE THE ACB, CLEAN UP, RETURN.                             * 04440004
+*********************************************************************** 04450000
+BADPARM  LA    R2,16                   RC=16: bad parm                  04460005
+*                                                                       04470005
+FINISH   TM    ACBOFLGS,ACBOPEN        ACB OPEN?                        04480000
+         BZ    FINISH2                 NO, JUMP                         04490004
+         CLC   DSORG,=AL2(ACBDORGA)    DD allocated dynamically?        04500004
+         BNE   FINISH1                 NO, JUMP                         04510004
+         OI    OPENLIST,X'20'          yes, FREE=CLOSE                  04520004
+FINISH1  CLOSE MF=(E,OPENLIST)         CLOSE/FREE                       04530004
+FINISH2  ICM   R1,B'1111',RPLAREA      buffer address                   04540004
+         BZ    FINISH8                 NO, JUMP                         04550004
+         L     R0,RPLBUFL              BUFFER LENGTH                    04560004
+         FREEMAIN RU,LV=(0),A=(1)      FREE RECORD AREA                 04570004
+FINISH8  LR    R1,R13                  ADDRESS OF DYNAMIC AREA          04580004
+         L     R13,4(,R13)             CALLER'S SAVE AREA               04590000
+         FREEMAIN RU,LV=DYNAML,A=(1)   FREE DYNAMIC STORAGE AREA        04600004
+         LR    R15,R2                  PASS RETURN CODE                 04610000
+         RETURN (14,12),RC=(15)        GOBACK TO CALLER                 04620000
+*********************************************************************** 04630005
+*        Retrieve dsname from the JFCB                                * 04640005
+*********************************************************************** 04650005
+GETDSN   BAKR  R14,0                                                    04660005
+         GETDSAB DDNAME=ACBDDNM,       get the DSAB address            +04670005
+               MF=(E,GETDSABL),        work area                       +04680005
+               DSABPTR=DSAB1           output area                      04690005
+         LTR   R15,R15                 DD missing?                      04700005
+         BNZ   GETDSN9                 yes, quit                        04710005
+         L     R2,DSAB1                A(DSAB)                          04720005
+         USING DSAB,R2                                                  04730005
+         LA    R3,WORKAREA             WORK AREA                        04740005
+         ST    R3,WORD1                STORE POINTER                    04750005
+         USING ZB505,R3                                                 04760005
+         XC    SWAEPAX,SWAEPAX         CLEAR 28 BYTES                   04770005
+         L     R1,DSABTIOT             TIOT entry                       04780005
+         MVC   SWVA,TIOEJFCB-TIOENTRY(R1) move SVA of the JFCB          04790005
+         SWAREQ FCODE=RL,EPA=WORD1,MF=(E,SWAREQL1),UNAUTH=YES           04800005
+         L     R1,SWBLKPTR             LOAD SWA CONTROL BLOCK ADDRESS   04810005
+         MVC   DSNAME,0(R1)            move dsname from JFCB            04820005
+GETDSN9  PR                                                             04830005
+         DROP  R2,R3                   DSAB,ZB505                       04840005
+*********************************************************************** 04850000
+*        MODEL CONTROL BLOCKS, MOVED TO DYNAMIC STORAGE               * 04860000
+*********************************************************************** 04870000
+MODELACB ACB DDNAME=INITKSDS,MACRF=(ADR,SEQ,IN,OUT),EXLST=EXLST1        04880004
+MODELACB_LENGTH EQU *-MODELACB                                          04890004
+MODELRPL RPL ACB=*-*,OPTCD=(KEY,SEQ,MVE),AREA=*-*,AREALEN=*-*,ARG=*-*   04900004
+MODELRPL_LENGTH EQU *-MODELRPL                                          04910004
+EXLST1   EXLST EODAD=CLOSE                                              04920000
+*********************************************************************** 04930000
+*        DEFINE MESSAGES TO BE ISSUED VIA IKJEFF02                    * 04940000
+*********************************************************************** 04950000
+MSGCSECT IKJTSMSG ('MSG000 ',,' SUCCESSFULLY INITIALIZED.'),00          04960004
+         IKJTSMSG ('MSG008 OPEN FAILED FOR ',,                         X04970000
+               ', RETURN CODE IS ',,'.'),OPEN                           04980000
+         IKJTSMSG ('MSG012 ',,' REQUEST FAILED FOR ',,                 X04990000
+               ', FDBK=',,'.'),REQ                                      05000000
+         IKJTSMSG ('MSG021 ',,' IS NOT A VSAM KSDS.'),NVS               05010004
+         IKJTSMSG ('MSG034 ',,' IS NOT AN EMPTY VSAM DATA SET.'),FULL   05020004
+         IKJTSMSG ('MSG099 DYNALLOC FAILED FOR ',,'.'),99               05030004
+         IKJTSMSG                                                       05040000
+*********************************************************************** 05050000
+*        DEFINE INPUT PARAMETERS FOR IKJPARS                          * 05060000
+*********************************************************************** 05070000
+PCLCSECT IKJPARM                                                        05080000
+PCLCSECT RMODE ANY                                                      05090000
+DSNPCE   IKJPOSIT DSNAME,USID,PROMPT='DATA SET NAME'                    05100000
+RSTPCE   IKJKEYWD                                                       05110000
+         IKJNAME 'NORESET'                                              05120000
+         IKJNAME 'RESET',ALIAS=('ERASE','DELETE')                       05130002
+STATPCE  IKJKEYWD                                                       05140000
+         IKJNAME 'SHR'                                                  05150000
+         IKJNAME 'OLD'                                                  05160000
+         IKJENDP                                                        05170000
+*********************************************************************** 05180000
+*        DYNAMIC STORAGE AREA                                         * 05190000
+*********************************************************************** 05200000
+DYNAM    DSECT                                                          05210004
+         DS    18F                     SAVE AREA                        05220000
+WORD1    DS    F                       ANSWER AREA                      05230004
+DYNECB   DS    A                       ECB for parse, IKJEFF02          05240004
+RETCODE  DS    F                       RETURN CODE                      05250000
+DSAB1    DS    A(DSAB)                 addr of the DSAB                 05260005
+PGMCMD   DS    C                       P=PGM C=CMD                      05270005
+RESET    DS    C                       R=RESET N=NORESET                05280005
+*                                                                       05290004
+STATUS   DS    AL2(DALSTATS,1,1,X'0800') STATUS KEY, SHR OR OLD         05300000
+TU02DSN  DS    AL2(DALDSNAM,1,44)   +0 DATA SET NAME KEY                05310000
+DSNAME   DS    CL44                 +6 DATA SET NAME                    05320000
+TU55DDN  DS    AL2(DALRTDDN,1,8)    +0 RETURN DDNAME                    05330000
+DDNAME   DS    C'SYS45678'          +6 DDNAME                           05340000
+TU57ORG  DS    AL2(DALRTORG,1,2)    +0 RETURN DSORG                     05350000
+DSORG    DS    X'0000'              +6 VDSORG                           05360000
+*                                                                       05370004
+REQUEST  DS    C'ERASE'                VSAM REQUEST                     05380000
+MAXRECNO DS    F'12345678'          +0 MAX RECORD NUMBER       (SHOWCB) 05390004
+MAXLRECL DS    F'32760'             +4 MAX LRECL               (SHOWCB) 05400004
+         IKJEFFMT MTDSECT=NO,MTFORMAT=NEW                               05410000
+         IKJEFFDF DFDSECT=NO,DFDSEC2=NO                                 05420000
+OPENLIST OPEN   IFGACB,MF=L            OPEN LIST                        05430004
+         IFGACB DSECT=NO                                                05440000
+         IFGRPL DSECT=NO                                                05450000
+         GETDSAB MF=(L,GETDSABL)       PARM LIST FOR GETDSAB            05460004
+SWAREQL1 SWAREQ MF=L                   PARM LIST FOR SWAREQ             05470004
+*                                                                       05480004
+WORKAREA DS    0D                      All-purpose work area            05490004
+         ORG   WORKAREA+PPL_LENGTH                                      05500004
+         ORG   WORKAREA+L'SWAEPAX                                       05510004
+         ORG   WORKAREA+(S99RBEND-S99RB)+4                              05520004
+         ORG   WORKAREA+TESTCBL                                         05530004
+         ORG   WORKAREA+SHOWCBL                                         05540004
+         ORG   ,                       high water-mark                  05550004
+DYNAML   EQU   *-DYNAM                 LENGTH OF WORK AREA              05560004
+*                                                                       05570000
+*              MACROS FROM SYS1.MACLIB                                  05580000
+*                                                                       05590000
+         IKJPPL                        PARSE PARAMETER LIST             05600000
+PPL_LENGTH EQU *-PPL                                                    05610004
+         IKJCPPL                       COMMAND PROCESSOR PARM LIST      05620000
+         IEFZB4D0                      DYNALLOC REQUEST BLOCK           05630000
+         IEFZB4D2                      DYNALLOC TEXT UNIT KEYS          05640000
+         IEFZB505 LOCEPAX=YES          EPA MAPPING FOR SWAREQ           05650004
+         IEFJESCT TYPE=DSECT           JES CONTROL TABLE                05660004
+         IEFTIOT1                      TIOT DSECT                       05670004
+         CVT DSECT=YES,LIST=NO                                          05680004
+         IHADSAB                       DATA SET ASSOCIATION BLOCK       05690004
+         YREGS                         REGISTER EQUATES                 05700000
+         END   INITKSDS                                                 05710000
+//SYSLIB   DD DSN=SYS1.MACLIB,DISP=SHR                                  05730000
+//         DD DSN=SYS1.MODGEN,DISP=SHR                                  05740000
+//SYSUT1   DD UNIT=VIO,SPACE=(CYL,5)                                    05750000
+//SYSPRINT DD SYSOUT=*                                                  05760000
+//SYSLIN   DD UNIT=VIO,SPACE=(TRK,1),DISP=(,PASS),BLKSIZE=3200          05770000
+//*                                                                     05780000
+//LKEDTEMP EXEC PGM=IEWL,PARM=(MAP,RENT,REFR)                           05790005
+//SYSLIN   DD DSN=*.HLASM.SYSLIN,DISP=(OLD,PASS)                        05800005
+//SYSLMOD  DD DSN=&&TEMPLOAD(INITKSDS),DISP=(,PASS),                    05810004
+// UNIT=VIO,SPACE=(TRK,(1,,1))                                          05820004
+//SYSPRINT DD SYSOUT=*                                                  05830000
+//*                                                                     05840000
+//GOPGM   EXEC PGM=INITKSDS                                             05850001
+//STEPLIB  DD DSN=&&TEMPLOAD,DISP=(OLD,PASS)                            05860004
+//*NITKSDS DD SPACE=(TRK,100),RECORG=ES,LRECL=100                       05870001
+//INITKSDS DD SPACE=(TRK,100),RECORG=KS,KEYLEN=12,LRECL=100             05880001
+//*                                                                     05890001
+//GOCMD   EXEC PGM=IKJEFT01                                             05900001
+//STEPLIB  DD DSN=&&TEMPLOAD,DISP=(OLD,PASS)                            05910004
+//SYSTSIN  DD *                                                         05920001
+DEF CL(NAME(CL)    IX)                                                  05930000
+REPRO ODS(CL) IFILE(STEPLIB) COUNT(1) REPLACE                           05940000
+INITKSDS CL RESET                                                       05950000
+INITKSDS CL NORESET                                                     05960000
+REPRO ODS(CL) IFILE(STEPLIB) COUNT(1)                                   05970000
+INITKSDS CL                                                             05980000
+INITKSDS CL RESET                                                       05990000
+DELETE CL                                                               06000000
+//SYSTSPRT DD SYSOUT=*                                                  06010000
+//SYSPRINT DD SYSOUT=*                                                  06020000
+//ABNLIGNR DD DUMMY                                                     06030004
+//SYSUDUMP DD SYSOUT=*                                                  06040000
+//*                                                                     06050004
+//HLASM2 EXEC PGM=ASMA90,PARM=(OBJECT,NODECK,NOESD,NORLD,NOXREF)        06060005
+TESTPGM  CSECT                                                          06070004
+         BASR  12,0                                                     06080004
+         USING *,12                                                     06090004
+         LA    1,ACB1                                                   06100004
+         LINK  EP=INITKSDS                                              06110004
+         SVC   3                                                        06120004
+ACB1     ACB   DDNAME=KSDS1                                             06130004
+         END                                                            06140004
+//SYSLIB   DD DSN=SYS1.MACLIB,DISP=SHR                                  06150004
+//SYSUT1   DD UNIT=VIO,SPACE=(CYL,2)                                    06160004
+//SYSPRINT DD SYSOUT=*                                                  06170004
+//SYSLIN   DD UNIT=VIO,SPACE=(TRK,1),DISP=(,PASS),BLKSIZE=3200          06180004
+//*                                                                     06190004
+//LKED2   EXEC PGM=HEWLKED                                              06200004
+//SYSLIN   DD DSN=*.HLASM2.SYSLIN,DISP=(OLD,PASS)                       06210005
+//SYSLMOD  DD DSN=&&TEMPLOAD(TESTPGM),DISP=(MOD,PASS)                   06220004
+//SYSPRINT DD SYSOUT=*                                                  06230004
+//*                                                                     06240004
+//GO      EXEC PGM=TESTPGM,REGION=4M                                    06250004
+//STEPLIB  DD DSN=&&TEMPLOAD,DISP=(OLD,PASS)                            06260004
+//KSDS1    DD SPACE=(TRK,100),RECORG=KS,KEYLEN=12,LRECL=100             06270004
+//SYSDEBUG DD SYSOUT=*                                                  06280004
+//SYSUDUMP DD SYSOUT=*                                                  06290004
+//*                                                                     06300004
+//LKED    EXEC PGM=IEWL,PARM=(LIST,MAP,RENT,REFR)                       06310005
+//SYSLIN   DD DSN=*.HLASM.SYSLIN,DISP=(OLD,PASS)                        06320005
+//SYSLMOD  DD DSN=CBTTAPE.FILE183.LOAD(INITKSDS),DISP=SHR               06330005
+//SYSPRINT DD SYSOUT=*                                                  06340004

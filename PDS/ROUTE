@@ -1,0 +1,745 @@
+/*************************************************************** REXX */00010000
+/*                                                                    */00020000
+/* MODULE NAME = ROUTE                                                */00030000
+/*                                                                    */00040000
+/* DESCRIPTIVE NAME = ROUTE EDIT Macro for ISPF/PDF                   */00050000
+/*                                                                    */00060000
+/* STATUS = R622                                                      */00070022
+/*                                                                    */00080000
+/* FUNCTION = The ROUTE EDIT macro is used to obtain hard copy of     */00090004
+/*            the data currently being edited.  It is useful to       */00100004
+/*            print data that does not exist on disk in a printable   */00110004
+/*            form, such as packed data, data modified during the     */00120004
+/*            current EDIT session, or data only accessible via the   */00130004
+/*            EDIT Interface (EDIF).                                  */00140004
+/*                                                                    */00150000
+/* AUTHOR   =  Gilbert Saint-Flour <carlos@gsf-soft.com>              */00160015
+/*             http://gsf-soft.com/Freeware/                          */00161022
+/*                                                                    */00170000
+/* Dependencies = TSO/E V2                                            */00180000
+/*                ISPF/PDF V3 or ISPF V4                              */00190007
+/*                ROUTEPGM program R603 (optional)                    */00200000
+/*                Printer Default Attribute Table (must be customized)*/00210007
+/*                                                                    */00220000
+/* SYNTAX   =  ROUTE                                                  */00230000
+/*                 dest                  Destination                  */00240000
+/*                 first                 First line       .A          */00250000
+/*                 last                  Last line        .B          */00260000
+/*                 CCHAR                 Data contains carriage       */00270009
+/*                                       control characters           */00280009
+/*                 CLASS(class)          Class                        */00290000
+/*                 COPIES(copies)        Number of copies             */00300000
+/*                 DEST(dest)            Destination (alt)            */00310012
+/*                 FCB(FCB-name)         Name of the FCB              */00320006
+/*                 FORMS(forms-number)   Forms number                 */00330006
+/*                 HOLD/NOHOLD           HOLD/NOHOLD                  */00340012
+/*                 TITLE|NOTITLE         Print/Do-not-print header    */00350010
+/*                 PAGELEN(lines)        Number of lines per page     */00360010
+/*                 OUTDES(output-descriptor-name)                     */00370004
+/*                 PORTRAIT|LANDSCAPE    Print Format (HP LaserJet)   */00380008
+/*                 WRITER(external-writer-name)                       */00390010
+/*                                                                    */00400012
+/* DEFAULTS                                                           */00410012
+/*                 CLASS(A)                                           */00420012
+/*                 NOCCHAR                                            */00430012
+/*                 NOHOLD                                             */00440012
+/*                 PAGELEN(60)                                        */00450012
+/*                 TITLE                                              */00460012
+/*                                                                    */00470000
+/* OPERANDS                                                           */00480012
+/*                                                                    */00490012
+/*           See ROUTEHLP panel for details.                          */00500014
+/*                                                                    */00510003
+/* EXAMPLES                                                           */00520014
+/*                                                                    */00530014
+/*   ROUTE R4                                                         */00540014
+/*                                                                    */00550014
+/*   ROUTE FLOOR1 COPIES(2) CCHAR                                     */00560014
+/*                                                                    */00570014
+/*   ROUTE XRX3700 .A .B CLASS(Q) COPIES(3) NOTITLE PORTRAIT CCHAR    */00580014
+/*                                                                    */00590000
+/* CHANGE ACTIVITY                                                    */00600000
+/*                                                                    */00610000
+/* 602 IF dest='' & class\='' THEN dest='LOCAL'                       */00620002
+/* 603 Range selection using line commands (C/CC or M/MM)             */00630003
+/* 604 Implement the default class table to simplify customizing.     */00640004
+/*     Rewrite Parm Parsing routine.                                  */00650004
+/*     Add OUTDES and LINECT parameters.                              */00660004
+/*     Print line numbers when NUMBER ON is in effect.                */00670004
+/*     Write documentation.                                           */00680004
+/* 605 Convert a JES remote id to a standard format (i.e. RMTn)       */00690005
+/*     to make sure that if the user enters RM002 and the table       */00700005
+/*     contains RMT2, we'll get a match when we look it up.           */00710005
+/* 606 Printer table expanded to contain multiple attributes.         */00720006
+/*     Add support for NODE, FORMS and FCB.                           */00730006
+/* 607 Prevent truncation of last character when the NOASA option     */00740007
+/*     is specified or used as a default.                             */00750007
+/*     Change date format from 95/08/08 to 8AUG1995                   */00760007
+/* 608 Replace ROTATE key-word with PORTRAIT and LANDSCAPE            */00770008
+/* 609 Correct various errors when user enters D/DD line commands     */00780009
+/*     Replace ASA keyword with CCHAR to support machine ctl chars.   */00790009
+/* 610 Add support for the WRITER operand.                            */00800010
+/*     Change LINECT and HDR operands to PAGELEN and TITLE to         */00810010
+/*     look more like the PRINTDS command.                            */00820010
+/* 611 Accept operands from outer macro.                              */00830011
+/*     Right parenthesis at end of command is optional.               */00840011
+/* 612 Add support for the HOLD operand.                              */00850012
+/*     The destination may also be specified as DEST(dest).           */00860012
+/* 613 Prevent error in Parse_Parm when invoked without parameters    */00870013
+/* 614 Move documentation to the ROUTEHLP panel.                      */00880014
+/* 615 Download to a Workstation file using FILEXFER.                 */00890015
+/* 616 Set up PRN and LPT1-4 as PC printer destination                */00900016
+/* 617 Retry with EXECIO after ROUTEPGM failure                       */00910017
+/* 618 Fix "0 Lines Written" message when routepgm=no                 */00920018
+/* 619 Line length may be longer than 255 charcters                   */00930019
+/* 620 Replace XEROX 3700 code with HP LaserJet codes                 */00940020
+/* 621 Display WSCON Panel when needed                                */00950021
+/* 622 END missing on line 306                                        */00960022
+/*                                                                    */00970000
+/**********************************************************************/00980000
+Rel=R622                       /* Current release                     */00990022
+/*--------------------------------------------------------------------*/01000000
+/*                                                                    */01010000
+/*                  Define Default Values                             */01020000
+/*                                                                    */01030000
+/*--------------------------------------------------------------------*/01040000
+Default_Class='A'              /* Default CLASS                       */01050006
+Default_Dest='LOCAL'           /* DEST defaults to LOCAL              */01060006
+Default_Dest=''                /* User must specify DEST              */01070006
+Default_Forms=''               /* No special form required            */01080006
+Default_Node=''                /* Dest defined on this JES            */01090006
+Default_Pagelen=60             /* Lines per page                      */01100010
+Print_Line_Numbers='NO'        /* Do NOT print line numbers           */01110006
+Print_Line_Numbers='YES'       /* Print line numbers                  */01120006
+Routepgm='XYZ.LOAD'            /* Use ISPLLIB LIBDEF                  */01130006
+Routepgm='NO'                  /* Use the REXX stack and EXECIO       */01140006
+Routepgm='YES'                 /* Use the ROUTEPGM program            */01150006
+xdsn='ISPFCS.TEXT'             /* temp dsn for WS download            */01160015
+/*--------------------------------------------------------------------*/01170000
+/*                                                                    */01180000
+/*                Printer Default Attribute Table                     */01190006
+/*                                                                    */01200000
+/*     This table defines default attributes for printers.            */01210006
+/*  It must be set up locally for every printer that requires default */01220006
+/*  attributes different from the values set in the Default_nnnnn     */01230006
+/*  variables above.  Hyphens must be used to indicate null values.   */01240006
+/*                                                                    */01250000
+/*  Note: for a JES2 remote, you must use the RMTn format (no leading */01260005
+/*        zeroes in the numeric portion).                             */01270005
+/*--------------------------------------------------------------------*/01280004
+                                                                        01290000
+ /*         PRINTER  NODE/NODE.DEST CLASS PAGELEN FORMS  FCB  MODE   */ 01300010
+printer.1 ="LOCAL    -                A     60    -       -    -      " 01310008
+printer.2 ="DEVV     -                G     60    -       -    -      " 01320008
+printer.3 ="ROSV     -                Q     60    -       -    -      " 01330008
+printer.4 ="XRX3700  -                Q     60    -       -    P37    " 01340008
+printer.5 ="ESG3700  DEVV             Q     60    -       -    P37    " 01350008
+printer.6 ="SSG1     DEVV.SSG13287    Q     60    -       -    L37    " 01360008
+printer.7 ="VSA      -                M     60    Z100    -    -      " 01370012
+printer.10="GSFTEST  APL1             2     60    3PLY    8    -      " 01380016
+printer.11="RDGUISTS -                U     60    -       -    -      " 01390008
+printer.12="RDGCMPRM -                U     60    -       -    -      " 01400008
+printer.13="RDGPRGMR -                U     60    -       -    -      " 01410008
+printer.17="RMT2     CHIC             U     60    -       -    -      " 01420008
+printer.21="FLOOR1   A019.DSLASER5    A     60    STD     -    -      " 01430008
+printer.22="FLOOR2   A019.U22         A     60    STD     -    -      " 01440008
+printer.24="FLOOR4   A019.RMT2        A     60    4SH1    -    -      " 01450008
+printer.30="PRN      C:\DEV\PRN       A     0     EJECT   -    -      " 01460016
+printer.31="LPT1     C:\DEV\LPT1      A     0     EJECT   -    -      " 01470016
+printer.32="LPT2     C:\DEV\LPT2      A     0     EJECT   -    -      " 01480016
+printer.33="LPT3     C:\DEV\LPT3      A     0     EJECT   -    -      " 01490016
+printer.34="LPT4     C:\DEV\LPT4      A     0     EJECT   -    -      " 01500016
+Number_of_printers=34                                                   01510016
+  /*----------------------------------------------------------------*/  01520004
+  /*     Initialise Variables used by the PARM parsing routine      */  01530004
+  /*----------------------------------------------------------------*/  01540004
+Cchar=''                                /* CCHAR                      */01550009
+Class=''                                /* SYSOUT class               */01560000
+Copies=''                               /* Number of copies           */01570001
+Dest=''                                 /* Destination                */01580006
+Forms=''                                /* Forms number               */01590006
+Fcb=''                                  /* FCB name                   */01600006
+Hold=''                                 /* HOLD/NOHOLD                */01610012
+Line1=''                                /* First Line (default is .ZF)*/01620000
+Line2=''                                /* Last Line (default is .ZL) */01630000
+Mode=''                                 /* Portrait/Landscape         */01640008
+Node=''                                 /* Routing Node               */01650006
+Outdes=''                               /* Output Descriptor          */01660004
+Pagelen=''                              /* Lines per page             */01670010
+Title=''                                /* TITLE/NOTITLE              */01680010
+Writer=''                               /* Name of external writer    */01690010
+  /*----------------------------------------------------------------*/  01700000
+  /*              Invoke the PARM parsing routine                   */  01710000
+  /*----------------------------------------------------------------*/  01720000
+ADDRESS ISPEXEC;  "CONTROL ERRORS RETURN"                               01730000
+"ISREDIT MACRO (PARM) NOPROCESS"                                        01740003
+IF rc>0 THEN                                                            01750000
+  SIGNAL Not_an_EDIT_macro                                              01760000
+                                                                        01770000
+ARG Other_operands                      /* options from invoking EXEC */01780011
+                                                                        01790000
+CALL PARSE_PARM                         /* PARSE PARAMETERS           */01800000
+  /*----------------------------------------------------------------*/  01810000
+  /*              Build the Title line (TITLE option)               */  01820010
+  /*----------------------------------------------------------------*/  01830000
+"ISREDIT (LRECL) = LRECL"         /*  MAX Line LENGTH                 */01840000
+IF Cchar \= 'CCHAR' THEN                                                01850009
+  lrecl=lrecl+1                                                         01860007
+IF LEFT(Title,1)='T' THEN DO      /*  Set up header                   */01870011
+  "ISREDIT (DSNAME) = DATASET"; "ISREDIT (MEMBER) = MEMBER"             01880000
+  IF member \= " " THEN    member = "("member")"                        01890000
+  Line = '1'USERID()" "SPACE(DATE(),0)" "TIME()" "dsname||member        01900007
+  Line = JUSTIFY(TRANSLATE(Line),81)                                    01910007
+  IF lrecl < LENGTH(line) THEN lrecl=LENGTH(line)                       01920000
+  END                                                                   01930000
+  /*----------------------------------------------------------------*/  01940009
+  /* If CCHAR option specified, determine CC type from first record */  01950009
+  /* Note: RECFM=U can NOT be used with EXECIO, because EXECIO will */  01960019
+  /*    change it to RECFM=VB, which may cause S002-18 in ROUTEPGM. */  01970019
+  /*----------------------------------------------------------------*/  01980009
+Recfm='F A'                       /*  Default control characters      */01990009
+IF Cchar='CCHAR' THEN DO                                                02000009
+  "ISREDIT (L) = LINE" Line1      /*  Read first line                 */02010009
+  IF VERIFY(LEFT(L,1),' 0-+1')=1 THEN                                   02020009
+    Recfm='F M'                   /*  Machine control characters      */02030009
+  END                                                                   02040009
+  /*----------------------------------------------------------------*/  02050000
+  /*                Allocate the SYSOUT data set                    */  02060000
+  /*----------------------------------------------------------------*/  02070000
+Alloc=Class Copies Dest Fcb Forms Hold Outdes Writer                    02080012
+Alloc=SPACE(Alloc,1) 'RECFM('Recfm') BLKSIZE('Lrecl')'                  02090011
+IF wsfn\='' THEN DO                         /* download to WS */        02100015
+  alloc="DS("xdsn") OLD DELETE"                                         02110015
+  RC=LISTDSI(xdsn 'NORECALL')                                           02120015
+  IF RC>0 THEN DO                                                       02130015
+    IF RC=16 & SYSREASON=9 THEN             /* Migrated data set */     02140015
+      "HDELETE" xdsn "WAIT"                                             02150015
+    alloc="DS("xdsn") MOD CATALOG",                                     02160016
+         "TRACKS SPACE(10 10) UNIT(SYSALLDA)",                          02170015
+         "DSORG(PS) RECFM(V B) LRECL(" lrecl+4 ")"                      02180019
+    END                                                                 02190015
+  END                                                                   02200015
+IF debug='DEBUG' THEN SAY Alloc                                         02210010
+ADDRESS TSO,                      /*  Issue ALLOCATE Command  */        02220011
+        "ALLOCATE DD(DDROUTE) REUSE" Alloc                              02230011
+IF rc>0 THEN EXIT 20              /*  ALLOCATE command failed */        02240006
+  /*----------------------------------------------------------------*/  02250000
+  /*                Write the title line                            */  02260000
+  /*----------------------------------------------------------------*/  02270000
+Titlelen='000'                    /*  number of lines in header       */02280010
+IF LEFT(Title,1)='T' THEN DO      /*  Write header                    */02290011
+  QUEUE Line;QUEUE ' ';QUEUE ' '                                        02300000
+  Titlelen='003'                  /*  number of lines in header       */02310010
+  END                                                                   02320000
+  /*----------------------------------------------------------------*/  02330000
+  /*     Set the LaserJet print mode: Landscape or Portrait         */  02340020
+  /*----------------------------------------------------------------*/  02350000
+IF Mode\='' THEN DO                /*  Rotate output                  */02360008
+  If Mode='L' THEN DO                                                   02370008
+    QUEUE 'C51B5093F1D6'X          /*  Mode(landscape)                */02380020
+    END                                                                 02390008
+  If Mode='P' THEN DO                                                   02400008
+    QUEUE 'C51B5093F0D6'X          /*  Mode(portrait)                 */02410020
+    END                                                                 02420008
+  END                                                                   02430000
+  /*----------------------------------------------------------------*/  02440004
+  /*   If NUMBER mode is ON and global variable Print_line_numbers  */  02450004
+  /*   is set to YES, change NUMBER mode to OFF.                    */  02460004
+  /*----------------------------------------------------------------*/  02470004
+"ISREDIT (NUMMODE,NUMTYPE) = NUMBER"   /* Query number mode info    */  02480004
+IF Nummode='ON' & Print_Line_Numbers='YES' THEN                         02490004
+  'ISREDIT NUMBER = OFF'               /* Turn OFF number mode      */  02500004
+  /*----------------------------------------------------------------*/  02510000
+  /*                                                                */  02520000
+  /*   Write data to DDROUTE.                                       */  02530000
+  /*                                                                */  02540000
+  /*   1. If the ROUTEPGM program is NOT available, then use QUEUE  */  02550000
+  /*      and EXECIO for writing.                                   */  02560000
+  /*                                                                */  02570000
+  /*   2. If the ROUTEPGM program IS available, then invoke it to   */  02580000
+  /*      speed things up.                                          */  02590000
+  /*                                                                */  02600000
+  /*----------------------------------------------------------------*/  02610000
+                                                                        02620000
+IF routepgm='NO' THEN                                                   02630006
+  CALL stack_print                     /* ROUTEPGM is NOT available  */ 02640004
+ELSE DO                                                                 02650017
+  CALL pgm_print                       /* ROUTEPGM is available      */ 02660004
+  IF Pgmrc>0 THEN                      /* If ROUTEPGM failed,        */ 02670017
+    CALL stack_print                   /*   use EXECIO instead       */ 02680017
+  END                                                                   02690017
+                                                                        02700000
+"ISREDIT NUMBER =" Nummode             /* Reset NUMBER mode          */ 02710004
+  /*----------------------------------------------------------------*/  02720000
+  /*     Reset the LaserJet printer to default print mode           */  02730020
+  /*----------------------------------------------------------------*/  02740000
+IF Mode\='' THEN                  /* reset printer to default mode  */  02750008
+    QUEUE 'C51B45'X                                                     02760020
+  /*----------------------------------------------------------------*/  02770000
+  /*    Write lines out from the TSO stack to the output data set   */  02780000
+  /*----------------------------------------------------------------*/  02790000
+IF QUEUED() > 0 THEN DO                                                 02800006
+  QUEUE ''                                                              02810000
+  ADDRESS TSO "EXECIO * DISKW DDROUTE (FINIS"    /* WRITE lines       */02820000
+  END                                                                   02830000
+  /*----------------------------------------------------------------*/  02840015
+  /*            Download temp data set to the Workstation           */  02850015
+  /*----------------------------------------------------------------*/  02860015
+IF wsfn\='' THEN DO                            /* Download to WS ? */   02870015
+  IF Forms='FORMS(EJECT)' THEN DO                                       02880016
+    QUEUE '0C'X                                  /* form feed (FF) */   02890016
+    QUEUE ''                                       /* eof */            02900016
+    ADDRESS TSO "EXECIO * DISKW DDROUTE (FINIS"    /* append x'0C' */   02910016
+    END                                                                 02920016
+  IF Debug='DEBUG' THEN                                                 02930015
+    SAY "FILEXFER HOST(xdsn) WS(wsfn) TO(WS) TEXT" xdsn wsfn            02940015
+  "FILEXFER HOST(xdsn) WS(wsfn) TO(WS) TEXT"                            02950015
+  IF rc>0 THEN DO                              /* FILEXFER error   */   02960021
+    IF zerrmsg='ISPX010' THEN DO                                        02970021
+      "SETMSG MSG("zerrmsg")"                  /* send the message */   02980021
+      "SELECT PGM(ISPWSCD) PARM(WSCON,PANEL)"                           02990021
+      If rc>0 THEN                                                      03000021
+        SIGNAL SETMSG                                                   03010021
+      "FILEXFER HOST(xdsn) WS(wsfn) TO(WS) TEXT"  /* retry */           03020021
+      If rc>0 THEN                                                      03030021
+        SIGNAL Not_connected                                            03040021
+      END                                                               03050021
+    END                                                                 03060022
+  i=line2-line1+1                               /* count lines copied */03070015
+  Zedsmsg = i "Lines Written"                    /* Short message    */ 03080015
+  Zedlmsg = "ROUTE "Rel": Your EDIT Data Set has been routed to" wsfn   03090015
+  "SETMSG MSG(ISRZ001)"                          /* send the message */ 03100015
+  IF cmd = 'M' THEN                       /* if MM/MM range specified */03110015
+    'ISREDIT DELETE' Line1 Line2          /* delete the lines printed */03120015
+  ADDRESS TSO "FREE DD(DDROUTE) DELETE"    /* delete temp data set */   03130015
+  EXIT                                                                  03140015
+  END                                                                   03150015
+  /*----------------------------------------------------------------*/  03160000
+  /*            Issue completion message to terminal                */  03170000
+  /*----------------------------------------------------------------*/  03180000
+IF Pgmrc=0 THEN DO                               /* If COPY went OK  */ 03190006
+  i=line2-line1+1                               /* count lines copied */03200009
+  Zedsmsg = i "Lines Written"                    /* Short message    */ 03210009
+  Zedlmsg = "ROUTE "Rel": Your EDIT Data set has been routed to" Alloc  03220012
+  "SETMSG MSG(ISRZ001)"                          /* send the message */ 03230000
+  IF cmd = 'M' THEN                       /* if MM/MM range specified */03240006
+    'ISREDIT DELETE' Line1 Line2          /* delete the lines printed */03250000
+  END                                                                   03260000
+  /*----------------------------------------------------------------*/  03270000
+  /*               Free up the output data set                      */  03280000
+  /*----------------------------------------------------------------*/  03290000
+ADDRESS TSO "FREE DD(DDROUTE)"        /* make output available to JES */03300000
+EXIT                                                                    03310000
+/**********************************************************************/03320000
+/*                                                                    */03330000
+/*                    PROCESS INPUT PARAMETERS                        */03340000
+/*                                                                    */03350000
+/**********************************************************************/03360000
+PARSE_PARM:                                                             03370000
+  IF parm='?' THEN                                                      03380006
+    SIGNAL HELP_panel                         /* User requested HELP */ 03390000
+                                                                        03400000
+  'ISREDIT (LINE2) = LINENUM .ZLAST'          /* Last Line           */ 03410000
+  IF rc>0 | line2=0 THEN                                                03420006
+    SIGNAL Empty_dataset                      /* No lines to print   */ 03430000
+                                                                        03440000
+  Debug=''                                                              03450000
+  Range1=''                                                             03460000
+  Range2=''                                                             03470000
+  Alphabetic=XRANGE('A','Z')                                            03480004
+  Numeric='1234567890'                                                  03490004
+  Alphanumeric=Alphabetic||Numeric                                      03500004
+  IF Other_operands\='' THEN            /* invoked from outer macro   */03510011
+    Parm=Parm Other_operands            /* add at end of command      */03520011
+  wsfn=''                               /* dest is NOT a wsfn         */03530015
+  /*----------------------------------------------------------------*/  03540011
+  /*            Add closing parenthesis at end of string            */  03550011
+  /*----------------------------------------------------------------*/  03560011
+  IF parm\='' THEN DO                                                   03570013
+    p=WORD(Parm,WORDS(Parm))                                            03580013
+    IF RIGHT(p,1)\=')' & POS('(',p)>1 THEN                              03590013
+      Parm=Parm||')'                                                    03600013
+  END                                                                   03610013
+  /*----------------------------------------------------------------*/  03620000
+  /*               Process input parameters                         */  03630000
+  /*----------------------------------------------------------------*/  03640000
+  DO i=1 to WORDS(parm)                                                 03650015
+    p=TRANSLATE(WORD(parm,i))                                           03660004
+    IF Debug='DEBUG' THEN SAY 'p='p 'parm='parm                         03670004
+    kwd=''                                                              03680004
+    IF RIGHT(p,1)=')' & POS('(',p)>1 THEN DO                            03690004
+      value=LEFT(p,LENGTH(p)-1)               /* remove right paren */  03700004
+      PARSE VAR value kwd '(' value           /* extract key-word   */  03710004
+      END                                                               03720004
+    SELECT                                                              03730004
+      WHEN p='DEBUG'  THEN Debug=p            /* debugging */           03740004
+      WHEN p='EXECIO' THEN Routepgm='NO'      /* debugging */           03750004
+      WHEN LEFT(p,1) = '.' THEN DO                                      03760004
+        If Range1='' THEN                                               03770009
+          Range1=p                                                      03780009
+        ELSE DO                                                         03790004
+          IF Range2\='' THEN SIGNAL Duplicate_keyword                   03800009
+          Range2=p                                                      03810009
+          END                                                           03820004
+        END                                                             03830004
+      WHEN ABBREV('CCHAR',p,2) THEN                                     03840011
+        IF Cchar='' THEN                                                03850009
+          Cchar='CCHAR'                                                 03860011
+        ELSE                                                            03870004
+          SIGNAL Duplicate_keyword                                      03880004
+      WHEN ABBREV('CLASS',kwd,2) THEN                                   03890004
+        SELECT                                                          03900004
+          WHEN Class\='' THEN SIGNAL Duplicate_keyword                  03910004
+          WHEN LENGTH(value)\=1 THEN SIGNAL Invalid_value               03920004
+          WHEN VERIFY(value,Alphanumeric) > 0 THEN SIGNAL Invalid_value 03930004
+          OTHERWISE Class=value                                         03940006
+        END                                                             03950004
+      WHEN ABBREV('COPIES',kwd,2) THEN                                  03960004
+        SELECT                                                          03970004
+          WHEN Copies\='' THEN SIGNAL Duplicate_keyword                 03980004
+          WHEN VERIFY(value,Numeric) > 0 THEN SIGNAL Invalid_value      03990004
+          WHEN value<1 | value>255 THEN SIGNAL Invalid_value            04000004
+          OTHERWISE Copies='COPIES('value+0')'                          04010004
+        END                                                             04020004
+      WHEN ABBREV('DEST',kwd,2) THEN                                    04030012
+        SELECT                                                          04040012
+          WHEN Dest\='' THEN SIGNAL Duplicate_keyword                   04050012
+          OTHERWISE Dest=Value                                          04060012
+        END                                                             04070012
+      WHEN ABBREV('FCB',kwd,2) THEN                                     04080006
+        SELECT                                                          04090006
+          WHEN Fcb\='' THEN SIGNAL Duplicate_keyword                    04100006
+          WHEN LENGTH(value)=0 THEN SIGNAL Invalid_value                04110006
+          WHEN LENGTH(value)>4 THEN SIGNAL Invalid_value                04120006
+          OTHERWISE Fcb='FCB('value')'                                  04130006
+        END                                                             04140006
+      WHEN ABBREV('FORMS',kwd,2) THEN                                   04150006
+        SELECT                                                          04160006
+          WHEN Forms\='' THEN SIGNAL Duplicate_keyword                  04170006
+          WHEN LENGTH(value)=0 THEN SIGNAL Invalid_value                04180006
+          WHEN LENGTH(value)>4 THEN SIGNAL Invalid_value                04190006
+          OTHERWISE Forms='FORMS('value')'                              04200006
+        END                                                             04210006
+      WHEN ABBREV('HOLD',p,2) THEN                                      04220012
+        IF Hold='' THEN                                                 04230012
+          Hold='HOLD'                                                   04240012
+        ELSE                                                            04250012
+          SIGNAL Duplicate_keyword                                      04260012
+      WHEN ABBREV('NOHOLD',p,3) THEN                                    04270012
+        IF Hold='' THEN                                                 04280012
+          Hold='NOHOLD'                                                 04290012
+        ELSE                                                            04300012
+          SIGNAL Duplicate_keyword                                      04310012
+      WHEN ABBREV('PAGELEN',kwd,2) THEN                                 04320010
+        SELECT                                                          04330004
+          WHEN Pagelen\='' THEN SIGNAL Duplicate_keyword                04340010
+          WHEN VERIFY(value,Numeric) > 0 THEN SIGNAL Invalid_value      04350004
+          WHEN value<10 | value>255 THEN SIGNAL Invalid_value           04360004
+          OTHERWISE Pagelen=value                                       04370010
+        END                                                             04380004
+      WHEN ABBREV('PORTRAIT',p,4) | ABBREV('LANDSCAPE',p,4) THEN        04390008
+        IF Mode='' THEN                                                 04400008
+          Mode=LEFT(p,1)                 /* P(ortrait) or L(andscape) */04410008
+        ELSE                                                            04420004
+          SIGNAL Duplicate_keyword                                      04430004
+      WHEN ABBREV('OUTDES',kwd,4) THEN                                  04440011
+        SELECT                                                          04450004
+          WHEN Outdes\='' THEN SIGNAL Duplicate_keyword                 04460004
+          WHEN LENGTH(value)=0 THEN SIGNAL Invalid_value                04470004
+          WHEN LENGTH(value)>8 THEN SIGNAL Invalid_value                04480004
+          WHEN VERIFY(value,Alphanumeric) > 0 THEN SIGNAL Invalid_value 04490004
+          OTHERWISE Outdes='OUTDES('value')'                            04500004
+        END                                                             04510004
+      WHEN ABBREV('TITLE',p,3) | ABBREV('NOTITLE',p,5) THEN             04520011
+        IF Title='' THEN                                                04530010
+          Title=p                                                       04540010
+        ELSE                                                            04550004
+          SIGNAL Duplicate_keyword                                      04560004
+      WHEN ABBREV('WRITER',kwd,2) THEN                                  04570011
+        SELECT                                                          04580010
+          WHEN Writer\='' THEN SIGNAL Duplicate_keyword                 04590010
+          WHEN LENGTH(value)=0 THEN SIGNAL Invalid_value                04600010
+          WHEN LENGTH(value)>8 THEN SIGNAL Invalid_value                04610010
+          WHEN VERIFY(value,Alphanumeric) > 0 THEN SIGNAL Invalid_value 04620010
+          OTHERWISE Writer='WRITER('value')'                            04630010
+        END                                                             04640010
+      OTHERWISE                                                         04650004
+        IF dest='' THEN                                                 04660004
+          dest=p                                                        04670004
+        ELSE                                                            04680004
+          SIGNAL Dest_multiple                /* too many DESTs      */ 04690004
+    END                                                                 04700004
+  END                                                                   04710004
+                                                                        04720000
+  /*    Check if the user selected a range by entering a line        */ 04730004
+  /*    command such as C, Cnn, CC/CC or M, Mnn, MM/MM. If it is     */ 04740004
+  /*    the case, set line1 and line2 to the first and last line     */ 04750004
+  /*    numbers, respectively.  If the user selected a range both    */ 04760004
+  /*    in the ROUTE command (such as ROUTE .X .Y) and in a line     */ 04770004
+  /*    command, issue an error message.                             */ 04780004
+                                                                        04790000
+  'ISREDIT PROCESS RANGE C M'                                           04800004
+  SELECT                                                                04810004
+    WHEN rc=0 THEN DO                                                   04820004
+      'ISREDIT (CMD)   = RANGE_CMD'                /* get C or M  */    04830004
+      IF range1\='' THEN SIGNAL Command_conflict                        04840004
+      "ISREDIT (LINE1) = LINENUM .ZFRANGE"         /* First line  */    04850004
+      "ISREDIT (LINE2) = LINENUM .ZLRANGE"         /* Last line   */    04860004
+      END                                                               04870004
+    WHEN rc=4 THEN DO                                                   04880004
+      CMD='C'                                                           04890009
+      IF Range1\='' THEN DO                       /* ROUTE .X .Y     */ 04900009
+        p=Range1                                                        04910009
+        "ISREDIT (LINE1) = LINENUM" Range1        /* LINENUM .X      */ 04920009
+        IF rc>0 THEN SIGNAL Invalid_label                               04930009
+        IF Range2='' THEN Range2='.ZLAST'          /*   DEFAULTS  */    04940009
+        p=Range2                                                        04950009
+        "ISREDIT (LINE2) = LINENUM" Range2        /* LINENUM .Y      */ 04960009
+        IF rc>0 THEN SIGNAL Invalid_label                               04970009
+        IF Line2<Line1 THEN DO                                          04980009
+          x=Line1; Line1=Line2; Line2=x           /* Swap labels     */ 04990009
+          END                                                           05000009
+        END                                                             05010009
+      ELSE DO                                                           05020009
+        Line1=1                                    /*   DEFAULTS  */    05030009
+        "ISREDIT (LINE2) = LINENUM .ZLAST"         /*   DEFAULTS  */    05040009
+        END                                                             05050009
+      END                                                               05060009
+    WHEN rc=20 THEN                       /* All lines deleted        */05070009
+      SIGNAL Empty_dataset                /* No lines to ROUTE        */05080009
+    OTHERWISE DO                          /* Line command conflict    */05090009
+      Pgmrc=RC                            /* Save ISREDIT Return code */05100009
+      IF zerrmsg\='' THEN                                               05110009
+        'SETMSG MSG('zerrmsg')'           /* Edit has created message */05120009
+      EXIT Pgmrc                                                        05130009
+      END                                                               05140009
+  END                                                                   05150009
+  /*----------------------------------------------------------------*/  05160000
+  /*                 Assign default value for DEST                  */  05170013
+  /*----------------------------------------------------------------*/  05180000
+IF Dest='' THEN                                                         05190006
+  SELECT                                                                05200003
+    WHEN default_dest\='' THEN                                          05210003
+      Dest=Default_dest                       /* use default value   */ 05220003
+    WHEN Class\='' THEN NOP                   /* CLASS(c) specified  */ 05230004
+    WHEN Outdes\='' THEN NOP                  /* OUTDES(x) specified */ 05240009
+    Otherwise                                                           05250003
+      SIGNAL Dest_missing                     /* dest is mandatory   */ 05260003
+  END                                                                   05270000
+  /*----------------------------------------------------------------*/  05280000
+  /*                     Search Printer Table                       */  05290006
+  /*----------------------------------------------------------------*/  05300000
+n=VERIFY(REVERSE(dest),'0123456789')                                    05310006
+IF n>0 & ABBREV('RMT',LEFT(dest,LENGTH(dest)-n+1)) THEN                 05320006
+  dest='RMT'RIGHT(dest,n-1)+0                 /* R002 -> RMT2        */ 05330006
+                                                                        05340000
+DO i=1 to Number_of_printers                                            05350006
+  IF WORD(printer.i,1)=dest THEN DO                                     05360006
+    IF WORD(printer.i,2)\='-' THEN Default_node=WORD(printer.i,2)       05370006
+    IF WORD(printer.i,3)\='-' THEN Default_class=WORD(printer.i,3)      05380006
+    IF WORD(printer.i,4)\='-' THEN Default_Pagelen=WORD(printer.i,4)    05390010
+    IF Pagelen='' & WORD(printer.i,4)\='-' THEN                         05400010
+      Pagelen=WORD(printer.i,4)                                         05410010
+    IF Forms='' & WORD(printer.i,5)\='-' THEN                           05420006
+      Forms='FORMS('WORD(printer.i,5)')'                                05430006
+    IF FCB='' & WORD(printer.i,6)\='-' THEN                             05440006
+      FCB='FCB('WORD(printer.i,6)')'                                    05450006
+    LEAVE                                                               05460006
+  END                                                                   05470006
+END                                                                     05480006
+                                                                        05490000
+IF Default_node\='' THEN                                                05500006
+  IF POS('.',Default_node)=0 & POS('\',Default_node)=0 THEN             05510016
+    Dest= Default_node'.'dest                /* node=A019           */  05520006
+  ELSE                                                                  05530006
+    Dest=Default_node                        /* node=A019.RMT2      */  05540006
+                                                                        05550000
+  /*----------------------------------------------------------------*/  05560016
+  /*                 Check for a workstation file                   */  05570016
+  /*----------------------------------------------------------------*/  05580016
+IF LEFT(dest,1) = '/' | SUBSTR(dest,2,1) = ':' THEN DO                  05590016
+  'VGET (ZWSCON ZSCREEND ZPREFIX) SHARED'                               05600016
+  IF zwscon='' THEN DO                                                  05610021
+    Zedsmsg = 'Not Connected'                /* Short message    */     05620021
+    Zedlmsg = 'A connection must be established with the work-station', 05630021
+              'before this command is entered.'                         05640021
+    "SETMSG MSG(ISRZ001)"                    /* send the message */     05650021
+    "SELECT PGM(ISPWSCD) PARM(WSCON,PANEL)"                             05660021
+    If rc>0 THEN                                                        05670021
+      SIGNAL Not_connected                                              05680021
+    END                                                                 05690021
+  wsfn=dest                                                             05700016
+  Cchar='CCHAR'                                                         05710016
+  Pagelen=0                                                             05720016
+  END                                                                   05730016
+  /*----------------------------------------------------------------*/  05740016
+  /*                  Assign default value for TITLE                */  05750016
+  /*----------------------------------------------------------------*/  05760016
+IF Title='' then                  /*  Default for Title is TITLE      */05770016
+  IF Cchar='CCHAR' then                                                 05780016
+     Title='NOTITLE'              /*  unless CCHAR has been           */05790016
+  ELSE                                                                  05800016
+     Title='TITLE'                /*  specified                       */05810016
+                                                                        05820016
+IF Debug='DEBUG' THEN SAY dest','Class','Line1','Line2','Cchar','Mode   05830016
+                                                                        05840000
+IF Dest\='' THEN                                                        05850006
+  Dest='DEST('dest')'                                                   05860006
+                                                                        05870000
+IF Class='' THEN                                                        05880006
+  IF Default_class='' THEN                                              05890006
+    Class='SYSOUT'                                                      05900006
+  ELSE                                                                  05910006
+    Class='SYSOUT('Default_class')'                                     05920006
+ELSE                                                                    05930006
+  Class='SYSOUT('Class')'                                               05940006
+                                                                        05950000
+IF Pagelen='' THEN Pagelen=Default_Pagelen                              05960010
+                                                                        05970000
+RETURN                                                                  05980001
+/**********************************************************************/05990000
+/*                                                                    */06000000
+/*              QUEUE the data lines to the TSO stack                 */06010000
+/*                                                                    */06020000
+/**********************************************************************/06030000
+Stack_print:                                                            06040000
+  ctlchr=' '                                                            06050000
+  IF Cchar='CCHAR' THEN                                                 06060009
+    DO i = Line1 TO Line2                                               06070018
+      "ISREDIT (LINE) = LINE" i                /* GET CURRENT LINE */   06080018
+      QUEUE Line                                                        06090000
+    END                                                                 06100000
+  ELSE                                                                  06110000
+    DO i = Line1 TO Line2                                               06120018
+      "ISREDIT (LINE) = LINE" i                /* GET CURRENT LINE */   06130018
+      QUEUE ctlchr||Line                                                06140000
+      ctlchr=" ";Titlelen=Titlelen+1                                    06150010
+      IF Titlelen>Pagelen THEN DO; CTLCHR="1"; Titlelen=001; END        06160010
+    END                                                                 06170000
+  Pgmrc=0                                  /* copy successful       */  06180000
+RETURN                                                                  06190000
+/**********************************************************************/06200000
+/*                                                                    */06210000
+/*              Invoke ROUTEPGM to write data lines                   */06220000
+/*                                                                    */06230000
+/**********************************************************************/06240000
+Pgm_print:                                                              06250000
+  Line1=RIGHT(Line1,6,'0')                                              06260000
+  Line2=RIGHT(Line2,6,'0')                                              06270000
+  IF Cchar='CCHAR' THEN                                                 06280009
+    PARM="DDROUTE,"Line1","Line2                                        06290000
+  ELSE                                                                  06300000
+    PARM="DDROUTE,"Line1","Line2","RIGHT(Pagelen,3,'0')","Titlelen      06310010
+                                                                        06320000
+  IF QUEUED() > 0 THEN DO                          /* write title */    06330000
+    QUEUE ''                                       /* write title */    06340000
+    ADDRESS TSO "EXECIO * DISKW DDROUTE (FINIS"    /* write title */    06350000
+    END                                            /* write title */    06360000
+                                                                        06370000
+  IF LENGTH(routepgm) > 3 THEN DO                                       06380000
+    p7=routepgm                            /* for ISPD014 message   */  06390000
+    "LIBDEF ISPLLIB DATASET ID('"routepgm"')"                           06400000
+    IF rc>0 THEN                           /* ISPLLIB error         */  06410000
+      SIGNAL SETMSG                                                     06420000
+    END                                                                 06430000
+                                                                        06440000
+  "SELECT PGM(ROUTEPGM) PARM("parm")"      /* write the data lines  */  06450000
+  Pgmrc=rc                                 /* save return code      */  06460000
+                                                                        06470000
+  IF LENGTH(routepgm) > 3 THEN "LIBDEF ISPLLIB"                         06480000
+                                                                        06490000
+  SELECT                                                                06500000
+    WHEN Pgmrc=0 THEN NOP                                               06510000
+    WHEN Pgmrc=8 THEN                                                   06520000
+      SAY "OPEN FAILED FOR DDN=DDROUTE, RC="Pgmrc                       06530000
+    WHEN Pgmrc=12 THEN                                                  06540000
+      SAY "INVALID PARM: '"parm"'"                                      06550000
+    OTHERWISE                                                           06560000
+      SAY "ROUTEPGM.RC="Pgmrc "PARM='"parm"'"                           06570000
+      "GETMSG MSG(&zerrmsg) SHORTMSG(ZERRSM) LONGMSG(ZERRLM)"           06580017
+      IF rc=0 THEN DO                                                   06590017
+        SAY zerrsm                                                      06600017
+        SAY zerrlm                                                      06610017
+        END                                                             06620017
+    END                                                                 06630000
+  RETURN                                                                06640000
+/**********************************************************************/06650000
+/*                      Exception Routines                            */06660000
+/**********************************************************************/06670000
+Not_an_EDIT_macro:                                                      06680000
+  Zedsmsg = "EDIT Macro Only"                  /* Short message    */   06690000
+  Zedlmsg = "ROUTE may only be invoked as an EDIT macro"                06700000
+  "SETMSG MSG(ISRZ001)"                        /* send the message */   06710000
+  EXIT 8                                                                06720000
+HELP_panel:                                                             06730000
+  "DISPLAY PANEL(ROUTEHLP)"              /* Display HELP panel        */06740000
+  IF rc>8 THEN                                                          06750000
+    SIGNAL SETMSG                        /* HELP panel is missing     */06760000
+  EXIT                                                                  06770004
+Empty_dataset:                                                          06780004
+  zedsmsg='Empty data set'                                              06790004
+  zedlmsg='There are no lines to print'                                 06800004
+  'SETMSG MSG(ISRZ001)'                                                 06810004
+  EXIT 12                                                               06820004
+Duplicate_keyword:                                                      06830004
+  IF kwd='' THEN kwd=p                                                  06840004
+  zerrsm='Duplicate Key-word'                                           06850004
+  zerrlm='Key-word' kwd 'has been specified more than once.'            06860004
+  SIGNAL Beep_msg                                                       06870004
+Invalid_value:                                                          06880004
+  zerrsm='Invalid Value'                                                06890004
+  zerrlm='Value' value 'is invalid for key-word' kwd                    06900004
+  IF Value='' THEN                                                      06910004
+    zerrlm='A null value is invalid for key-word' kwd                   06920004
+  SIGNAL Beep_msg                                                       06930004
+Invalid_label:                                                          06940004
+  zerrsm='Probable label error'                                         06950004
+  zerrlm=p 'recognized as invalid or undefined label.'                  06960004
+  SIGNAL Beep_msg                                                       06970004
+Command_conflict:                                                       06980004
+  zerrsm='Command Conflict'                                             06990004
+  zerrlm='"'cmd'" conflicts with range specification; blank it out.'    07000004
+  SIGNAL Beep_msg                                                       07010004
+Dest_missing:                                                           07020004
+  zerrsm='Destination missing'                                          07030004
+  zerrlm='The output destination has not been specified.'               07040004
+  SIGNAL Beep_msg                                                       07050004
+Dest_multiple:                                                          07060004
+  zerrsm='Multiple Destinations'                                        07070004
+  zerrlm=p 'recognized as duplicate destination.'                       07080004
+  SIGNAL Beep_msg                                                       07090004
+Not_connected:                                                          07100015
+  zerrsm='Not Connected'                                                07110015
+  zerrlm='A connection must be established with the work-station',      07120015
+         'before this command is entered.'                              07130015
+  SIGNAL Beep_msg                                                       07140015
+Beep_msg:                                                               07150004
+  zerralrm='YES'                  /*   ALARM=YES                      */07160004
+  zerrhm='ROUTEHLP'               /*   HELP Panel                     */07170004
+  'SETMSG MSG(ISRZ002)'           /*   Issue error message            */07180004
+  EXIT 20                                                               07190004
+SETMSG:                                                                 07200004
+  IF zerrmsg\='' THEN 'SETMSG MSG('zerrmsg')'                           07210010
+  EXIT 20                                                               07220004
+                                                                        07230000
+  /*----------------------------------------------------------------*/  07240000
+  /*     Set the XEROX 3700 print mode: Landscape or Portrait       */  07250008
+  /*----------------------------------------------------------------*/  07260000
+IF Mode\='' THEN DO                /*  Rotate output                  */07270008
+  Udk='A1'X                        /*  Tilde=X'A1'                    */07280008
+  QUEUE ' ='||'UDK'||'='Udk' '     /*  User-defined key               */07290008
+  If Mode='L' THEN DO                                                   07300008
+    QUEUE ' 'Udk'+1XCP14-L'        /*  Mode(Landscape)                */07310008
+    QUEUE ' 'Udk'1 '                                                    07320008
+    END                                                                 07330008
+  If Mode='P' THEN DO                                                   07340008
+    QUEUE ' 'Udk'+2Titan12iso-P'   /*  Mode(portrait)                 */07350008
+    QUEUE ' 'Udk'2 '                                                    07360008
+    END                                                                 07370008
+  END                                                                   07380000
+                                                                        07390000
+  /*----------------------------------------------------------------*/  07400000
+  /*     Reset the XEROX 3700 printer to default print mode         */  07410008
+  /*----------------------------------------------------------------*/  07420000
+IF Mode\='' THEN                  /* reset printer to default mode  */  07430008
+    QUEUE ' 'Udk'+X'                                                    07440008

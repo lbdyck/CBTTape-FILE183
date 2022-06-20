@@ -1,0 +1,141 @@
+//GILBERTB JOB (ACCT#),DISPLAY.BLKSIZE,                                 00010000
+// CLASS=A,MSGCLASS=H,COND=(0,NE),                                      00020000
+// NOTIFY=&SYSUID                                                       00030000
+//*                                                                     00040000
+//HLASM EXEC PGM=ASMA90,PARM=(OBJECT,NODECK,NOESD,NORLD,NOXREF)         00050005
+*PROCESS USING(WARN(8))                                                 00051005
+*********************************************************************** 00060005
+**                                                                   ** 00070005
+**       THIS PROGRAM SCANS A PDS AND PRINTS THE SIZE                ** 00080005
+**       OF EACH DATA BLOCK, AS WELL AS THE NUMBER OF                ** 00090005
+**       BYTES REMAINING AT THE END OF EACH TRACK.                   ** 00100005
+**                                                                   ** 00110005
+**       THIS PROGRAM WAS INITIALLY DESIGNED TO STUDY HOW            ** 00120005
+**       CHANGING THE BLKSIZE OF A PDS AFFECTS SPACE USAGE.          ** 00130005
+**                                                                   ** 00140005
+*********************************************************************** 00150005
+BLKSIZE2 START X'0FC010'                                                00160005
+         SAVE  (14,12),,BLKSIZE2.&SYSDATE                               00170005
+         LR    R12,R15                                                  00180005
+         USING BLKSIZE2,R12                                             00190005
+         ST    R13,SAVEAREA+4                                           00200000
+         LA    R13,SAVEAREA                                             00210000
+         OPEN  MF=(E,OPENLIST)         OPEN SYSUT1/SYSPRINT             00220000
+         LTR   R15,R15                                                  00230000
+         BNZ   ABEND16                                                  00240000
+         LA    R8,SYSUT1                                                00250000
+         USING IHADCB,R8                                                00260000
+*********************************************************************** 00270000
+******   READ A TRACK                                            ****** 00280000
+*********************************************************************** 00290000
+*LOOP                                                                   00300005
+LOOP21   L     R0,DCBRELAD             GET TTRN                         00310005
+         L     R1,DCBDEBAD             DEB ADDRESS                      00320003
+         LA    R2,MBBCCHHR             MBBCCHHR FIELD                   00330000
+         STM   R8,R13,20(R13)          SAVE R8-R13                      00340003
+         LR    R8,R13                  SAVE R8-R13                      00350003
+         L     R15,16                  CVTPTR                           00360003
+         L     R15,28(,R15)            CVTPCNVT                         00370003
+         BALR  R14,R15                 COMPUTE MBBCCHHR                 00380003
+         LM    R8,R13,20(R8)           RESTORE R8-R13                   00390003
+         LTR   R15,R15                 SUCCESSFUL?                      00400003
+         BNZ   CLOSEUT1                END OF EXTENT, CLOSE             00410003
+         EXCP  IOB1                    FULL TRACK READ                  00420000
+         WAIT  1,ECB=ECB1                                               00430000
+*********************************************************************** 00440000
+******   SCAN TRACK                                              ****** 00450000
+*********************************************************************** 00460000
+         LM    R3,R4,CCW4              FIRST BUFFER                     00470000
+         USING COUNT,R3                                                 00480000
+         LA    R3,0(,R3)               START OF BUFFER                  00490000
+         LA    R5,0(R3,R4)             END OF BUFFER                    00500000
+         SLR   R0,R0                                                    00510000
+         ICM   R0,B'0011',IOB1+14      RESIDUAL COUNT                   00520000
+         SLR   R5,R0                                                    00530000
+         BCTR  R5,0                    LAST BYTE XFERED FROM TRACK      00540000
+         MVI   PRTAREA+43,C'T'         NEW TRACK                        00550001
+         SLR   R6,R6                   CUMULATIVE LENGTH                00560000
+*--LOOP                                                                 00570005
+LOOP36C  TRKCALC FUNCTN=TRKBAL,DEVTAB=DCBDVTBL,RKDD=COUNTR,BALANCE=*    00580000
+         CVD   R0,DWD                  TRKBAL                           00590001
+         OI    DWD+7,15                                                 00600001
+         UNPK  PRTAREA+13(5),DWD                                        00610001
+         LH    R4,COUNTDL              DATA LENGTH                      00620000
+         CVD   R4,DWD                                                   00630001
+         OI    DWD+7,15                                                 00640001
+         UNPK  PRTAREA+03(5),DWD                                        00650001
+         AR    R6,R4                   CUMULATIVE LENGTH                00660000
+         CVD   R6,DWD                                                   00670001
+         OI    DWD+7,15                                                 00680001
+         UNPK  PRTAREA+33(5),DWD                                        00690001
+*                                                                       00700004
+         UNPK  PRTAREA+50(9),COUNT(5)    SHOW CCHHRKDD IN HEX           00710005
+         TR    PRTAREA+50(9),TABHEX-240  SHOW CCHHRKDD IN HEX           00720005
+         UNPK  PRTAREA+58(9),COUNT+4(5)  SHOW CCHHRKDD IN HEX           00730005
+         TR    PRTAREA+58(9),TABHEX-240  SHOW CCHHRKDD IN HEX           00740005
+         MVI   PRTAREA+66,C' '           SHOW CCHHRKDD IN HEX           00750005
+*                                                                       00760004
+         PUT   SYSPRINT,PRTAREA        WRITE RECORD                     00770001
+         MVI   PRTAREA+43,C' '         RESET "START OF TRACK" FLAG      00780001
+*                                                                       00790000
+         SLR   R1,R1                                                    00800000
+         IC    R1,COUNTKL              KEY LENGTH                       00810000
+         LA    R4,8(R1,R4)             8+KL+DL                          00820000
+         BXLE  R3,R4,LOOP36C           PROCESS NEXT BLOCK               00830000
+*--ENDLOOP                                                              00840005
+         MVC   PRTAREA+1(79),PRTAREA                                    00850001
+         PUT   SYSPRINT,PRTAREA                                         00860001
+         LA    R0,X'0001'              NEXT TRACK                       00870000
+         AH    R0,DCBRELAD             TTRN NEXT TRACK                  00880000
+         STH   R0,DCBRELAD             TTRN NEXT TRACK                  00890000
+         B     LOOP21                  PROCESS NEXT TRACK               00900002
+*ENDLOOP                                                                00910005
+CLOSEUT1 CLOSE MF=(E,OPENLIST)         CLOSE SYSUT1 & SYSPRINT          00920001
+         L     13,4(,13)                                                00930000
+         RETURN (14,12),RC=00                                           00940001
+ABEND16  ABEND 0016                                                     00950000
+TABHEX   DC    C'0123456789ABCDEF'                                      00960004
+OPENLIST OPEN  (SYSUT1,,SYSPRINT,OUTPUT),MF=L                           00970000
+SYSUT1   DCB   MACRF=E,DDNAME=SYSUT1,IOBAD=IOB1                         00980001
+SYSPRINT DCB   DSORG=PS,MACRF=PM,DDNAME=SYSPRINT,RECFM=FB,LRECL=80      00990001
+         CNOP  0,8 -------------------- IOB1 ---------------------      01000000
+         DC    CL4'IOB1'                                                01010000
+ECB1     DC    A(0)                    ECB                              01020000
+IOB1     DC    XL4'42000000'           FLAG1/2 SENSE1/2                 01030000
+         DC    A(ECB1)                 ECBPTR                           01040000
+         DC    X'00',XL7'00'           FLAG3 CSW                        01050000
+         DC    A(CCW2)                 CCW ADDR                         01060000
+         DC    A(SYSUT1)               DCBPTR                           01070000
+         DC    2A(0)                   RESTR INCAM ERRCT                01080000
+MBBCCHHR DC    XL8'01'                                                  01090000
+*                   ------------------ CCW'S -------------------        01100001
+CCW2     CCW   X'31',MBBCCHHR+3,X'40',5      SEARCH ID EQUAL            01110000
+CCW3     CCW   X'08',*-8,0,0                 TIC                        01120000
+CCW4     CCW   X'5E',COUNT,X'20',65535       READ MULTIPLE, SLI         01130002
+*                                                                       01140000
+SAVEAREA DS    9D                                                       01150000
+DWD      DS    1D                                                       01160001
+PRTAREA  DC    CL80' '                                                  01170001
+*                                                                       01180000
+COUNT    DS    0D                      COUNT                            01190000
+COUNTCC  DS    H                                                        01200000
+COUNTHH  DS    H                                                        01210000
+COUNTR   DS    X                                                        01220000
+COUNTKL  DS    X                                                        01230000
+COUNTDL  DS    H                                                        01240000
+KEY      DS    XL8                     KEY                              01250002
+DATA     DS    65535X                  DATA                             01260002
+         PRINT NOGEN                                                    01270000
+         DCBD  DSORG=PS,DEVD=DA                                         01280000
+         YREGS                                                          01290005
+         END                                                            01300005
+//SYSPRINT DD SYSOUT=*                                                  01310005
+//SYSLIB   DD DSN=SYS1.MACLIB,DISP=SHR                                  01320005
+//SYSUT1   DD UNIT=VIO,SPACE=(CYL,1)                                    01330005
+//SYSLIN   DD UNIT=VIO,SPACE=(TRK,1),DISP=(,PASS),DCB=BLKSIZE=3200      01340005
+//*                                                                     01350000
+//GO      EXEC PGM=LOADER,PARM=NOPRINT                                  01360000
+//SYSLIN   DD DSN=*.HLASM.SYSLIN,DISP=(OLD,DELETE)                      01370005
+//SYSUT1   DD DSN=GILBERT.TRIMMAC,DISP=SHR                              01380005
+//SYSPRINT DD SYSOUT=*                                                  01390005
+//SYSUDUMP DD SYSOUT=*                                                  01400005

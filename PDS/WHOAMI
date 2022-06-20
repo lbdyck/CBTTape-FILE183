@@ -1,0 +1,152 @@
+/*************************************************************** REXX */00010001
+/*                                                                    */00020000
+/* MODULE NAME = WHOAMI                                               */00030001
+/*                                                                    */00040000
+/* DESCRIPTIVE NAME = DISPLAY SYSTEM ID IN LARGE LETTERS              */00050000
+/*                                                                    */00060000
+/* STATUS = R103                                                      */00070003
+/*                                                                    */00080000
+/* FUNCTION = The WHOAMI command displays your user-ID                */00090001
+/*            and the system SMF ID in large letters.                 */00100000
+/*                                                                    */00110003
+/* Author: Gilbert Saint-Flour <carlos@gsf-soft.com>                  */00120003
+/*         http://gsf-soft.com/Freeware/                              */00130003
+/*                                                                    */00140000
+/* DEPENDENCIES = OS/390 or z/OS                                      */00150002
+/*                ISPF V4 or V5                                       */00160002
+/*                                                                    */00170000
+/*102 Retrieve OS name and level from ECVT                            */00180002
+/*103 YY.DDD instead of YYDDD - JDATE                                 */00190003
+/**********************************************************************/00200000
+CALL INIT_BIG_LETTERS               /* INITIALISE BIG LETTERS     */    00210000
+CVT    = PTR(16)                    /* CVTPTR                     */    00220000
+SMCA   = PTR(CVT+196)               /* CVTSMCA (SMF CTL AREA)     */    00230000
+SMCASID = STRING(SMCA+16,4)         /* SMCASID (SMF SYSTEM ID)    */    00240000
+                                                                        00250000
+CALL BIG_LETTERS SMCASID  1                                             00260000
+CALL BIG_LETTERS USERID() 7                                             00270000
+                                                                        00280000
+JDATE   = LEFT(DATE('J'),2) || '.' || RIGHT(DATE('J'),3)                00290003
+LINE.15 = DATE('W') DATE() JDATE TIME()                                 00300003
+                                                                        00310000
+ASCB   = PTR(548)                   /* PSAAOLD  (MY ASCB)         */    00320000
+ASXB   = PTR(ASCB+108)              /* ASCBASXB (MY ASXB)         */    00330000
+ACEE   = PTR(ASXB+200)              /* ASXBSENV (MY ACEE)         */    00340000
+GROUP  = STRING(ACEE+30,8)          /* ACEEGRPN (RACF GROUP NAME) */    00350000
+TERM   = STRING(ACEE+64,8)          /* ACEETRID (TERMINAL NAME)   */    00360000
+LINE.16 = 'USERID='SYSVAR('SYSUID'),                                    00370000
+     'PROC='SYSVAR('SYSPROC'),                                          00380000
+     'PREFIX='SYSVAR(SYSPREF),                                          00390000
+     'GROUP='GROUP,                                                     00400000
+     'TERMINAL='TERM                                                    00410000
+                                                                        00420000
+SNAME  = STRING(CVT+340,8)          /* CVTSNAME (GRS SYSTEM NAME) */    00430000
+ECVT   = PTR(CVT+140)               /* CVTECVT                    */    00440002
+PRODN  = STRING(ECVT+496,16)        /* ECVTPNAM (OS/390 or z/OS)  */    00450002
+PVER   = STRING(ECVT+512,2)         /* ECVTPVER                   */    00460002
+PREL   = STRING(ECVT+514,2)         /* ECVTPREL                   */    00470002
+PMOD   = STRING(ECVT+516,2)         /* ECVTPMOD                   */    00480002
+VRM    = PVER+0 || '.' || PREL+0 || '.' || PMOD+0                       00490002
+                                                                        00500000
+IDTE   = C2X(STRING(SMCA+340,4))    /* 0092123F    SMCAIDTE       */    00510000
+IDTE   = LEFT(IDTE,7)+1900000       /* 1992123                    */    00520000
+ITME   = C2D(STRING(SMCA+336,4))    /* 0453624     SMCAITME       */    00530000
+HH     = RIGHT(ITME%360000,2,'0')                                       00540000
+MM     = RIGHT((ITME//360000)%6000,2,'0')                               00550000
+IPLUCB = PTR(CVT+048)               /* CVTSYSAD (UCB FOR IPL VOL) */    00560000
+LINE.17 = 'SNAME='SNAME PRODN VRM '-',                                  00570002
+         'IPL='GREGORIAN(IDTE) HH':'MM,                                 00580000
+         'VOL='STRING(IPLUCB+28,6)                                      00590000
+LINE.14 = ' '                                                           00600000
+LINE.15 = CENTER(LINE.15,79)                                            00610000
+LINE.16 = CENTER(LINE.16,79)                                            00620000
+LINE.17 = CENTER(LINE.17,79)                                            00630000
+LINE.18 = ' '                                                           00640000
+                                                                        00650000
+IF SYSVAR(SYSISPF)='ACTIVE' THEN DO                                     00660000
+  ADDRESS 'ISPEXEC'                                                     00670000
+  'ISREDIT MACRO'                                                       00680000
+  'CONTROL ERRORS RETURN'                                               00690001
+  'VGET (ZENVIR ZAPPLID CZXCPXA)'                                       00700000
+  LINE.18 = LEFT(ZENVIR,8) 'APPLID='ZAPPLID                             00710000
+  IF CZXCPXA\='' THEN                                                   00720000
+    LINE.18 = LINE.18 'CZXCPXA='CZXCPXA                                 00730000
+  LINE.18 = CENTER(LINE.18,79)                                          00740000
+  LINE.19 = ' '                                                         00750000
+  SIGNAL ON SYNTAX                  /* in case STEMDISP not available */00760001
+  CALL STEMDISP 'BROWSE', 'LINE.',,,'USERID('USERID()')','ISRBROBA'     00770002
+  END                                                                   00780000
+ELSE                                                                    00790000
+  CALL DISPLAY                      /* ISPF SERVICES NOT AVAILABLE  */  00800000
+EXIT                                                                    00810000
+                                                                        00820000
+SYNTAX:                            /* STEMDISP FUNCTION NOT AVAILABLE */00830000
+  'ISPEXEC CONTROL DISPLAY LINE START(1)'                               00840000
+                                                                        00850000
+DISPLAY:                                                                00860000
+  DO I=1 WHILE LINE.I \= 'LINE.'I                                       00870000
+    SAY LINE.I                                                          00880000
+  END                                                                   00890000
+  EXIT                                                                  00900000
+                                                                        00910000
+PTR:  RETURN C2D(BITAND(STORAGE(D2X(ARG(1)),4),'7FFFFFFF'X))            00920001
+STRING: RETURN STRIP(STORAGE(D2X(ARG(1)),ARG(2)))                       00930001
+                                                                        00940000
+INIT_BIG_LETTERS:                                                       00950000
+  T0='ABCDEFGHIJKLMNOPQRSTUVWXYZ#,$0123456789@%*/-()&+_¢|>:;.?"=!<^ '   00960001
+                                                                        00970000
+T1=  '  A  BBBB  CCCCDDDD EEEEEFFFFF GGGGH   H III   JJJK  K L    M   M'00980000
+T2=  ' A A B   BC    D   DE    F    G    H   H  I     J K K  L    MM MM'00990000
+T3=  'A   ABBBB C    D   DEEEE FFFF G  GGHHHHH  I     J KK   L    M M M'01000000
+T4=  'AAAAAB   BC    D   DE    F    G   GH   H  I  J  J K K  L    M   M'01010000
+T5=  'A   ABBBB  CCCCDDDD EEEEEF     GGGGH   H III  JJ  K  K LLLLLM   M'01020000
+T1=T1'N   NOOOOOPPPP  QQQ RRRR  SSSSTTTTTU   UV   VW   WX   XY   YZZZZZ'01030000
+T2=T2'NN  NO   OP   PQ   QR   RS      T  U   UV   VW   W X X  Y Y    Z '01040000
+T3=T3'N N NO   OPPPP Q Q QRRRR  SSS   T  U   UV   VW W W  X    Y    Z  '01050000
+T4=T4'N  NNO   OP    Q  Q R  R     S  T  U   U V V WW WW X X   Y   Z   '01060000
+T5=T5'N   NOOOOOP     QQ QR   RSSSS   T   UUU   V  W   WX   X  Y  ZZZZZ'01070000
+T1=T1' # #       $$$$ 000   1  2222 3333 4  4 55555 666 77777 888  999 '01080000
+T2=T2'#####     $ $  0  00 11      2    34  4 5    6       7 8   89   9'01090000
+T3=T3' # #       $$$ 0 0 0  1     2  333 444445555 6666   7   888  9999'01100000
+T4=T4'##### ,,    $ $00  0  1    2      3   4     56   6  7  8   8    9'01110000
+T5=T5' # #   ,  $$$$  000  111 222223333    4 5555  666   7   888  999 '01120000
+T1=T1' @@@ %%  %* * *    /        (  )    &&&   +         *    |   >   '01130001
+T2=T2'@   @   %  ***    /        (    )  &      +        C*C   |    >  '01140001
+T3=T3'@ @@   %  *****  /  -----  (    )   &&  +++++     C *    |     > '01150001
+T4=T4'@     %    ***  /          (    )  &   &  +        C*C   |    >  '01160001
+T5=T5' @@@@%  %%* * */            (  )    &&&&  +  _____  *    |   >   '01170001
+T1=T1' ..   ..        ???  " "       ||     <           '               01180000
+T2=T2' ..   ..       ?   ?     ===== ||    <            '               01190000
+T3=T3'                  ?            ||   <   ^^^^^     '               01200000
+T4=T4' ..   ,,   ..    ?       =====       <      ^     '               01210000
+T5=T5' ..    ,   ..    ?             ..     <           '               01220000
+RETURN                                                                  01230000
+                                                                        01240000
+BIG_LETTERS:                                                            01250000
+  ARG STRING L                                                          01260000
+  STRING=CENTER(STRING,11)                                              01270000
+  DO I=L TO L+6;LINE.I=' ';END                                          01280000
+  DO I=1 TO LENGTH(STRING)                                              01290000
+    N=1+(INDEX(T0,TRANSLATE(SUBSTR(STRING,I,1)))-1)*5                   01300000
+    P=L+1                                                               01310000
+    LINE.P=LINE.P'  'SUBSTR(T1,N,5);P=P+1                               01320000
+    LINE.P=LINE.P'  'SUBSTR(T2,N,5);P=P+1                               01330000
+    LINE.P=LINE.P'  'SUBSTR(T3,N,5);P=P+1                               01340000
+    LINE.P=LINE.P'  'SUBSTR(T4,N,5);P=P+1                               01350000
+    LINE.P=LINE.P'  'SUBSTR(T5,N,5);P=P+1                               01360000
+  END                                                                   01370000
+  LINE.P=' '                                                            01380000
+  RETURN                                                                01390000
+/**********************************************************************/01400000
+/*             JULIAN-TO-GREGORIAN CONVERSION ROUTINE                 */01410000
+/*                   GDATE=GREGORIAN(1992134)                         */01420000
+/*                      RETURNS "YYYY-MM-DD"                          */01430002
+/**********************************************************************/01440000
+GREGORIAN: PROCEDURE                                                    01450000
+  YYYY=LEFT(ARG(1),LENGTH(ARG(1))-3)                                    01460000
+  DDD=RIGHT(ARG(1),3)                                                   01470000
+  T=(YYYY//4=0)                                                         01480000
+  DD=DDD; IF DD>(59+T) THEN DD=DD+2-T                                   01490000
+  MM=((DD+91)*100)%3055                                                 01500000
+  DD=DD+91-(MM*3055)%100                                                01510000
+  RETURN YYYY'-'RIGHT(MM-2,2,'0')'-'RIGHT(DD,2,'0')                     01520002

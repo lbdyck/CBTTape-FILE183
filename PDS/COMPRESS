@@ -1,0 +1,135 @@
+/*REXX*****************************************************************/00010000
+/*                                                                    */00020000
+/* MODULE NAME = COMPRESS                                             */00030000
+/*                                                                    */00040000
+/* DESCRIPTIVE NAME = COMPRESS EDIT Macro for ISPF/PDF                */00050001
+/*                                                                    */00060000
+/* STATUS = R305                                                      */00070005
+/*                                                                    */00080000
+/* FUNCTION = The COMPRESS EDIT macro invokes the COMPRESS command    */00090000
+/*            for the current data set or for another data set,       */00100000
+/*            if a dsname is specified in the command.                */00110003
+/*                                                                    */00120000
+/* Author   =  Gilbert Saint-Flour <carlos@gsf-soft.com>              */00130001
+/*             http://gsf-soft.com/Freeware/                          */00131005
+/*                                                                    */00140000
+/* Dependencies = COMPRESS Command Processor R313 (COMPRCMD)          */00150003
+/*                STEMVIEW Program R105 (BATCH option only)           */00160003
+/*                                                                    */00170003
+/* Syntax   =  COMPRESS                                               */00180003
+/*                 dsname|*              data set name                */00190003
+/*                 BATCH|JCL             generate batch job           */00200003
+/*                                                                    */00210003
+/*        Note: the default dsname is the name of the current data    */00220003
+/*              set.  The * is only required when the BATCH option    */00230003
+/*              is specified for the current data set.  JCL is        */00240003
+/*              equivalent to BATCH.                                  */00250003
+/*                                                                    */00260000
+/* Change Activity                                                    */00270001
+/*                                                                    */00280000
+/* 300 New version, uses SETMSG option instead of OUTTRAP             */00290000
+/* 301 Simplify dsname retrieval                                      */00300001
+/* 302 Issue a long message instead of a short one                    */00310002
+/* 303 Add BATCH parm for background execution (requires STEMVIEW)    */00320003
+/* 304 Add optional HBACKDS capability through a switch               */00330004
+/*     Slash (/) means the same as asterisk.                          */00340004
+/*     Use LRECL(80) RECFM(F) PROFILE(CNTL) for STEMVIEW              */00350004
+/* 305 Issue error message when COMPRESS command is missing           */00360005
+/*                                                                    */00370000
+/**********************************************************************/00380000
+ADDRESS 'ISPEXEC'                                                       00390003
+ARG parms                                                               00400005
+IF parms /= '' THEN DO                                                  00410005
+  ZEDSMSG = 'Not an EDIT Macro'                                         00420005
+  ZEDLMSG = 'COMPRESS is not invoked as an EDIT macro.'                 00430005
+      /* May occur when the COMPRESS command is missing                 00440005
+         and the COMPRESS EDIT macro re-invokes itself */               00450005
+  "DISPLAY MSG(ISRZ001)"                                                00460005
+  EXIT 20                                                               00470005
+  END                                                                   00480005
+"ISREDIT MACRO (DSN BATCH)"                                             00490003
+IF RC>0 THEN EXIT 20                                                    00500003
+                                                                        00510003
+UPPER dsn batch                        /* convert to upper-case      */ 00520003
+  /*----------------------------------------------------------------*\  00530003
+  |*                Validate BATCH/JCL option                       *|  00540003
+  \*----------------------------------------------------------------*/  00550003
+jcl = ABBREV('BATCH',batch,1) | ABBREV('JCL',batch,1)                   00560003
+IF jcl=0 & batch/='' THEN DO                                            00570003
+  ZEDSMSG = 'Invalid parameter'                                         00580003
+  ZEDLMSG = 'Second parameter must be BATCH or JCL'                     00590003
+  "SETMSG MSG(ISRZ001)"                                                 00600003
+  EXIT 20                                                               00610003
+  END                                                                   00620003
+  /*----------------------------------------------------------------*\  00630004
+  |*                 Set HBACKDS switch                             *|  00640004
+  \*----------------------------------------------------------------*/  00650004
+hbackds = (SYSVAR(SYSHSM) /= '')       /* hbackds=1 if HSM active    */ 00660004
+hbackds = 0                           /* turn off HBACKDS capability */ 00670004
+  /*----------------------------------------------------------------*\  00680003
+  |*                 Retrieve dsname and volser                     *|  00690003
+  \*----------------------------------------------------------------*/  00700003
+IF dsn='' | dsn='*' | dsn='/' THEN DO  /* Current Data Set           */ 00710004
+  "CONTROL ERRORS RETURN"              /* trap ISPEXEC error         */ 00720000
+  "ISREDIT (DSN) = DATASET"            /* retrieve dsname            */ 00730001
+  dsn="'" || dsn || "'"                /* Enclose dsname in quotes   */ 00740003
+  "ISREDIT (ID1) = DATAID"                                              00750000
+  IF rc>4 THEN SIGNAL SETMSG                                            00760000
+  "LMQUERY DATAID("ID1") VOLUME(vol) DATASET(dsn2)"                     00770003
+  IF rc>4 THEN SIGNAL SETMSG                                            00780000
+  IF dsn2 /= '' THEN                   /* non-null                   */ 00790003
+    dsn=STRIP(dsn2)                    /* no trailing spaces         */ 00800003
+  IF vol /= '' THEN                                                     00810000
+    vol = 'VOLUME('vol')'                                               00820000
+  END                                                                   00830000
+ELSE                                   /* USER SPECIFIED A DSNAME    */ 00840003
+  vol=''                                                                00850000
+  /*----------------------------------------------------------------*\  00860003
+  |*      Prefix TSO prefix if dsname is not fully qualified        *|  00870003
+  \*----------------------------------------------------------------*/  00880003
+IF LEFT(dsn,1)/="'" THEN DO                                             00890003
+  "VGET ZPREFIX"                       /* get dsname prefix          */ 00900003
+  dsn= "'" || zprefix || '.' || dsn || "'"                              00910003
+  END                                                                   00920003
+  /*----------------------------------------------------------------*\  00930003
+  |*                Generate JCL for batch processing               *|  00940003
+  \*----------------------------------------------------------------*/  00950003
+IF jcl THEN DO                                                          00960003
+  "VGET ZACCTNUM"                             /* Accounting info   */   00970003
+  jobname=LEFT(USERID()||'CPR',8)             /* JOB name          */   00980003
+  acct=zacctnum                               /* Accounting info   */   00990003
+  pgmr=USERID()                               /* Programmer's name */   01000003
+  QUEUE '//' || jobname 'JOB' acct || ",'" || pgmr || "',"              01010003
+  QUEUE '// NOTIFY=&SYSUID,COND=(0,NE),'                                01020003
+  QUEUE '// CLASS=A,MSGCLASS=H'                                         01030003
+  QUEUE '//COMPRESS EXEC PGM=IKJEFT01,REGION=2M'                        01040003
+  QUEUE '//SYSTSPRT DD SYSOUT=*'                                        01050003
+  QUEUE '//SYSTSIN DD *'                                                01060003
+  IF hbackds THEN                                                       01070004
+    QUEUE 'HBACKDS' dsn 'WAIT'                                          01080004
+  QUEUE 'COMPRESS' dsn 'SHR' vol                                        01090003
+  CALL STEMVIEW 'VIEW',,,,'COMPRESS' dsn vol,,80,'F','CNTL'             01100004
+  END                                                                   01110003
+  /*----------------------------------------------------------------*\  01120003
+  |*                     Foreground Compress                        *|  01130003
+  \*----------------------------------------------------------------*/  01140003
+ELSE DO                                /* BATCH was not specified */    01150003
+  ZEDSMSG = ''                                                          01160003
+  IF hbackds THEN DO                                                    01170004
+    ZEDLMSG = 'Data Set' dsn 'is being backed up.'                      01180004
+    IF vol/='' THEN                                                     01190004
+      ZEDLMSG = 'Data Set' dsn 'is being backed up from' vol            01200004
+    "CONTROL DISPLAY LOCK"                                              01210004
+    "DISPLAY MSG(ISRZ001)"                                              01220004
+    "SELECT CMD(HBACKDS" dsn vol "WAIT) MODE(FSCR)"                     01230004
+    END                                                                 01240004
+  ZEDLMSG = 'Data Set' dsn 'is being compressed.'                       01250003
+  IF vol/='' THEN                                                       01260003
+    ZEDLMSG = 'Data Set' dsn 'is being compressed on' vol               01270003
+  "CONTROL DISPLAY LOCK"                                                01280003
+  "DISPLAY MSG(ISRZ001)"                                                01290003
+  "SELECT CMD(COMPRESS" dsn vol "SHR SETMSG) MODE(FSCR)"                01300003
+  END                                                                   01310003
+EXIT                                                                    01320000
+                                                                        01330000
+SETMSG:  IF zerrmsg/='' THEN 'SETMSG MSG('zerrmsg')' ; EXIT 20          01340000

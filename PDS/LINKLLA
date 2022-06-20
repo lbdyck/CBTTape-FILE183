@@ -1,0 +1,246 @@
+//GILBERTL JOB (ACCT#),LINKLLA,                                         00010000
+// NOTIFY=&SYSUID,                                                      00020000
+//*RESTART=REFRESH,                                                     00030000
+// CLASS=A,MSGCLASS=H,COND=(0,NE)                                       00040000
+//HLASM EXEC PGM=ASMA90,PARM=(OBJECT,NODECK,NOESD,NORLD,NOXREF)         00050001
+*********************************************************************** 00060000
+*                                                                     * 00070000
+* MODULE NAME = LINKLLA                                               * 00080000
+*                                                                     * 00090000
+* DESCRIPTIVE NAME = Simulate "REFRESH LLA" Command in a Batch Job    * 00100000
+*                                                                     * 00110000
+* FUNCTION = Issue the LLACOPY macro to refresh an LLA-managed        * 00120000
+*            member (or library) without making any modification      * 00130000
+*            to SYS1.PARMLIB.  Also, link-edit a module and           * 00140000
+*            refresh it in a single step.                             * 00150000
+*                                                                     * 00160000
+* STATUS = R301                                                       * 00170001
+*                                                                     * 00180000
+* AUTHOR = Gilbert Saint-Flour <carlos@gsf-soft.com>                  * 00190001
+*          http://gsf-soft.com/Freeware/                              * 00191001
+*                                                                     * 00200000
+* NOTES = SEE BELOW                                                   * 00210000
+*                                                                     * 00220000
+*    DEPENDENCIES = MVS/ESA or OS/390                                 * 00230000
+*                   DFSMS/MVS                                         * 00240001
+*                                                                     * 00250000
+*    AUTHORIZATION = APF                                              * 00260000
+*                                                                     * 00270000
+*    RESTRICTIONS = NONE                                              * 00280000
+*                                                                     * 00290000
+* MODULE TYPE = PROCEDURE, (BATCH PROGRAM)                            * 00300000
+*                                                                     * 00310000
+*    PROCESSOR = IBM OS/ASSEMBLER H VERSION 2 OR                      * 00320000
+*                IBM HIGH LEVEL ASSEMBLER/MVS                         * 00330000
+*                                                                     * 00340000
+*    MODULE SIZE = 1K                                                 * 00350001
+*                                                                     * 00360000
+*    ATTRIBUTES = RENT, REUS, RMODE ANY, AMODE 31,                    * 00370001
+*                 SUPERVISOR STATE, KEY 8                             * 00380001
+*                                                                     * 00390000
+* OPERATION = Issues the "LLACOPY" macro to send refresh requests     * 00400001
+*             to LLA.                                                 * 00410001
+*                                                                     * 00420000
+* CALLED BY = JCL - three different set-ups are possible:             * 00430001
+*                                                                     * 00440000
+*        Set-up 1: refresh a whole library (SYSLMOD DD does not       * 00450000
+*                  specify a member)                                  * 00460000
+*                                                                     * 00470000
+*               //WHOLELIB EXEC PGM=LINKLLA                           * 00480000
+*               //SYSLMOD  DD DSN=<library-name>,DISP=SHR             * 00490000
+*               //SYSPRINT DD SYSOUT=*                                * 00500000
+*                                                                     * 00510000
+*        Set-up 2: refresh only a member (SYSLMOD DD specifies        * 00520000
+*                  a member)                                          * 00530000
+*                                                                     * 00540000
+*               //ONEMBR  EXEC PGM=LINKLLA                            * 00550000
+*               //SYSLMOD  DD DSN=<library-name(member)>,DISP=SHR     * 00560000
+*               //SYSPRINT DD SYSOUT=*                                * 00570000
+*                                                                     * 00580000
+*        Set-up 3: invoke the linkage-editor then refresh the         * 00590000
+*                  module (SYSLMOD DD specifies a member name,        * 00600000
+*                  and the invocation JCL contains //SYSLIN DD)       * 00610000
+*                                                                     * 00620000
+*               //LINKRFR EXEC PGM=LINKLLA,PARM='LIST,MAP,RENT'       * 00630000
+*               //SYSLIN   DD DSN=*.HLASM.SYSLIN,DISP=(OLD,PASS)      * 00640001
+*               //SYSLMOD  DD DSN=<library-name(member)>,DISP=SHR     * 00650000
+*               //SYSPRINT DD SYSOUT=*                                * 00660000
+*                                                                     * 00670000
+* CHANGE ACTIVITY                                                     * 00680000
+*                                                                     * 00690000
+* 300 New packaging                                                   * 00700000
+* 301 Make the code RENT and RMODE=ANY                                * 00710001
+*                                                                     * 00720000
+*********************************************************************** 00730000
+LINKLLA  CSECT                                                          00740000
+LINKLLA  RMODE ANY                                                      00750001
+         DC    C'GSF Utilities - LINKLLA R301'                          00760001
+BEGIN    BAKR  R14,0                   SAVE THE REGISTERS               00770000
+         LR    R12,R15                                                  00780001
+         USING BEGIN,R12                                                00790001
+         MODESET MODE=SUP              GET S047 RIGHT AWAY              00800001
+         STORAGE OBTAIN,LENGTH=DYNAML,LOC=BELOW,ADDR=(R10)              00840001
+         USING DYNAM,R10                                                00850001
+         MVC   SYSLMOD(MODELDCBL),MODELDCB MOVE MODEL DCBS              00860001
+         LA    R0,SYSLMOD              OPEN (SYSLMOD,INPUT)             00870001
+         ST    R0,OPENLMOD             OPEN (SYSLMOD,INPUT)             00880001
+         MVI   OPENLMOD,X'80'          OPEN (SYSLMOD,INPUT)             00890001
+         LA    R0,SYSPRINT             OPEN (SYSPRINT,EXTEND)           00900001
+         ST    R0,OPENPRT              OPEN (SYSPRINT,EXTEND)           00910001
+         MVI   OPENPRT,X'8E'           OPEN (SYSPRINT,EXTEND)           00920001
+         LA    R0,EXITLIST             EXIT LIST                        00930001
+         ST    R0,DCBEXLST-IHADCB+SYSLMOD                               00940001
+         LA    R0,INFMJFCB             JFCB ADDR                        00950001
+         ST    R0,EXITLIST             EXIT LIST                        00960001
+         MVI   EXITLIST,X'87'          EXIT LIST                        00970001
+         RDJFCB MF=(E,OPENLMOD)        READ THE SYSLMOD JFCB            00980001
+         LTR   R15,R15                                                  00990000
+         BNZ   GETDIR                                                   01000000
+         TM    JFCBIND1,JFCPDS         MEMBER NAME SPECIFIED?           01010000
+         BO    SINGLE                  YES, JUMP                        01020000
+*                                                                       01030000
+*---------------------------------------------------------------------- 01040000
+*        READ THE SYSLMOD DIRECTORY TO REFRESH ALL THE MEMBERS          01050000
+*---------------------------------------------------------------------- 01060000
+*                                                                       01070000
+GETDIR   OPEN  MF=(E,OPENLMOD)         SYSLMOD                          01080001
+         LTR   R15,R15                                                  01090000
+         BNZ   ABEND13                                                  01100000
+         OPEN  MF=(E,OPENPRT)          SYSPRINT                         01110001
+         LTR   R15,R15                                                  01120001
+         BNZ   ABEND13                                                  01130001
+*LOOP                                                                   01140000
+GETDIR1  LA    R7,BUFFER               POINT TO BUFFER                  01150000
+         READ  DECB1,SF,SYSLMOD,(R7),'S',MF=E                           01160001
+         CHECK DECB1                                                    01170000
+         LA    R7,2(,R7)               1ST ENTRY                        01180000
+*--LOOP                                                                 01190000
+GETDIR4  CLI   0(R7),X'FF'             END OF DIRECTORY?                01200000
+         BE    EOJ                     YES, QUIT                        01210000
+         BAL   R9,REFRESH          <== REFRESH THIS MEMBER              01220000
+         IC    R14,11(,R7)             "C" BYTE                         01230000
+         N     R14,=F'31'              NUMBER OF HALFWORDS              01240000
+         LA    R14,12(R14,R14)         ENTRY LENGTH IN R14              01250000
+         LH    R15,BUFFER              LENGTH USED                      01260000
+         LA    R15,BUFFER-1(R15)       END OF BLOCK                     01270000
+         BXLE  R7,R14,GETDIR4                                           01280000
+*--ENDLOOP                                                              01290000
+GETDIR9  B     GETDIR1                 NEXT DIRECTORY BLOCK             01300000
+*ENDLOOP                                                                01310000
+*                                                                       01320000
+*---------------------------------------------------------------------- 01330000
+*        REFRESH A SINGLE MEMBER                                        01340000
+*---------------------------------------------------------------------- 01350000
+*                                                                       01360000
+SINGLE   DEVTYPE =C'SYSLIN  ',DWD      DO WE HAVE A SYSLIN DD?          01370001
+         LTR   R15,R15                                                  01380000
+         BNZ   SINGLE6                 NO DD, JUMP                      01390000
+         EREG  R1,R1                   POP R1 FROM STACK                01400000
+         LINK  EP=IEWL             <== INVOKE THE LINKAGE EDITOR        01410000
+         LR    R3,R15                  SAVE RETURN CODE                 01420000
+         CH    R15,=H'4'                                                01430000
+         BH    EOJ                     RC > 4, SKIP LLACOPY             01440000
+*                                                                       01450000
+SINGLE6  NI    JFCBIND1,255-JFCPDS     Prevent S013-18                  01460001
+         OPEN  MF=(E,OPENLMOD),TYPE=J  SYSLMOD                          01470001
+         LTR   R15,R15                                                  01480000
+         BNZ   ABEND13                                                  01490000
+         OPEN  MF=(E,OPENPRT)          SYSPRINT                         01500001
+         LTR   R15,R15                                                  01510001
+         BNZ   ABEND13                                                  01520001
+         LA    R7,JFCBELNM             MEMBER NAME                      01530000
+         BAL   R9,REFRESH          <== REFRESH A SINGLE MEMBER          01540000
+*                                                                       01550000
+EOJ      CLOSE MF=(E,OPENLMOD)         SYSLMOD                          01560001
+         CLOSE MF=(E,OPENPRT)          SYSPRINT                         01570001
+         FREEPOOL SYSPRINT             Free Buffers                     01580001
+         STORAGE RELEASE,LENGTH=DYNAML,ADDR=(R10) FREE WORK AREA        01590001
+         LR    R15,R3                  PASS RETURN CODE                 01600000
+         PR                            GOBACK TO SYSTEM                 01610000
+*                                                                       01620000
+ABEND13  ABEND 13                      OPEN ERROR                       01630000
+*                                                                       01640000
+*---------------------------------------------------------------------- 01650000
+*        ISSUE LLACOPY, WRITE LINE TO SYSPRINT                          01660000
+*---------------------------------------------------------------------- 01670000
+*                                                                       01680000
+REFRESH  MVC   BLDLAREA(4),=Y(1,62)                                     01690000
+         MVC   MEMBER,0(R7)            MEMBER NAME                      01700000
+         LLACOPY DCB=SYSLMOD,                                          X01710001
+               BLDLLIST=BLDLAREA,                                      X01720001
+               MF=(E,LLACOPYL)                                          01730001
+         LR    R3,R15                  SAVE RETURN CODE                 01740000
+*                                                                       01750000
+         PUT   SYSPRINT                LOCATE A PRINT RECORD            01760000
+         LR    R2,R1                   PASS ADDRESS                     01770000
+         MVC   0(16,R2),=C' LINKLLA   MBR= '                            01780000
+         MVC   16(105,R2),15(R2)       CLEAR AREA                       01790000
+         MVC   15(8,R2),MEMBER         MEMBER NAME                      01800000
+         LR    R1,R3                   RETURN CODE                      01810000
+         BAL   R14,CONVHEX             DISPLAY HEX                      01820000
+         MVC   28(3,R2),=C'RC='        MOVE LITERAL                     01830000
+         MVC   31(2,R2),6(R1)          MOVE RC                          01840000
+         ICM   R1,B'1110',TTR                                           01850000
+         BAL   R14,CONVHEX             DISPLAY HEX                      01860000
+         MVC   38(4,R2),=C'TTR='       MOVE LITERAL                     01870000
+         MVC   42(6,R2),0(R1)          MOVE TTR                         01880000
+         ICM   R1,B'1110',TTR+3                                         01890000
+         BAL   R14,CONVHEX             DISPLAY HEX                      01900000
+         MVC   49(4,R2),0(R1)          MOVE CONCAT#/LIBRARY FLAGS       01910000
+         MVC   54(2,R2),4(R1)          MOVE "C" BYTE                    01920000
+         MVC   58(44,R2),JFCBDSNM      MOVE DSNAME                      01930000
+         BR    R9                                                       01940000
+*                                                                       01950000
+CONVHEX  ST    R1,0(,R13)              PREPARE UNPK                     01960000
+         LA    R1,28(,R13)             WORK AREA                        01970000
+         UNPK  0(9,R1),0(5,R13)        EXPAND BYTES                     01980000
+         NI    0(R1),X'0F'             TURN OFF ZONES                   01990000
+         MVZ   1(7,R1),0(R1)           TURN OFF ZONES                   02000000
+         TR    0(8,R1),=C'0123456789ABCDEF'                             02010000
+         BR    R14                                                      02020000
+*                                                                       02030000
+MODELDCB DCB   DSORG=PO,MACRF=R,DDNAME=SYSLMOD,EXLST=*-*,              N02040001
+               BLKSIZE=256,RECFM=U                                      02050000
+         DCB   DSORG=PS,MACRF=PL,DDNAME=SYSPRINT,RECFM=FBA,LRECL=121    02060001
+MODELDCBL EQU  *-MODELDCB                                               02070001
+*********************************************************************** 02080001
+*                                                                     * 02090001
+*********************************************************************** 02100001
+DYNAM    DSECT                                                          02110001
+DWD      DS    D                                                        02120001
+OPENLMOD OPEN  (SYSLMOD,INPUT),MF=L                                     02130001
+OPENPRT  OPEN  (SYSPRINT,EXTEND),MF=L                                   02140001
+SYSLMOD  DCB   DSORG=PO,MACRF=R,DDNAME=SYSLMOD,EXLST=EXITLIST,         N02150001
+               BLKSIZE=256,RECFM=U                                      02160001
+SYSPRINT DCB   DSORG=PS,MACRF=PL,DDNAME=SYSPRINT,RECFM=FBA,LRECL=121    02170001
+         READ  DECB1,SF,SYSLMOD,BUFFER,'S',MF=L                         02180001
+EXITLIST DS    A(X'87000000'+INFMJFCB) EXIT LIST                        02190001
+         IEFJFCBN                                                       02200000
+         LLACOPY MF=(L,LLACOPYL)                                        02210001
+RETCODE  DS    H                       RETURN CODE                      02220001
+BLDLAREA DS    Y(1,62)                 BLDL                             02230000
+MEMBER   DS    CL8                     BLDL                             02240000
+TTR      DS    XL3                     BLDL                             02250000
+         DS    51X                     BLDL                             02260000
+BUFFER   DS    XL256                   BUFFER                           02270000
+DYNAML   EQU   *-DYNAM                                                  02280001
+         YREGS                                                          02290000
+         DCBD  DSORG=PS,DEVD=DA                                         02300001
+         END   BEGIN                                                    02310000
+//SYSLIB   DD DSN=SYS1.MACLIB,DISP=SHR                                  02320000
+//SYSUT1   DD UNIT=VIO,SPACE=(CYL,1)                                    02330000
+//SYSPRINT DD SYSOUT=*                                                  02340000
+//SYSLIN   DD UNIT=VIO,SPACE=(TRK,1),DISP=(,PASS),DCB=BLKSIZE=3200      02350000
+//*                                                                     02360000
+//LKED    EXEC PGM=IEWL,PARM='MAP,RENT,AC=1'                            02370001
+//SYSLIN   DD DSN=*.HLASM.SYSLIN,DISP=(OLD,PASS)                        02380001
+//SYSPRINT DD SYSOUT=*                                                  02390000
+//SYSLMOD  DD DSN=SYS1.P390.LINKLIB(LINKLLA),DISP=SHR                   02400001
+//*                                                                     02410000
+//REFRESH EXEC PGM=LINKLLA                                              02420000
+//SYSLMOD  DD DSN=SYS1.P390.LINKLIB(LINKLLA),DISP=SHR                   02430001
+//SYSPRINT DD SYSOUT=*                                                  02440000
+//*                                                                     02450001
+//RC4 EXEC PGM=LINKLLA                                                  02460001
+//SYSPRINT DD SYSOUT=*                                                  02470001
+//SYSLMOD  DD DSN=SYS1.LPALIB(QWERTY),DISP=SHR                          02480001

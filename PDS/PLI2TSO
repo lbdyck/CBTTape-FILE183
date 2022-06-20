@@ -1,0 +1,90 @@
+//GILBERTJ JOB (ACCT#),PLI2TSO,                                         00010000
+// NOTIFY=&SYSUID,                                                      00020000
+// CLASS=A,MSGCLASS=H,COND=(4,LT)                                       00030000
+//*PLI EXEC PGM=IEL1AA,PARM=(OPTIONS,SOURCE)                            00040000
+//*STEPLIB DD DSN=IEL111.SIELCOMP,DISP=SHR                              00050000
+//PLI EXEC PGM=IBMZPLI,PARM=(OPTIONS,SOURCE),REGION=64M                 00060000
+//SYSPRINT DD SYSOUT=*                                                  00070000
+//SYSUT1   DD UNIT=VIO                                                  00080000
+//SYSLIN   DD UNIT=VIO,DISP=(,PASS)                                     00090000
+//SYSIN    DD *                                                         00100000
+  /******************************************************************/  00110000
+  /*                                                                */  00120000
+  /*  MODULE NAME = PLI2TSO                                         */  00130000
+  /*                                                                */  00140000
+  /*  DESCRIPTIVE NAME = Sample PL/I program to issue a TSO command */  00150000
+  /*                                                                */  00160000
+  /*  FUNCTION = This sample program demonstrates how to invoke     */  00170000
+  /*             TSO commands from a PL/I program using             */  00180000
+  /*             standard TSO services as documented in the         */  00190000
+  /*             TSO/E Programming Services manual.                 */  00200000
+  /*                                                                */  00210000
+  /*             Most TSO commands, including CLISTs and REXX       */  00220000
+  /*             execs can be executed using this technique.        */  00230000
+  /*             TSO commands which require authorization           */  00240000
+  /*             (such as OUTPUT, SEND, TRANSMIT and RECEIVE)       */  00250000
+  /*             will not work.                                     */  00260000
+  /*                                                                */  00270000
+  /*  AUTHOR   =  Gilbert Saint-Flour <carlos@gsf-soft.com>         */  00280000
+  /*              http://gsf-soft.com/Freeware/                     */  00290000
+  /*                                                                */  00300000
+  /******************************************************************/  00310000
+     PLI2TSO: Procedure Options(MAIN);                                  00320000
+                                                                        00330000
+       DCL ws_dummy        Fixed Bin(31,0),                             00340000
+           ws_return_code  Fixed Bin(31,0),                             00350000
+           ws_reason_code  Fixed Bin(31,0),                             00360000
+           ws_info_code    Fixed Bin(31,0),                             00370000
+           ws_cppl_address Fixed Bin(31,0),                             00380000
+           IKJTSOEV        Entry Options(ASM);                          00390000
+                                                                        00400000
+  /*----------------------------------------------------------------*/  00410000
+  /*          Call IKJTSOEV to create the TSO/E environment         */  00420000
+  /*----------------------------------------------------------------*/  00430000
+        Fetch IKJTSOEV;                                                 00440000
+         CALL IKJTSOEV(ws_dummy,                                        00450000
+                       ws_return_code,                                  00460000
+                       ws_reason_code,                                  00470000
+                       ws_info_code,                                    00480000
+                       ws_cppl_address);                                00490000
+         IF ws_return_code > 0 Then Do;                                 00500000
+           DISPLAY ( 'IKJTSOEV Failed, Return_code=' || ws_return_code  00510000
+                                  || ' Reason_code=' || ws_reason_code  00520000
+                                  || ' Info_code='   || ws_info_code);  00530000
+           Call PLIRETC(ws_return_code);                                00540000
+           Return;                                                      00550000
+           END;                                                         00560000
+  /*----------------------------------------------------------------*/  00570000
+  /*          Build the TSO/E command in ws-buffer                  */  00580000
+  /*----------------------------------------------------------------*/  00590000
+       DCL ws_buffer       Char(256),                                   00600000
+           ws_length       Fixed Bin(31,0) Init(Length(ws_buffer)),     00610000
+           IKJEFTSR        Entry Options(ASM);                          00620000
+                                                                        00630000
+         ws_buffer='ALLOCATE DD(MSGDD) SYSOUT HOLD BLKSIZE(80)';        00640000
+                                                                        00650000
+  /*----------------------------------------------------------------*/  00660000
+  /*   Call the TSO/E Service Routine to execute the TSO/E command  */  00670000
+  /*----------------------------------------------------------------*/  00680000
+      Fetch IKJEFTSR;                                                   00690000
+       CALL IKJEFTSR('00010001'X,ws_buffer,ws_length,                   00700000
+                     ws_return_code,ws_reason_code,ws_dummy);           00710000
+       IF ws_return_code > 0 Then Do;                                   00720000
+         DISPLAY ('IKJEFTSR Failed, Return_code=' ||                    00730000
+                ws_return_code || ' Reason_code=' || ws_reason_code);   00740000
+         Call PLIRETC(ws_return_code);                                  00750000
+         Return;                                                        00760000
+         END;                                                           00770000
+  /*----------------------------------------------------------------*/  00780000
+  /*          Print that the ALLOCATE command worked                */  00790000
+  /*----------------------------------------------------------------*/  00800000
+       PUT FILE(MSGDD) SKIP EDIT('Command ALLOCATE Worked ! ') (A);     00810000
+     END PLI2TSO;                                                       00820000
+/*                                                                      00830000
+//GO    EXEC PGM=LOADER,PARM=PRINT                                      00840000
+//SYSLIN DD DSN=*.PLI.SYSLIN,DISP=(OLD,DELETE)                          00850000
+//SYSLIB DD DSN=CEE.SCEELKED,DISP=SHR                                   00860000
+//SYSLOUT DD SYSOUT=*                                                   00870000
+//SYSTSPRT DD SYSOUT=*                                                  00880000
+//SYSPRINT DD SYSOUT=*                                                  00890000
+//CEEDUMP DD SYSOUT=*                                                   00900000

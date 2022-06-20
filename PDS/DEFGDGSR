@@ -1,0 +1,298 @@
+//GILBERTD JOB (ACCT#),DEFGDGSR,                                        00010000
+// NOTIFY=&SYSUID,                                                      00020001
+// CLASS=A,MSGCLASS=H,COND=(0,NE)                                       00030000
+//ASMH EXEC PGM=ASMA90,PARM=(OBJECT,NODECK,NOESD,NORLD,NOXREF)          00040001
+*********************************************************************** 00050000
+*                                                                     * 00060000
+* MODULE NAME = DEFGDGSR                                              * 00070001
+*                                                                     * 00080000
+* DESCRIPTIVE NAME = Define or Alter a GDG base                       * 00090001
+*                                                                     * 00100000
+* FUNCTION = The DEFGDGSR routine can be called by a program to       * 00110001
+*            define, delete or alter the GDG limit in a GDG base.     * 00120001
+*                                                                     * 00130000
+* STATUS = R301                                                       * 00140001
+*                                                                     * 00150000
+* AUTHOR = Gilbert Saint-Flour <carlos@gsf-soft.com>                  * 00160001
+*                                                                     * 00170000
+* NOTES = SEE BELOW                                                   * 00180001
+*                                                                     * 00190000
+*    DEPENDENCIES = DFP V3 or above                                   * 00200001
+*                                                                     * 00210000
+*    AUTHORIZATION = NONE                                             * 00220001
+*                                                                     * 00230000
+*    RESTRICTIONS = NONE                                              * 00240001
+*                                                                     * 00250000
+* MODULE TYPE = PROCEDURE, (Sub-Routine)                              * 00260001
+*                                                                     * 00270000
+*    PROCESSOR = IBM OS/ASSEMBLER H VERSION 2 OR                      * 00280001
+*                IBM HIGH LEVEL ASSEMBLER/MVS                         * 00290001
+*                                                                     * 00300000
+*    MODULE SIZE = 4K                                                 * 00310001
+*                                                                     * 00320000
+*    ATTRIBUTES = REUSABLE, RMODE ANY, AMODE 31,                      * 00330001
+*                 PROBLEM STATE, KEY 8                                * 00340001
+*                                                                     * 00350000
+* OPERATION = See Below                                               * 00360001
+*                                                                     * 00370000
+*        This subroutine may be called by a program to define GDGs.   * 00380001
+*        It requires two parameters:                                  * 00390001
+*                                                                     * 00400000
+*        1. a 44-byte field, containing the dsname which must be      * 00410001
+*           left-justified and padded with blanks.                    * 00420001
+*                                                                     * 00430000
+*        2. a 3-digit field, containing the number of generations     * 00440001
+*           as an unpacked decimal number in the range 001 to 255.    * 00450001
+*                                                                     * 00460000
+*        Sample calling sequence:                                     * 00470001
+*                                                                     * 00480000
+*                 01 DSNAME PIC X(44) VALUE 'PAYROLL.MASTER'.         * 00490001
+*                 01 GDGLIMIT PIC 999 VALUE 15.                       * 00500001
+*                                                                     * 00510000
+*            CALL 'DEFGDGSR' USING DSNAME, GDGLIMIT.                  * 00520001
+*                                                                     * 00530000
+*        A return code is passed in register 15.  a cobol calling     * 00540001
+*        program may check the content of the "return-code" field,    * 00550001
+*        a non-zero value indicating that an error has occured.       * 00560001
+*                                                                     * 00570000
+*        This sub-routine doesn't call IDCAMS, but directly           * 00580001
+*        invokes the DFP catalog management services to perform       * 00590001
+*        the following:                                               * 00600001
+*                                                                     * 00610000
+*        1. LISTCAT the entry to check if the GDG already exists      * 00620001
+*           and, if this is the case, what the current limit is.      * 00630001
+*           this request is equivalent to the IDCAMS command:         * 00640001
+*              'LISTCAT MYDSN GDG ALL '.                              * 00650001
+*                                                                     * 00660000
+*        2. DELETE the existing GDG base if the limit is zero         * 00670001
+*           This request is equivalent to the IDCAMS command:         * 00680001
+*              'DELETE MYDSN GDG '.                                   * 00690000
+*                                                                     * 00700000
+*        3. ALTER the existing GDG base if the limit obtained by      * 00710001
+*           LISTCAT is different from the value passed by the caller. * 00720001
+*           This request is equivalent to the IDCAMS command:         * 00730001
+*              'ALTER MYDSN LIMIT(nnn) SCRATCH GDG'.                  * 00740001
+*                                                                     * 00750000
+*        4. DEFINE a GDG with the SCRATCH option and the number       * 00760001
+*           of generations passed in the second parameter.            * 00770001
+*           This request is equivalent to the IDCAMS command:         * 00780001
+*              'DEFINE GDG(NAME(MYDSN) LIMIT(GDGNB) SCRATCH)'.        * 00790001
+*                                                                     * 00800000
+*Programming Notes:                                                   * 00810001
+*                                                                     * 00820000
+*        DEFGDGSR is reusable, which means that it may be loaded      * 00830001
+*        once and called multiple times in the same job step.         * 00840001
+*                                                                     * 00850000
+*        DEFGDGSR does not define a GDG in the following cases:       * 00860001
+*                                                                     * 00870000
+*        1. A '//NODEFGDG DD DUMMY' statement is present in the JCL   * 00880001
+*           or the equivalent ALLOCATE command has been issued        * 00890001
+*           under TSO, or                                             * 00900001
+*                                                                     * 00910000
+*        2. the first level qualifier of the dsname has not been      * 00920001
+*           defined as an alias, or                                   * 00930001
+*                                                                     * 00940000
+*        3. the second parameter is zero.  In that case, if a GDG     * 00950001
+*           base exists and is empty, it is deleted.                  * 00960001
+*                                                                     * 00970000
+*Change Log                                                           * 00980001
+*                                                                     * 00990000
+*200 Set GDG base's owner to invoker's RACF user id                   * 01000000
+*301 Use ALTER instead of DELETE+DEFINE                               * 01010001
+*********************************************************************** 01020000
+DEFGDGSR CSECT                                                          01030001
+DEFGDGSR RMODE ANY                                                      01040001
+         SAVE  (14,12),,'GSF Utilities - DEFGDGSR R301'                 01050001
+         LR    R12,R15                                                  01060001
+         USING DEFGDGSR,R12                                             01070001
+         LM    R3,R4,0(R1)             GDGNAME, GDGLIMIT                01080000
+         GETMAIN RU,LV=DYNL            GET DYNAMIC STORAGE AREA         01140000
+         LR    R9,R1                   KEEP ITS ADDRESS                 01150000
+         USING DYN,R9                                                   01160000
+         DEVTYPE =C'NODEFGDG',WORK265  CHECK DDNAME                     01170000
+         LTR   R15,R15                 CHECK DEVTYPE RETURN CODE        01180000
+         BZ    RETURN                  DD PRESENT, QUIT.                01190000
+         LA    R14,DYN                 CLEAR DYNAMIC STORAGE            01200000
+         LA    R15,DYNL                CLEAR DYNAMIC STORAGE            01210000
+         SLR   R1,R1                   CLEAR DYNAMIC STORAGE            01220000
+         MVCL  R14,R0                  CLEAR DYNAMIC STORAGE            01230000
+*---------------------------------------------------------------------* 01240000
+*        CHECK FOR AN EXISTING ALIAS                                  * 01250000
+*---------------------------------------------------------------------* 01260000
+P1ALIAS  MVI   WORK265+C'.',C'.'       BUILD TABLE FOR TRT              01270000
+         TRT   0(9,R3),WORK265         FIND FIRST PERIOD                01280000
+         BZ    RETURN                  ERROR IF NO PERIOD FOUND         01290000
+         LR    R0,R3                   POINT TO GDG NAME                01300000
+         SLR   R1,R0                   COMPUTE LENGTH OF 1ST QUALIFIER  01310000
+         ICM   R1,B'1000',=C' '        PADDING CHARACTER                01320000
+         LA    R14,CATNAME             "TO" FIELD                       01330000
+         ST    R14,LOCALIAS+4          UPDATE CAMLST                    01340000
+         ST    R14,CTGCAT              UPDATE CTGPL                     01350000
+         LA    R15,L'CATNAME           LENGTH                           01360000
+         MVCL  R14,R0                  MOVE ALIAS TO CATNAME FIELD      01370000
+         LA    R0,WORK265              GET ADDRESS OF WORK AREA         01380000
+         ST    R0,LOCALIAS+12          UPDATE CAMLST                    01390000
+         ST    R0,CTGWKA               UPDATE CTGPL                     01400000
+         LOCATE LOCALIAS               FIND UCAT NAME                   01410000
+         LTR   R15,R15                 CHECK SVC 26 RETURN CODE         01420000
+         BNZ   RETURN                  NO ALIAS, QUIT.                  01430000
+*---------------------------------------------------------------------* 01440001
+*        BUILD CTGFV                                                  * 01450001
+*---------------------------------------------------------------------* 01460001
+         PACK  DWD,0(3,R4)             PACK 3-DIGIT GDGLIMIT            01470000
+         OI    DWD+7,X'0F'             PREVENT S0C7 IF ALL SPACES       01480000
+         CVB   R0,DWD                  CONVERT TO BINARY, GET S0C7      01490000
+         STC   R0,GDGLIMIT             KEEP GDG LIMIT                   01500000
+         LA    R1,GDGLIMIT             GDG LIMIT                        01510001
+         ST    R1,CTGFVLMT             SAVE ADDR INTO FVT               01520001
+         LA    R1,GDGATTR              GDG ATTRIBUTES                   01530001
+         ST    R1,CTGFVGAT             SAVE ADDR INTO FVT               01540001
+         MVI   CTGFVTYP,C'B'           ENTRY TYPE (GDG BASE)            01550001
+         ST    R3,CTGFVENT             GDG NAME INTO CTGFVENT           01560001
+*---------------------------------------------------------------------* 01570000
+*        LISTCAT (RETRIEVE CURRENT GDG LIMIT)                         * 01580000
+*---------------------------------------------------------------------* 01590000
+P2LISTC  ST    R3,CTGENT               GDGNAME                          01600000
+         MVC   WORK265(4),=Y(L'WORK265,0) FORMAT WORK AREA HEADER       01610000
+         MVI   CTGOPTNS,CTGLTCAT       FUNCTION = LISTCAT               01620000
+         CATALOG CTGPL                 IS GDG DEFINED ALREADY?          01630000
+         LTR   R15,R15                 CHECK SVC 26 RETURN CODE         01640000
+         BNZ   P3ZERO                  GDG ISN'T DEFINED, GO DO IT.     01650000
+         CLI   GDGLIMIT,0              GDGLIMIT=0?                      01660001
+         BE    P3DELETE                YES, ISSUE DELETE GDG            01670001
+         L     R1,CTGFLPT              POINTER TO RETURNED GDGLIMIT     01680001
+         CLC   GDGLIMIT,0(R1)          COMPARE WITH PASSED VALUE        01690001
+         BE    RETURN                  GDG OK ALREADY, RETURN.          01700001
+*---------------------------------------------------------------------* 01710001
+*        ALTER IF GDG LIMIT IS DIFFERENT FROM THE ONE REQUESTED       * 01720001
+*---------------------------------------------------------------------* 01730001
+P3ALTER  MVI   CTGOPTNS,CTGALTER       ALTER                            01740001
+         LA    R0,CTGFV                ADDR OF CTGFV                    01750001
+         ST    R0,CTGFVT               STORE CTGFV ADDRESS INTO CTGPL   01760001
+         MVI   CTGFVFL2,X'02'          CTGFVAPP   FVT APPENDIX PRESENT  01770001
+         MVC   CTGFVID,=C'FVT '        EYE-CATCHER                      01780001
+         MVC   CTGFVERS,=H'1'          VERSION                          01790001
+         MVC   CTGFVLNA,=AL2(L'CTGFVXA) LENGTH OF FVT APPENDIX          01800001
+         MVI   CTGFVFL3,X'20'          CTGFVALM   ALTER GDG LIMIT       01810001
+         CATALOG CTGPL                 ALTER GDG LIMIT                  01820001
+         B     RETURN                                                   01830001
+*---------------------------------------------------------------------* 01840000
+*        DELETE GDG                                                   * 01850001
+*---------------------------------------------------------------------* 01860000
+P3DELETE MVI   CTGOPTNS,CTGDELET       FUNCTION = DELETE                01870001
+         CATALOG CTGPL                 DELETE EXISTING GDG              01880000
+         LTR   R15,R15                 CHECK SVC 26 RETURN CODE         01890000
+         BNZ   RETURN                  DELETE FAILED, RETURN            01900000
+P3ZERO   CLI   GDGLIMIT,0              CHECK GDGLIMIT                   01910000
+         BE    RETURN                  QUIT IF GDGLIMIT=0               01920000
+*---------------------------------------------------------------------* 01930000
+*        RETRIEVE USERID FROM ACEE                                    * 01940000
+*---------------------------------------------------------------------* 01950000
+         L     R1,PSAAOLD-PSA          MY ASCB                          01960000
+         L     R1,ASCBASXB-ASCB(,R1)   MY ASXB                          01970000
+         L     R1,ASXBSENV-ASXB(,R1)   MY ACEE                          01980000
+         LTR   R1,R1                                                    01990000
+         BNP   P4DEFINE                NO ACEE, NO OWNER                02000000
+         MVC   OWNERID,ACEEUSRI-ACEE(R1)  MY RACF USER ID               02010000
+         LA    R0,CTGFL2               CTGFL FOR OWNER ID               02020000
+         ST    R0,CTGFV+28             SET POINTER TO OWNER ID          02030000
+*---------------------------------------------------------------------* 02040000
+*        DEFINE GDG WITH SCRATCH OPTION.                              * 02050000
+*---------------------------------------------------------------------* 02060000
+P4DEFINE MVI   CTGOPTNS,CTGDEFIN       FUNCTION = DEFINE                02070001
+         LA    R0,CTGFV                ADDR OF CTGFV                    02080001
+         ST    R0,CTGFVT               STORE CTGFV ADDRESS INTO CTGPL   02090001
+         CATALOG CTGPL                 DEFINE GDG                       02100000
+*                                                                       02110000
+RETURN   SAVE  15                      STORE RETURN CODE                02120000
+         FREEMAIN RU,LV=DYNL,A=(R9)    FREE DYNAMIC STORAGE AREA        02130000
+         RETURN (14,12)                RETURN, PASS RETURN CODE.        02140000
+*********************************************************************** 02150000
+*                                                                     * 02160000
+*        CATALOG MANAGEMENT CONTROL BLOCKS: CTGPL, CTGFL, CTGFV       * 02170000
+*                                                                     * 02180000
+*********************************************************************** 02190000
+CTGPL    DS    0F                                                       02200000
+CTGOPTN1 DC    AL1(CTGNAME+CTGCNAME)   FIRST OPTION BYTE:               02210000
+CTGNAME  EQU   X'04'                     CTGENT POINTS TO ENTRY NAME    02220000
+CTGCNAME EQU   X'02'                     CTGCAT POINTS TO CATALOG NAME  02230000
+         DC    B'0'                                                     02240000
+CTGFUNC  DC    AL1(CTGCMS+CTGAM0)      CALLER-REQUESTED FUNCTION        02250000
+CTGCMS   EQU   X'80'                     REQUEST IS IN CTGOPTNS         02260000
+CTGAM0   EQU   X'01'                     OS/VS2 CTGPL, NOT A CAMLST     02270000
+         DC    B'0'                                                     02280000
+CTGFVT   DS    0A(*-*)                 ADDRESS OF CTGFV FOR DEFINE      02290000
+CTGENT   DC    A(*-*)                  ADDRESS OF ENTRY NAME            02300000
+CTGCAT   DC    A(*-*)                  ADDRESS OF CATALOG DSNAME        02310000
+CTGWKA   DC    A(*-*)                  ADDRESS OF CALLER'S WORK AREA    02320000
+CTGOPTNS DC    AL1(CTGLTCAT)           REQUEST:                         02330000
+CTGLTCAT EQU   X'20' 0010 0...           LISTCAT                        02340000
+CTGALTER EQU   X'10' 0001 0...           ALTER                          02350001
+CTGDELET EQU   X'18' 0001 1...           DELETE                         02360000
+CTGDEFIN EQU   X'08' 0000 1...           DEFINE                         02370000
+         DC    B'0'                                                     02380000
+CTGTYPE  DC    C'B'                    TYPE OF CAT. RECORD (GDG BASE)   02390000
+CTGNOFLD DC    FL1'1'                  NUMBER OF POINTERS IN CTGFIELD   02400000
+CTGFDBK  DC    XL2'0'                  FEEDBACK AREA                    02410000
+CTGFBFLG DC    B'0'                                                     02420000
+         DC    X'00'                   ERROR CODE                       02430000
+CTGPSWD  DC    A(0)                    PASSWORD ADDRESS                 02440000
+CTGFIELD DC    A(CTGFL)                POINTER(S) TO CTGFL(S)           02450000
+*                                                                       02460000
+CTGFL    DS    0F                   +0 FIELD DESCRIPTOR                 02470000
+CTGFLDNO DC    FL1'1',5X'00'        +0 NUMBER OF FIELDS                 02480000
+CTGFLDNM DC    A(FLDNM1,0)          +8 PTR TO FIELD NAME                02490000
+CTGFLNG  DC    F'0'                +16 LENGTH OF RETURNED DATA          02500000
+CTGFLPT  DC    A(*-*)              +20 ADDRESS OF RETURNED DATA         02510000
+*                                                                       02520000
+FLDNM1   DC    C'GDGLIMIT'             FIELD NAME                       02530000
+GDGATTR  DC    B'01000000'             GDG ATTRIBUTES: SCRATCH, NOEMPTY 02540000
+GDGLIMIT DC    FL1'0'                  BINARY GDG LIMIT                 02550000
+LOCALIAS CAMLST NAME,*-*,,*-*          LOCATE ALIAS                     02560000
+*                                                                       02570000
+CTGFL2   DS    0F                   +0 FIELD DESCRIPTOR                 02580000
+         DC    FL1'1',5X'00'        +0 NUMBER OF FIELDS                 02590000
+         DC    A(FLDNM2,0)          +8 PTR TO FIELD NAME                02600000
+         DC    F'8'                +16 LENGTH OF RETURNED DATA          02610000
+CTGFL2PT DC    A(OWNERID)          +20 ADDRESS OF RETURNED DATA         02620000
+*                                                                       02630000
+FLDNM2   DC    C'OWNERID '             FIELD NAME                       02640000
+OWNERID  DC    C'XXXXXXXX'             VALUE                            02650000
+*---------------------------------------------------------------------* 02660000
+*        DYNAMIC STORAGE, BASED WITH R9.                              * 02670000
+*---------------------------------------------------------------------* 02680000
+DYN      DSECT                                                          02690000
+CATNAME  DS    CL44' '                 CATALOG DSNAME                   02700000
+*                                                                       02710001
+CTGFV    DS    0F,XL100                                                 02720001
+CTGFVTYP EQU   CTGFV,1,C'C'            ENTRY TYPE                       02730001
+CTGFVFL2 EQU   CTGFV+3,1,C'B'          FLAGS                            02740001
+CTGFVENT EQU   CTGFV+20,4,C'A'         ENTRY NAME                       02750001
+CTGFVLMT EQU   CTGFV+72,4,C'A'         GDG LIMIT                        02760001
+CTGFVGAT EQU   CTGFV+76,4,C'A'         GDG ATTRIBUTES                   02770001
+CTGFVXA  DS    XL40                    APPENDIX                         02780001
+CTGFVID  EQU   CTGFVXA,4,C'C'          EYE CATCHER                      02790001
+CTGFVERS EQU   CTGFVXA+4,2,C'H'        VERSION                          02800001
+CTGFVLNA EQU   CTGFVXA+6,2,C'H'        LENGTH                           02810001
+CTGFVFL3 EQU   CTGFVXA+8,2,C'B'        FLAGS                            02820001
+*                                                                       02830001
+DWD      DS    D                       WORK                             02840000
+WORK265  DS    XL265                   WORK AREA FOR LISTCAT, DELETE.   02850000
+DYNL     EQU   *-DYN                                                    02860000
+         PRINT NOGEN                                                    02870000
+         YREGS                         SYS1.MACLIB                      02880000
+         IHAPSA DSECT=YES                                               02890000
+         IHAASCB DSECT=YES,LIST=NO                                      02900000
+         IHAASXB                                                        02910000
+         IHAACEE                                                        02920000
+         END                                                            02930000
+//SYSLIB   DD DSN=SYS1.MACLIB,DISP=SHR                                  02940000
+//         DD DSN=SYS1.MODGEN,DISP=SHR                                  02950000
+//SYSUT1   DD UNIT=VIO,SPACE=(CYL,2)                                    02960000
+//SYSPRINT DD SYSOUT=*                                                  02970000
+//SYSLIN   DD UNIT=VIO,SPACE=(TRK,1),DISP=(,PASS),DCB=BLKSIZE=3200      02980000
+//*                                                                     02990000
+//LKED    EXEC PGM=IEWL,PARM=REUS                                       03000000
+//SYSPRINT DD SYSOUT=*                                                  03010000
+//SYSLIN   DD DSN=*.ASMH.SYSLIN,DISP=(OLD,PASS)                         03020000
+//SYSLMOD  DD DSN=GILBERT.LOAD(DEFGDGSR),DISP=SHR                       03030000

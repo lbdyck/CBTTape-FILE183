@@ -1,0 +1,461 @@
+//GILBERTR JOB (ACCT#),ROUTEPGM,                                        00010000
+// NOTIFY=&SYSUID,                                                      00020000
+// CLASS=A,MSGCLASS=H,COND=(0,NE)                                       00030001
+//HLASM EXEC PGM=ASMA90,PARM=(OBJECT,NODECK,NOESD,NORLD,NOXREF)         00040006
+*********************************************************************** 00050000
+*                                                                     * 00060000
+* MODULE NAME = ROUTEPGM                                              * 00070003
+*                                                                     * 00080003
+* DESCRIPTIVE NAME = COPY EDIT DATA TO A QSAM DATA SET                * 00090004
+*                                                                     * 00100003
+* FUNCTION = THIS PGM CAN BE INVOKED IN AN EDIT MACRO TO COPY         * 00110003
+*            THE DATA BEING EDITED TO A SEQUENTIAL DATA SET.          * 00120003
+*            IT ALSO PROVIDES ADDITIONAL FUNCTIONS SPECIFIC TO        * 00130005
+*            THE ROUTE EDIT MACRO.                                    * 00140003
+*                                                                     * 00150003
+* STATUS = R606                                                       * 00160006
+*                                                                     * 00170003
+* AUTHOR = Gilbert Saint-Flour <carlos@gsf-soft.com>                  * 00180006
+*          http://gsf-soft.com/Freeware/                              * 00182006
+*                                                                     * 00190003
+* NOTES = SEE BELOW                                                   * 00200003
+*                                                                     * 00210003
+*    DEPENDENCIES = MVS/370, MVS/XA, MVS/ESA, OS/390                  * 00220005
+*                   ISPF/PDF V2R3 OR ABOVE                            * 00230005
+*                                                                     * 00240003
+*    AUTHORIZATION = NONE                                             * 00250003
+*                                                                     * 00260003
+*    RESTRICTIONS = NONE                                              * 00270003
+*                                                                     * 00280003
+* MODULE TYPE = PROCEDURE, (TSO COMMAND PROCESSOR)                    * 00290003
+*                                                                     * 00300003
+*    PROCESSOR = IBM OS/ASSEMBLER H VERSION 2 OR                      * 00310003
+*                IBM HIGH LEVEL ASSEMBLER/MVS                         * 00320003
+*                                                                     * 00330003
+*    MODULE SIZE = 2K                                                 * 00340003
+*                                                                     * 00350003
+*    ATTRIBUTES = REENTERABLE, RMODE 24, AMODE ANY,                   * 00360006
+*                 PROBLEM STATE, KEY 8                                * 00370003
+*                                                                     * 00380000
+* OPERATION = SEE COMMENTS IN SOURCE CODE                             * 00390003
+*                                                                     * 00400003
+* SYNTAX = SEE BELOW                                                  * 00410003
+*                                                                     * 00420003
+*           PARM=(&DDNAME,&LINE1,&LINE2,&LINECT,&INITLINE)            * 00430000
+*                                                                     * 00440000
+*              &DDNAME       OUTPUT DDNAME                            * 00450000
+*                            REQUIRED, MUST BE A VALID DDNAME         * 00460001
+*              &LINE1        FIRST LINE (.ZF)                         * 00470000
+*                            IF SPECIFIED, MUST BE A 6-DIGIT NUMBER   * 00480001
+*              &LINE2        LAST LINE (.ZL)                          * 00490000
+*                            IF SPECIFIED, MUST BE A 6-DIGIT NUMBER   * 00500001
+*              &LINECT       LINE COUNT (60)                          * 00510000
+*                            IF SPECIFIED, MUST BE A 3-DIGIT NUMBER   * 00520001
+*              &INITLINE     LINES ALREADY WRITTEN ON 1ST PAGE        * 00530000
+*                            IF SPECIFIED, MUST BE A 3-DIGIT NUMBER   * 00540001
+*                                                                     * 00550001
+* CHANGE ACTIVITY                                                     * 00560000
+*                                                                     * 00570000
+* 603 MAKE MODULE REENTRANT                                           * 00580003
+* 604 CONVERT JESJCL FROM RECFM=M TO RECFM=A FOR SDSF 1.4             * 00590004
+* 605 ADD SUPPORT FOR RECFM=V AND RECFM=U                             * 00600005
+* 606 INCREASE LINE LENGTH TO 32760                                   * 00610006
+*                                                                     * 00620000
+*********************************************************************** 00630000
+ROUTEPGM RSECT                                                          00640006
+ROUTEPGM AMODE ANY                                                      00650006
+         SAVE  (14,12),,'GSF UTILITIES - ROUTEPGM R606D'                00660006
+         LR    R12,R15                                                  00670006
+         USING ROUTEPGM,R12                                             00680006
+         GETMAIN R,LV=DYNAML           GET DYNAMIC STORAGE              00690000
+         ST    R13,4(,R1)                                               00700000
+         ST    R1,8(,R13)                                               00710000
+         LM    R13,R1,8(R13)           A(DYNAM)                         00720000
+         USING DYNAM,R13                                                00730000
+         MVC   DCB1(DCB1L),DCB1MOD     MOVE MODEL DCB                   00740002
+*---------------------------------------------------------------------* 00750002
+*                                                                     * 00760002
+*        PARSE PARM INTO WORKING-STORAGE FIELDS                       * 00770002
+*                                                                     * 00780002
+*---------------------------------------------------------------------* 00790002
+         L     R15,=A(PARSE)           PARM PARSING RTNE                00800000
+         BALR  R14,R15             <-- PARSE PARM                       00810000
+         DC    S(L'DCB1DDNAM,DCB1DDNAM) OUTPUT DDNAME                   00820005
+         DC    S(L'LINE1,LINE1)        FIRST LINE (.ZF)                 00830000
+         DC    S(L'LINE2,LINE2)        LAST LINE (.ZL)                  00840000
+         DC    S(L'LINECT,LINECT)      LINE COUNT (60)                  00850000
+         DC    S(L'INITLINE,INITLINE)  LINE ALREADY WRITTEN ON 1ST PAGE 00860000
+*---------------------------------------------------------------------* 00870003
+*                                                                     * 00880003
+*        SET-UP CONNECTION WITH ISPF                                  * 00890003
+*                                                                     * 00900003
+*---------------------------------------------------------------------* 00910003
+         LOAD  EP=ROUTEPGM             PIN MYSELF IN MEMORY             00920003
+*                                                                       00940003
+         LOAD  EP=ISPLINK              ISREDIT/ISPLINK                  00950003
+         ST    R0,ISPLINK@             SAVE THE ADDRESS                 00960003
+*                                                                       00970003
+         LA    R1,=A($CONTROL,$ERRORS,$RETURN+VL)                       00980003
+         L     R15,ISPLINK@            PICK UP ISPF INTERFACE ADDRESS   00990003
+         BALR  R14,R15                 CALL ISPLINK                     01000003
+*---------------------------------------------------------------------* 01010002
+*                                                                     * 01020002
+*        SET UP PARAMETERS                                            * 01030002
+*                                                                     * 01040002
+*---------------------------------------------------------------------* 01050002
+PARM21   CLI   DCB1DDNAM,C' '          DDNAME SPECIFIED?                01060005
+         LA    R15,12                  PRIME R15 WITH ERROR CODE        01070000
+         BNH   EXIT15                  NO, QUIT                         01080000
+*                                                                       01090000
+PARM22   PACK  DWD,LINE1               LINE 1?                          01100000
+         OI    DWD+7,X'0F'             PREVENT S0C7 IF NOT SPECIFIED    01110000
+         CVB   R4,DWD                  LINE COUNTER (.ZF)               01120000
+         LTR   R4,R4                   ANY VALUE SPECIFIED?             01130000
+         BZ    PARM23                  NO, JUMP                         01140000
+         BCTR  R4,0                    YES, MAKE IT RELATIVE TO ZERO    01150000
+*                                                                       01160000
+PARM23   PACK  DWD,LINE2               LINE 2?                          01170000
+         OI    DWD+7,X'0F'             PREVENT S0C7 IF NOT SPECIFIED    01180000
+         CVB   R5,DWD                  LAST LINE (.ZL)                  01190000
+         LTR   R5,R5                   ANY VALUE SPECIFIED?             01200000
+         BNZ   PARM24                  YES, JUMP                        01210000
+         BCTR  R5,0                    NO, MAKE IT X'FFFFFFFF'          01220000
+*                                                                       01230000
+PARM24   PACK  DWD,LINECT              LINE COUNT                       01240000
+         OI    DWD+7,X'0F'             PREVENT S0C7 IF NOT SPECIFIED    01250000
+         ZAP   LINECT,DWD              LAST COUNT                       01260000
+*                                                                       01270000
+PARM25   PACK  DWD,INITLINE            INITIAL LINES                    01280000
+         OI    DWD+7,X'0F'             PREVENT S0C7 IF NOT SPECIFIED    01290000
+         ZAP   INITLINE,DWD            INITIAL LINES                    01300000
+*---------------------------------------------------------------------* 01310002
+*                                                                     * 01320002
+*        OPEN THE OUTPUT DATA SET                                     * 01330002
+*                                                                     * 01340002
+*---------------------------------------------------------------------* 01350002
+OPEN2    LA    R0,DCB1                 BUILD OPEN LIST                  01360002
+         ST    R0,OPENLIST             BUILD OPEN LIST                  01370002
+         MVI   OPENLIST,X'8F'          BUILD OPEN LIST                  01380002
+         OPEN  MF=(E,OPENLIST)         OPEN (DCB1,OUTPUT)               01390002
+         LTR   R15,R15                                                  01400000
+         LA    R15,8                   OPEN FAILED                      01410000
+         BNZ   EXIT15                                                   01420000
+*---------------------------------------------------------------------* 01430003
+*                                                                     * 01440003
+*        ISPLINK VDEFINE (LINE) CHAR                                  * 01450003
+*                                                                     * 01460003
+*---------------------------------------------------------------------* 01470003
+         LA    R15,=C'ISREDIT '        COMMAND                          01490006
+         LA    R0,=F'15'               LENGTH                           01500006
+         LA    R1,=C'(LRECL) = LRECL'                                   01510006
+         STM   R15,R1,SIXWORDS         BUILD PARM LIST                  01520006
+         OI    SIXWORDS+8,X'80'        MARK END OF LIST                 01530006
+         L     R15,ISPLINK@            ISPF INTERFACE                   01540006
+         LA    R1,SIXWORDS             PARM LIST                        01550006
+         BALR  R14,R15              <- "ISREDIT (LRECL) = LRECL"        01560006
+         LTR   R15,R15                                                  01570006
+         LA    R15,1000(R15)           ISREDIT FAILED                   01580006
+         BNZ   EXIT15                                                   01590006
+*                                                                       01600006
+         LA    R14,=C'VCOPY '          COMMAND                          01620006
+         LA    R15,=C'(LRECL) = LRECL'                                  01630006
+         LA    R0,5                    LENGTH                           01640006
+         ST    R0,DWD                  LENGTH                           01650006
+         LA    R0,DWD                  LENGTH                           01660006
+         LA    R1,COMMAND              WORK AREA                        01670006
+         LA    R2,=C'MOVE'             WORK AREA                        01680006
+         STM   R14,R2,SIXWORDS         BUILD PARM LIST                  01690006
+         OI    SIXWORDS+16,X'80'       END OF LIST                      01700006
+         L     R15,ISPLINK@            ISPF INTERFACE                   01710006
+         LA    R1,SIXWORDS             PARM LIST                        01720006
+         BALR  R14,R15              <- VCOPY,'LRECL','5',COMMAND,'MOVE' 01730006
+         LTR   R15,R15                                                  01750006
+         LA    R15,1100(R15)           VCOPY FAILED                     01760006
+         BNZ   EXIT15                                                   01770006
+*                                                                       01780006
+         PACK  DWD,COMMAND(5)          LRECL                            01790006
+         CVB   R1,DWD                  LRECL                            01800006
+         ST    R1,LINE_LEN             LENGTH                           01810006
+         LA    R0,8(,R1)               LENGTH OF DATA LINE              01820006
+         GETMAIN RU,LV=(0),LOC=ANY     ALLOC DATA LINE                  01830006
+         ST    R1,LINE_ADDR            ADDRESS                          01840006
+         LR    R8,R1                                                    01850006
+         USING LINE,R8                                                  01860006
+*                                                                       01870006
+         LA    R14,=C'VDEFINE'         FUNCTION                         01880002
+         LA    R15,=C'LINE '           NAME                             01890002
+         LA    R0,LINE+1               ADDRESS OF POS 2                 01900006
+         LA    R1,=C'CHAR'             TYPE                             01910002
+         LA    R2,LINE_LEN             LENGTH                           01920000
+         STM   R14,R2,SIXWORDS         BUILD PARM LIST                  01930000
+         OI    SIXWORDS+16,X'80'       MARK END OF LIST                 01940000
+         L     R15,ISPLINK@            ISPF INTERFACE                   01950006
+         LA    R1,SIXWORDS             PARAM                            01960000
+         BALR  R14,R15              <- VDEFINE,'LINE',LINE,L'LINE       01970006
+         LTR   R15,R15                                                  01980000
+         LA    R15,1200(R15)           VDEFINE FAILED                   01990006
+         BNZ   EXIT15                                                   02000000
+         MVC   COMMAND,=C'(LINE) = LINE 123456'                         02010002
+         MVI   JESJCL,0                INITIALISE SWITCHES              02020004
+*********************************************************************** 02030000
+*                                                                     * 02040002
+*        COPY THE DATA LINES TO THE OUTPUT DATA SET                   * 02050003
+*                                                                     * 02060002
+*********************************************************************** 02070000
+*LOOP                                                                   02080000
+LOOP2    LA    R4,1(,R4)               NEXT LINE NUMBER                 02090000
+         CVD   R4,DWD                  &I                               02100000
+         OI    DWD+7,X'0F'             SUPPRESS SIGN                    02110000
+         UNPK  COMMAND+14(6),DWD       123456                           02120002
+         LA    R15,=C'ISREDIT '        COMMAND                          02130002
+         LA    R0,=F'20'               LENGTH                           02140002
+         LA    R1,COMMAND              COMMAND                          02150002
+         STM   R15,R1,SIXWORDS         BUILD PARM LIST                  02160002
+         OI    SIXWORDS+8,X'80'        MARK END OF LIST                 02170002
+         L     R15,ISPLINK@            ISPF INTERFACE                   02180002
+         LA    R1,SIXWORDS             PARAM                            02190002
+         BALR  R14,R15                 CALL ISPLINK                     02200002
+         CH    R15,=H'12'              INVALID LINE NUMBER              02210000
+         BE    EXIT00                  QUIT                             02220000
+         LTR   R15,R15                                                  02230000
+         LA    R15,1200(R15)           ISPLINK FAILED                   02240002
+         BNZ   EXIT15                                                   02250000
+*                                                                       02260000
+         ZAP   LINECT,LINECT           PAGE SKIP REQUIRED?              02270000
+         BZ    LOOP2JCL                NO, JUMP                         02280004
+         MVC   DWD(4),LINE+1           .SK COMMAND?                     02290001
+         OC    DWD(4),=C'    '         CONVERT TO UPPERCASE             02300001
+         CLC   DWD(4),=C'.SK '          .SK COMMAND?                    02310001
+         BE    LOOP2SK                 YES, JUMP                        02320001
+         MVI   LINE,C' '               SINGLE SPACE                     02330001
+         CP    INITLINE,LINECT         END-OF-PAGE?                     02340000
+         BL    LOOP2P1                 NO, JUMP                         02350001
+         MVI   LINE,C'1'               NEW PAGE                         02360001
+         SP    INITLINE,INITLINE       RESET CTR                        02370000
+LOOP2P1  LA    R1,LINE                 LINE ADDRESS                     02380005
+         BAL   R14,PUTLINE          <- WRITE LINE                       02390005
+         AP    INITLINE,=P'1'          COUNT LINES                      02400000
+         B     LOOP2NXT                NEXT LINE                        02410000
+*                                                                       02420001
+LOOP2SK  MVI   INITLINE,X'99'          FORCE NEW PAGE NEXT TIME         02430001
+         B     LOOP2NXT                NEW PAGE                         02440001
+*                                                                       02450004
+*        CHANGE X'09' TO C' ' IN JESJCL                                 02460004
+*        FORCE NEW PAGE AT THE BEGINNING OF JESJCL AND JESYSMSG         02470004
+*                                                                       02480004
+LOOP2JCL TM    DCB1RECFM,DCBRECCA      RECFM=.A?                        02490005
+         BNO   LOOP2J99                NO, EXIT                         02500004
+         CLI   JESJCL,3                JCL PROCESSED ALREADY?           02510004
+         BE    LOOP2J99                YES, EXIT                        02520004
+         CLI   LINE+1,X'09'            SINGLE SPACE?                    02530004
+         BNE   LOOP2J20                NO, JUMP                         02540004
+LOOP2J05 TM    JESJCL,1                JOB CARD PROCESSED ALREADY?      02550004
+         BO    LOOP2J40                YES, JUMP                        02560004
+         CLC   =C' 1 //',LINE+1+8      IS THIS A JOB CARD?              02570004
+         BNE   LOOP2J99                NO, EXIT                         02580004
+         OI    JESJCL,1                JOB CARD SEEN                    02590004
+         MVI   LINE+1,C'1'             NEW PAGE                         02600004
+         B     LOOP2J99                EXIT                             02610004
+LOOP2J20 TM    JESJCL,1                JOB CARD PROCESSED ALREADY?      02620004
+         BZ    LOOP2J99                NO, EXIT                         02630004
+         OI    JESJCL,2                END OF JESJCL FILE               02640004
+         CLI   LINE+1,X'40'            SINGLE SPACE?                    02650004
+         BNE   LOOP2J99                NO, EXIT                         02660004
+         MVI   LINE+1,C'1'             START OF SYSTEM MESSAGES         02670004
+         B     LOOP2J99                EXIT                             02680004
+LOOP2J40 MVI   LINE+1,C' '             SINGLE SPACE (ASA)               02690004
+LOOP2J99 EQU   *                                                        02700004
+*                                                                       02710000
+LOOP2P2  LA    R1,LINE+1               LINE ADDRESS                     02720005
+         BAL   R14,PUTLINE          <- WRITE LINE                       02730005
+*                                                                       02740000
+LOOP2NXT CLR   R4,R5                   LAST LINE REACHED?               02750000
+         BL    LOOP2                   NOT YET, PROCESS NEXT LINE       02760000
+*ENDLOOP                                                                02770000
+EXIT00   SLR   R15,R15                 RC=00                            02780000
+*********************************************************************** 02790000
+*                                                                     * 02800002
+*        RETURN TO CALLER                                             * 02810002
+*                                                                     * 02820002
+*********************************************************************** 02830000
+EXIT15   LR    R2,R15                  SAVE RETURN CODE                 02840000
+         TM    DCB1OFLGS,DCBOFOPN      DCB OPEN?                        02850005
+         BZ    EXIT42                  NO, SKIP CLOSE                   02860000
+         CLOSE MF=(E,OPENLIST)         CLOSE DCB                        02870000
+         FREEPOOL DCB1                 FREE BUFFERS                     02880000
+*                                                                       02890000
+EXIT42   EQU   *                                                        02900006
+         L     R1,LINE_LEN             LENGTH OF DATA LINE              02910006
+         LA    R0,8(,R1)               LENGTH OF WORK AREA              02920006
+         FREEMAIN RU,LV=(0),A=(R8)     FREE DATA LINE                   02930006
+         LR    R1,R13                  A(DYNAM)                         02940006
+         L     R13,4(,R13)                                              02950000
+         FREEMAIN R,LV=DYNAML,A=(1)    FREE DYNAMIC STORAGE             02960000
+         LR    R15,R2                  PASS RETURN CODE                 02970000
+         RETURN (14,12),RC=(15)        GOBACK TO CALLER WITH RC IN R15  02980000
+*---------------------------------------------------------------------* 02990005
+*        WRITE A LINE (RECFM=F/V/U)                                   * 03000005
+*---------------------------------------------------------------------* 03010005
+PUTLINE  ST    R14,R14PUTL             SAVE RETURN ADDRESS              03020005
+         TM    DCB1RECFM,DCBRECV       RECFM=F (NOT V, NOT U) ?         03030005
+         BZ    PUTLINE8                YES, JUMP                        03040005
+*                                                                       03050005
+*        IF RECFM=V/U, TRUNCATE TRAILING BLANKS                         03060005
+*                                                                       03070005
+         L     R15,LINE_LEN            CURRENT LENGTH OF THE LINE       03080006
+         LA    R15,LINE+1(R15)         1ST CHAR AFTER END OF LINE       03090006
+         BCTR  R15,0                   LAST CHAR IN LINE                03100006
+         SLR   R0,R0                                                    03110006
+         BCTR  R0,0                    R0=-1 (INCREMENT FOR BXH)        03111006
+*LOOP                                                                   03120005
+PUTLINE4 CLI   0(R15),C' '             IS IT A SPACE?                   03130005
+         BNE   PUTLINE5                NO, EXIT                         03140005
+         BXH   R15,R0,PUTLINE4         PREV CHAR                        03150005
+*ENDLOOP                                                                03160005
+PUTLINE5 LA    R15,1(,R15)             FIRST BLANK                      03170005
+         SLR   R15,R1                  CALC LENGTH                      03180005
+         TM    DCB1RECFM,DCBRECU       RECFM=U?                         03190005
+         BO    PUTLINE7                YES, JUMP                        03200005
+         SH    R1,=H'4'                POINT AT RDW                     03210005
+         LA    R15,4(,R15)             ADD 4 BYTES FOR THE RDW          03220005
+         SLL   R15,16                  MAKE LENGTH A RDW                03230005
+         ST    R15,0(,R1)              STORE RDW                        03240005
+         B     PUTLINE8                                                 03250005
+*                                                                       03260005
+PUTLINE7 STH   R15,DCB1LRECL           PASS LENGTH FOR RECFM=U          03270005
+*                                                                       03280005
+PUTLINE8 LR    R0,R1                   RECORD ADDRESS                   03290005
+         PUT   DCB1,(R0)               WRITE A FIXED-LENGTH RECORD      03300005
+         L     R14,R14PUTL             LOAD RETURN ADDRESS              03310005
+         BR    R14                     GOBACK                           03320005
+         DROP                                                           03330005
+*********************************************************************** 03340000
+*                                                                     * 03350002
+*        DATA                                                         * 03360002
+*                                                                     * 03370002
+*********************************************************************** 03380000
+DCB1MOD  DCB   DSORG=PS,MACRF=PM,DDNAME=ISREDIT,EXLST=EXL1              03390002
+$CONTROL DC    C'CONTROL'              FUNCTION                         03400003
+$ERRORS  DC    C'ERRORS'               OPTION                           03410003
+$RETURN  DC    C'RETURN'               OPTION                           03420003
+VL       EQU   X'80000000'             END OF LIST INDICATOR            03430003
+*                                                                       03440000
+*        OPEN EXIT                                                      03450000
+*                                                                       03460000
+*        1. SETS DEFAULT ATTRIBUTES: RECFM=FB,LRECL=80                  03470000
+*                                                                       03480000
+*        2. SETS BLKSIZE=0 TO TAKE ADVANTAGE OF SYSTEM-DETERMINED       03490000
+*           BLKSIZE FOR SPFTEMP% DATA SETS.                             03500000
+*                                                                       03510000
+EXL1     DC    A(OPENEXIT+X'85000000')                                  03520000
+         USING OPENEXIT,R15                                             03530000
+         USING IHADCB,R1                                                03540005
+OPENEXIT CLI   DCBRECFM,0              RECFM SPECIFIED?                 03550005
+         BNZ   OPENEX4                 YES, JUMP                        03560000
+         MVI   DCBRECFM,DCBRECF+DCBRECBR NO, RECFM=FB                   03570005
+OPENEX4  TM    DCBRECFM,DCBRECBR       RECFM=.B ?                       03580005
+         BZR   R14                     NO, EXIT                         03590001
+         XC    DCBBLKSI,DCBBLKSI       BLKSIZE=0                        03600005
+         ICM   R0,B'1100',DCBLRECL     LRECL > 0 ?                      03610005
+         BNZR  R14                     YES, EXIT                        03620001
+         MVI   DCBLRECL+1,80           NO, LRECL=80                     03630005
+         BR    R14                                                      03640000
+*********************************************************************** 03650000
+*                                                                     * 03660002
+*        WORKING-STORAGE AREA                                         * 03670000
+*                                                                     * 03680002
+*********************************************************************** 03690000
+DYNAM    DSECT                                                          03700000
+         DS    18F                                                      03710000
+ISPLINK@ DS    V(ISPLINK)                                               03720002
+SIXWORDS DS    6F                                                       03730000
+R14PUTL  DS    A(R14)                                                   03740005
+LINE1    DS    Z'123456'               FIRST LINE (.ZF)                 03750000
+LINE2    DS    Z'123456'               LAST LINE (.ZL)                  03760001
+LINECT   DS    Z'123'                  LINE COUNT (60)                  03770001
+INITLINE DS    Z'123'                  LINE ALREADY WRITTEN ON 1ST PAGE 03780001
+COMMAND  DS    C'(LINE) = LINE 123456'                                  03790002
+JESJCL   DS    X                       JESJCL SWITCHES                  03800004
+LINE_ADDR DS   V(LINE)                 ADDR OF DATA LINE                03810006
+LINE_LEN DS    A(L'LINE)               LENGTH OF LINE                   03820000
+DWD      DS    D                                                        03830000
+OPENLIST OPEN  (DCB1,OUTPUT),MF=L                                       03840002
+DCB1     DCB   DSORG=PS,MACRF=PM,DDNAME=ISREDIT,EXLST=EXL1              03850002
+DCB1L    EQU   *-DCB1                                                   03860002
+DCB1RECFM EQU  DCBRECFM-IHADCB+DCB1    RECFM                            03870005
+DCB1DDNAM EQU  DCBDDNAM-IHADCB+DCB1    DDNAME                           03880005
+DCB1OFLGS EQU  DCBOFLGS-IHADCB+DCB1    OPEN FLAGS                       03890005
+DCB1LRECL EQU  DCBLRECL-IHADCB+DCB1    LRECL                            03900005
+DYNAML   EQU   *-DYNAM                                                  03910000
+*                                                                       03920006
+LINE_DSECT DSECT                                                        03930006
+LINE_RDW DS    Y(L'LINE,0)             RDW FOR RECFM=V                  03940006
+LINE     DS    CL32760                 DATA LINE                        03950006
+         DROP                                                           03960000
+*********************************************************************** 03970000
+*                                                                     * 03980002
+*        PARSE A COMMA-DELIMITED JCL PARM                             * 03990002
+*                                                                     * 04000002
+*        L     R15,=V(PARSE)                                          * 04010002
+*        BALR  R14,R15                                                * 04020002
+*        DC    S(L'PARM1,PARM1)        LENGTH,ADDR                    * 04030002
+*        DC    S(L'PARM2,PARM2)        LENGTH,ADDR                    * 04040002
+*                                                                     * 04050002
+*********************************************************************** 04060000
+PARSE    RSECT                                                          04070006
+PARSE    RMODE ANY                                                      04080006
+         SAVE  (14,12),,PARSE                                           04090000
+         LR    R11,R15                                                  04100006
+         USING PARSE,R11                                                04110006
+**       L     R1,4(,R13)              CALLER'S SAVE AREA               04120000
+**       L     R1,24(,R1)              R1 ON ENTRY                      04130000
+         L     R2,0(,R1)               JCL PARM                         04140000
+PARSEX40 EQU   *+1,1                   X'40'                            04150000
+         LA    R4,1(,R2)               START OR PARM - 1                04160000
+         LH    R5,0(,R2)               LENGTH OF PARM                   04170000
+         ALR   R5,R4                   LAST BYTE OF PARM                04180000
+*LOOP                                                                   04190000
+PARS1    SLR   R0,R0                   R0 = 00000000                    04200000
+         ICM   R0,B'0011',2(R14)       R0 = 0000BDDD                    04210000
+         SRDL  R0,12(0)                R0 = 0000000B, R1= BBB.....      04220000
+         SRL   R1,20(0)                R1 = 00000DDD DISPLACEMENT       04230000
+         CLI   2(R14),R13*16           IS R13 THE BASE REG?             04240000
+         BL    PARS1D                  NO, JUMP                         04250000
+         ALR   R1,R13                  ADD CALLER'S SAVE AREA ADDR      04260000
+         B     PARS1E                                                   04270000
+PARS1D   LR    R15,R0                  R15= 0000000B BASE               04280000
+         SLL   R15,2                   R15= 000000BB BASE * 4           04290000
+         AL    R1,20(R13,R15)          ADD BASE REG VALUE TO DISPL      04300000
+PARS1E   LR    R6,R1                   ADDR OF TARGET FIELD             04310000
+         LH    R7,0(,R14)              LENGTH OF TARGET FIELD           04320000
+*                                                                       04330000
+         LA    R2,1(,R4)               FIRST BYTE OF CURRENT PARAMETER  04340000
+*--LOOP                                                                 04350000
+PARS2    LA    R4,1(,R4)               ,                                04360000
+         CLR   R4,R5                   END OF PARM REACHED?             04370000
+         BH    PARS41                  YES, EXIT LOOP                   04380000
+         CLI   0(R4),C','                                               04390000
+         BNE   PARS2                                                    04400000
+*--ENDLOOP                                                              04410000
+PARS41   LR    R3,R4                   POSITION OF ','                  04420000
+         SR    R3,R2                   LENGTH OF SOURCE PARAM           04430000
+         ICM   R3,B'1000',PARSEX40     PADDING                          04440000
+         MVCL  R6,R2                   MOVE SOURCE TO TARGET            04450000
+PARS44   LA    R14,2+2(,R14)           NEXT TARGET                      04460000
+         CLI   0(R14),0                IS THIS A FIELD DESCRIPTOR?      04470000
+         BE    PARS1                   YES, PROCESS IT                  04480000
+*ENDLOOP                                                                04490000
+         RETURN (0,12),T                                                04500000
+         PRINT NOGEN                                                    04510005
+         YREGS                         SYS1.MACLIB                      04520005
+         DCBD  DSORG=PS                SYS1.MACLIB                      04530005
+         END                                                            04540000
+//SYSLIB   DD DSN=SYS1.MACLIB,DISP=SHR                                  04550000
+//SYSUT1   DD UNIT=VIO,SPACE=(CYL,1)                                    04570000
+//SYSPRINT DD SYSOUT=*                                                  04580000
+//SYSLIN   DD UNIT=VIO,SPACE=(TRK,1),DISP=(,PASS),BLKSIZE=3200          04590000
+//*                                                                     04600000
+//LKED    EXEC PGM=HEWL,PARM='MAP,RENT,REFR'                            04610006
+//SYSPRINT DD SYSOUT=*                                                  04620000
+//SYSLIN   DD DSN=*.HLASM.SYSLIN,DISP=(OLD,DELETE)                      04630000
+//SYSLMOD  DD DSN=CBTTAPE.FILE183.LOAD(ROUTEPGM),DISP=SHR               04650005

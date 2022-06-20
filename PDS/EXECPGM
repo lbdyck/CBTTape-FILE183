@@ -1,0 +1,367 @@
+//GILBERTE JOB (ACCT#),EXECPGM,                                         00010005
+// NOTIFY=&SYSUID,                                                      00020003
+// CLASS=A,MSGCLASS=H,COND=(0,NE)                                       00030003
+//*                                                                     00040000
+//HLASM EXEC PGM=ASMA90,PARM=(OBJECT,NODECK,NOESD,NORLD,NOXREF)         00050005
+*********************************************************************** 00060000
+*                                                                     * 00070004
+*    Program:  EXECPGM                                                * 00080004
+*                                                                     * 00090004
+*    Function: TSO Command Processor to invoke a compiler             * 00100004
+*              with an alternate DDname list                          * 00110005
+*                                                                     * 00120004
+*    Author:   Gilbert Saint-Flour <carlos@gsf-soft.com>              * 00130004
+*              http://gsf-soft.com/Freeware/                          * 00140005
+*                                                                     * 00150004
+*    Example:                                                         * 00160005
+*                                                                     * 00170004
+*      EXECPGM ASMA90          +                                      * 00180005
+*        PARM('NOOBJECT,NODECK,NOXREF,NORLD,ALIGN')           +       * 00190004
+*        STEPLIB(LINKLIST)         +                                  * 00200004
+*        SYSIN(TEMPWK2)            +                                  * 00210004
+*        SYSUT1(TEMPWK1)           +                                  * 00220004
+*        SYSLIB(#ASMLIB)           +                                  * 00230004
+*        SYSPRINT(ASMPRINT)                                           * 00240005
+*                                                                     * 00250004
+*1804 INVOKE THE DEBUGGING ROUTINE AS AN ESTAI                        * 00260004
+*1805 BUMP OWN USE COUNT IF DEBUGGING ROUTINE IS INVOKED              * 00270005
+*     TO PREVENT S0C1 WHEN PGM INVOKED VIA XCTL ABENDS                * 00280005
+*********************************************************************** 00290000
+*XA_ONLY SPLEVEL SET=1                 MVS/370 COMPATIBILITY            00300003
+EXECPGM  CSECT                                                          00310000
+EXECPGM  RMODE ANY                                                      00320003
+         SAVE  (14,12),,'GSF UTILITIES - EXECPGM 18.05'                 00330005
+         LR    R12,R15                                                  00340005
+         USING EXECPGM,R12                                              00350005
+         GETMAIN R,LV=DYNAML           GET DYNAMIC STORAGE              00360005
+         ST    R13,4(,R1)                                               00370000
+         ST    R1,8(,R13)                                               00380000
+         LA    R14,72(,R1)             CLEAR WORKING STORAGE            00390000
+         LA    R15,DYNAML-72           CLEAR WORKING STORAGE            00400000
+         SR    R1,R1                   CLEAR WORKING STORAGE            00410000
+         MVCL  R14,R0                  CLEAR WORKING STORAGE            00420000
+         LM    R13,R1,8(R13)           SET R13, RELOAD R14-R1           00430000
+         USING DYNAM,R13                                                00440000
+         LR    R9,R1                   POINT AT CPPL.                   00450000
+         USING CPPL,R9                                                  00460000
+*                                                                       00470004
+*        SET UP RECOVERY ENVIRONMENT (OPTIONAL)                         00480004
+*                                                                       00490004
+         WXTRN SYSDEBUG                OPTIONAL DEBUGGING ROUTINE       00500004
+         ICM   R15,B'1111',=A(SYSDEBUG)  DEBUGGING ROUTINE              00510004
+         BZ    PARSE000                NOT PRESENT, EXIT                00520004
+         BALR  R14,R15                 SET UP RECOVERY ENVIRONMENT      00530004
+         STM   R15,R0,ESTAIPRM         SAVE PARAMETERS FOR ATTACH       00540004
+         L     R1,540(,0)              PSATOLD (MY TCB)                 00550005
+         L     R1,0(,R1)               TCBRBP (MY PRB)                  00560004
+         L     R1,12(,R1)              RBCDE (MY CDE)                   00570004
+         LOAD  EPLOC=8(,R1)            BUMP MY OWN USE COUNT            00580004
+*********************************************************************** 00590000
+*                                                                     * 00600000
+*        BUILD PARSE PARM LIST, CALL IKJPARS                          * 00610000
+*                                                                     * 00620000
+*********************************************************************** 00630000
+PARSE000 LA    R1,DYNPPL               POINT TO PPL                     00640000
+         USING PPL,R1                  SET UP ADDRESSABILITY TO PPL     00650000
+         L     R0,CPPLUPT              USER PROFILE TABLE               00660000
+         ST    R0,PPLUPT               STORE UPT ADDRESS IN PPL         00670000
+         L     R0,CPPLECT              ENVIRONMENT CONTROL TABLE        00680000
+         ST    R0,PPLECT               STORE ECT IN PPL                 00690000
+         LA    R0,DYNECB               EVENT CONTROL BLOCK              00700000
+         ST    R0,PPLECB               STORE ECB IN PPL                 00710000
+         MVC   PPLPCL,=A(PCLCSECT)     STORE PCL ADDR INTO PPL          00720000
+         LA    R0,DYNANSWR             ANSWER AREA                      00730000
+         ST    R0,PPLANS               STORE ANSWER ADDRESS IN PPL      00740000
+         L     R0,CPPLCBUF             COMMAND BUFFER                   00750000
+         ST    R0,PPLCBUF              STORE BUFFER ADDRESS IN PPL      00760000
+         LA    R14,=C'IKJPARS '        NAME OF PARSE ROUTINE            00770000
+         L     R15,0016(0)             CVTPTR                           00780000
+         L     R15,0008(,R15)          CVTLINK                          00790000
+         STM   R14,R15,DWD             BUILD LINK PARMLIST              00800000
+         LINK  SF=(E,DWD)              CALL THE PARSE ROUTINE           00810000
+         LTR   R15,R15                 CHECK FOR ZERO PARSE RETURN      00820000
+         BNZ   ABEND33                 GO AWAY UPSET                    00830000
+         DROP  R1                      WAS PPL                          00840000
+*********************************************************************** 00850000
+*                                                                     * 00860000
+*        PROCESS PARSED PARAMETERS                                    * 00870000
+*                                                                     * 00880000
+*********************************************************************** 00890000
+         L     R8,DYNANSWR             LOAD PDL ADDRESS                 00900000
+         USING IKJPARMD,R8             SET UP ADDRESSABILITY TO PDL     00910000
+         LA    R14,PARM256             256-BYTE AREA                    00920000
+         LA    R2,PARMPCE2             FIRST SUB-LIST ITEM              00930000
+         TM    6(R2),X'80'             DO WE HAVE A PARM?               00940000
+         BZ    ENDPARM                 NO, JUMP                         00950000
+*LOOP                                                                   00960000
+MAKEPARM LH    R15,4(,R2)              LENGTH OF SUB_ITEM               00970000
+         L     R0,0(,R2)               GET ADDRESS                      00980000
+         LR    R1,R15                  PASS LENGTH                      00990000
+         ICM   R1,B'1000',=CL8' '      PADDING                          01000000
+         MVCL  R14,R0                  MOVE DATA SET NAME               01010000
+         MVI   0(R14),C','             ADD COMMA                        01020000
+         LA    R14,1(,R14)             INCREMENT POINTER                01030000
+         ICM   R2,B'1111',8(R2)        IS THIS THE LAST OPERAND?        01040000
+         BP    MAKEPARM                NO, LOOP                         01050000
+*ENDLOOP                                                                01060000
+         BCTR  R14,0                   LAST COMMA                       01070000
+ENDPARM  LA    R0,PARM256              256-BYTE AREA                    01080000
+         SR    R14,R0                  USED LENGTH                      01090000
+         STH   R14,PARM256L            USED LENGTH                      01100000
+*                                                                       01110000
+         MACRO                                                    MACRO 01120000
+        @MVCL  &TO,&FROM,&DD                                      MACRO 01130000
+         TM    &FROM+6,X'80'           CHECK SUBPARAMETER         MACRO 01140000
+         BZ    $&SYSNDX+2              JUMP IF NOT SPECIFIED      MACRO 01150000
+         AIF   (T'&DD EQ 'O').MVC                                 MACRO 01160000
+         MVI   PARMDDNL+1,8*&DD        LENGTH OF DDN LIST         MACRO 01170000
+.MVC     LA    R14,&TO                 44-BYTE AREA               MACRO 01180000
+         LA    R15,L'&TO               GET LENGTH                 MACRO 01190000
+         ICM   R0,B'1111',&FROM        GET ADDRESS                MACRO 01200000
+         LH    R1,&FROM+4              ACTUAL LENGTH OF &MBR      MACRO 01210000
+         ICM   R1,B'1000',=CL8' '      PADDING                    MACRO 01220000
+$&SYSNDX MVCL  R14,R0                  MOVE DATA SET NAME         MACRO 01230000
+         MEND                                                     MACRO 01240000
+         MVC   DCBDDNAM,=CL8' '        BLANK OUT DDNAME                 01250000
+*                                                                       01260000
+        @MVCL  PGMNM,PGMPCE            PROGRAM NAME                     01270000
+        @MVCL  DCBDDNAM,LOADPCE2       STEPLIB DDNAME                   01280000
+        @MVCL  PARMDD1,LINPCE2,1       SYSLIN                           01290000
+        @MVCL  PARMDD2,MBRPCE2,2       MEMBER NAME                      01300000
+        @MVCL  PARMDD3,MODPCE2,3       SYSLMOD                          01310000
+        @MVCL  PARMDD4,LIBPCE2,4       SYSLIB                           01320000
+        @MVCL  PARMDD5,INPCE2,5        SYSIN                            01330000
+        @MVCL  PARMDD6,PRTPCE2,6       SYSPRINT                         01340000
+        @MVCL  PARMDD7,PUNPCE2,7       SYSPUNCH                         01350000
+        @MVCL  PARMDD8,UT1PCE2,8       SYSUT1                           01360000
+        @MVCL  PARMDD9,UT2PCE2,9       SYSUT2                           01370000
+        @MVCL  PARMDD10,UT3PCE2,10     SYSUT3                           01380000
+        @MVCL  PARMDD11,UT4PCE2,11     SYSUT4                           01390000
+        @MVCL  PARMDD12,TRMPCE2,12     SYSTERM                          01400000
+PARSE999 IKJRLSA DYNANSWR              RELEASE PDL                      01410000
+*                                                                       01420000
+ATTACH   LA    R14,PARM256L            JCLPARM                          01430000
+         LA    R15,PARMDDNL            DDN LIST                         01440000
+         STM   R14,R15,PARMLIST        BUILD PARM                       01450000
+         OI    PARMLIST+4,X'80'        END OF LIST (WITH DDN LIST)      01460000
+*                                                                       01470000
+         CLI   PARMDDNL+1,00           ANY ALTERNATE DDN?               01480000
+         BNE   ATTACH3                 YES, JUMP                        01490000
+         OI    PARMLIST+0,X'80'        END OF LIST (NO DDN LIST)        01500000
+*                                                                       01510000
+ATTACH3  CLI   DCBDDNAM,C' '           STEPLIB SPECIFIED?               01520000
+         BNH   XCTL1                   NO, SKIP OPEN                    01530000
+*                                                                       01540000
+         L     R2,0016                 CVTPTR                           01550000
+         L     R2,0008(,R2)            CVTLINK                          01560000
+         CLC   =C'LINKLIST',DCBDDNAM   STEPLIB(LINKLIST)?               01570000
+         BE    ATTACH4L                YES, JUMP                        01580000
+         CLC   =C'SYSTEM  ',DCBDDNAM   STEPLIB(SYSTEM)?                 01590000
+         BE    ATTACH4L                YES, JUMP                        01600000
+**       MVI   DCBDSORG,X'02'          DSORG=PO                         01610000
+         MVI   DCBMACR1,X'D0'          MACRF=E                          01620000
+         MVI   DCBMACR2,X'08'          MACRF=E                          01630000
+         MVI   DCBOFLGS,X'02'          DCB FREE FOR USE                 01640000
+         LA    R2,IHADCB               BUILD OPEN PARM LIST             01650000
+         ST    R2,OPENLIST             BUILD OPEN PARM LIST             01660000
+         MVI   OPENLIST,X'80'          BUILD OPEN PARM LIST             01670000
+         OPEN  MF=(E,OPENLIST)         OPEN TASKLIB                     01680000
+*---------------------------------------------------------------------* 01690004
+*                                                                     * 01700004
+*        ATTACH THE PROGRAM                                           * 01710004
+*                                                                     * 01720004
+*---------------------------------------------------------------------* 01730004
+ATTACH4L LA    R1,PARMLIST             MOD PARM ADDRESS                 01740000
+         LM    R3,R4,ESTAIPRM          ESTAI ADDR, PARM                 01750004
+         LTR   R3,R3                   ESTAI=0 ?                        01760004
+         BZ    ATTACH4I                YES, JUMP                        01770004
+         ATTACH EPLOC=PGMNM,                                           X01780004
+               TASKLIB=(R2),                                           X01790004
+               ESTAI=((R3),(R4)),      DEBUGGING ROUTINE               X01800004
+               ECB=ECB1,                                               X01810004
+               SF=(E,ATTACHL)                                           01820004
+         B     ATTACH4S                                                 01830004
+ATTACH4I ATTACH EPLOC=PGMNM,                                           X01840004
+               TASKLIB=(R2),                                           X01850004
+               ECB=ECB1,                                               X01860004
+               SF=(E,ATTACHL)                                           01870004
+ATTACH4S ST    R1,ECB1+4               SAVE TCB ADDRESS                 01880004
+         WAIT  1,ECB=ECB1              WAIT FOR COMPLETION              01890004
+         DETACH ECB1+4                 DETACH SUBTASK                   01900004
+         TM    DCBOFLGS,X'10'          DCB OPEN?                        01910000
+         BZ    GOBACK                  NO, JUMP                         01920000
+         CLOSE MF=(E,OPENLIST)         CLOSE TASKLIB                    01930000
+*                                                                       01940000
+GOBACK   LR    R1,R13                                                   01950000
+         LH    R2,ECB1+2               PICK UP RETURN CODE              01960004
+         L     R13,4(,R13)                                              01970000
+         FREEMAIN RU,LV=DYNAML,A=(R1),SP=0                              01980004
+         LR    R15,R2                  PASS RETURN CODE                 01990000
+         RETURN (14,12),RC=(15)                                         02000000
+ABEND33  ABEND 33,REASON=(15)          IKJPARS FAILED                   02010000
+*                                                                       02020000
+*---------------------------------------------------------------------* 02030000
+*        INVOKE PROGRAM VIA XCTL IF NO TASKLIB SPECIFIED              * 02040000
+*---------------------------------------------------------------------* 02050000
+*                                                                       02060000
+XCTL1    LA    R15,DWD                 XCTL SF=L                        02070000
+         LA    R1,PARMLIST             MOD PARM ADDRESS                 02080000
+         LA    R2,PGMNM                POINT TO PROGRAM NAME            02090000
+         SR    R3,R3                   NO DCB                           02100000
+         STM   R2,R3,0(R15)            XCTL SF=L                        02110000
+         L     R13,4(,R13)             CALLER'S SAVE AREA               02120000
+         XCTL  (2,12),SF=(E,(15))      PASS CONTROL TO SPECIFIED PGM    02130000
+*                                                                       02140000
+*---------------------------------------------------------------------* 02150004
+*        DEFINE INPUT PARAMETERS FOR IKJPARS                          * 02160000
+*---------------------------------------------------------------------* 02170004
+*                                                                       02180000
+PCLCSECT IKJPARM                                                        02190000
+PCLCSECT RMODE ANY                                                      02200003
+PGMPCE   IKJPOSIT DSNAME,PROMPT='PROGRAM NAME'                          02210000
+PARMPCE  IKJKEYWD                                                       02220000
+         IKJNAME 'PARM',SUBFLD=PARMSUBF                                 02230000
+LOADPCE  IKJKEYWD                                                       02240000
+         IKJNAME 'STEPLIB',SUBFLD=LOADSUBF,ALIAS=('TASKLIB')            02250000
+LINPCE   IKJKEYWD                                                       02260000
+         IKJNAME 'SYSLIN',SUBFLD=LINSUBF                                02270000
+MBRPCE   IKJKEYWD                                                       02280000
+         IKJNAME 'MEMBER',SUBFLD=MBRSUBF,ALIAS=('MBR')                  02290000
+MODPCE   IKJKEYWD                                                       02300000
+         IKJNAME 'SYSLMOD',SUBFLD=MODSUBF                               02310000
+LIBPCE   IKJKEYWD                                                       02320000
+         IKJNAME 'SYSLIB',SUBFLD=LIBSUBF                                02330000
+INPCE    IKJKEYWD                                                       02340000
+         IKJNAME 'SYSIN',SUBFLD=INSUBF                                  02350000
+PRTPCE   IKJKEYWD                                                       02360000
+         IKJNAME 'SYSPRINT',SUBFLD=PRTSUBF                              02370000
+PUNPCE   IKJKEYWD                                                       02380000
+         IKJNAME 'SYSPUNCH',SUBFLD=PUNSUBF                              02390000
+UT1PCE   IKJKEYWD                                                       02400000
+         IKJNAME 'SYSUT1',SUBFLD=UT1SUBF                                02410000
+UT2PCE   IKJKEYWD                                                       02420000
+         IKJNAME 'SYSUT2',SUBFLD=UT2SUBF                                02430000
+UT3PCE   IKJKEYWD                                                       02440000
+         IKJNAME 'SYSUT3',SUBFLD=UT3SUBF                                02450000
+UT4PCE   IKJKEYWD                                                       02460000
+         IKJNAME 'SYSUT4',SUBFLD=UT4SUBF                                02470000
+TRMPCE   IKJKEYWD                                                       02480000
+         IKJNAME 'SYSTERM',SUBFLD=TRMSUBF                               02490000
+*                                                                       02500000
+PARMSUBF IKJSUBF                                                        02510000
+PARMPCE2 IKJIDENT 'PARM',CHAR,LIST                                      02520000
+LOADSUBF IKJSUBF                                                        02530000
+LOADPCE2 IKJIDENT 'STEPLIB',MAXLNTH=8,FIRST=ALPHA,OTHER=ALPHANUM        02540000
+LINSUBF  IKJSUBF                                                        02550000
+LINPCE2  IKJIDENT 'SYSLIN',MAXLNTH=8,FIRST=ALPHA,OTHER=ALPHANUM         02560000
+MBRSUBF  IKJSUBF                                                        02570000
+MBRPCE2  IKJIDENT 'MEMBER',MAXLNTH=8,FIRST=ALPHA,OTHER=ALPHANUM         02580000
+MODSUBF  IKJSUBF                                                        02590000
+MODPCE2  IKJIDENT 'SYSLMOD',MAXLNTH=8,FIRST=ALPHA,OTHER=ALPHANUM        02600000
+LIBSUBF  IKJSUBF                                                        02610000
+LIBPCE2  IKJIDENT 'SYSLIB',MAXLNTH=8,FIRST=ALPHA,OTHER=ALPHANUM         02620000
+INSUBF   IKJSUBF                                                        02630000
+INPCE2   IKJIDENT 'SYSIN',MAXLNTH=8,FIRST=ALPHA,OTHER=ALPHANUM          02640000
+PRTSUBF  IKJSUBF                                                        02650000
+PRTPCE2  IKJIDENT 'SYSPRINT',MAXLNTH=8,FIRST=ALPHA,OTHER=ALPHANUM       02660000
+PUNSUBF  IKJSUBF                                                        02670000
+PUNPCE2  IKJIDENT 'SYSPUNCH',MAXLNTH=8,FIRST=ALPHA,OTHER=ALPHANUM       02680000
+UT1SUBF  IKJSUBF                                                        02690000
+UT1PCE2  IKJIDENT 'SYSUT1',MAXLNTH=8,FIRST=ALPHA,OTHER=ALPHANUM         02700000
+UT2SUBF  IKJSUBF                                                        02710000
+UT2PCE2  IKJIDENT 'SYSUT2',MAXLNTH=8,FIRST=ALPHA,OTHER=ALPHANUM         02720000
+UT3SUBF  IKJSUBF                                                        02730000
+UT3PCE2  IKJIDENT 'SYSUT3',MAXLNTH=8,FIRST=ALPHA,OTHER=ALPHANUM         02740000
+UT4SUBF  IKJSUBF                                                        02750000
+UT4PCE2  IKJIDENT 'SYSUT4',MAXLNTH=8,FIRST=ALPHA,OTHER=ALPHANUM         02760000
+TRMSUBF  IKJSUBF                                                        02770000
+TRMPCE2  IKJIDENT 'SYSTERM',MAXLNTH=8,FIRST=ALPHA,OTHER=ALPHANUM        02780000
+         IKJENDP                                                        02790000
+*********************************************************************** 02800000
+*                                                                     * 02810004
+*        DYNAMIC STORAGE AREA (RMODE=24)                              * 02820004
+*                                                                     * 02830004
+*********************************************************************** 02840000
+DYNAM    DSECT                                                          02850000
+         DS    18F                     SAVE AREA                        02860000
+DWD      DS    D                       WORK AREA                        02870000
+DYNECB   DS    F                       ECB FOR IKJPARS                  02880000
+DYNANSWR DS    F                       WORKA FOR IKJPARS                02890000
+DYNPPL   DS    8F                      PPL FOR IKJPARS                  02900000
+ESTAIPRM DS    A(R15,R0)               DEBUGGING ROUTINE PARAMETERS     02910004
+*                                                                       02920000
+*---------------------------------------------------------------------* 02930004
+*        PARAMETER LIST AND DDNAME LIST                               * 02940004
+*---------------------------------------------------------------------* 02950004
+*                                                                       02960000
+PARMLIST DS    A(PARM256L,PARMDDNL)                                     02970000
+PGMNM    DS    C'ASMA90  '             NAME OF PROGRAM TO BE INVOKED    02980005
+ECB1     DS    F,A                     ATTACH ECB, TCB ADDR             02990004
+PARM256L DS    Y(L'PARM256)            LENGTH OF PARM                   03000000
+PARM256  DS    CL256                   PARM                             03010000
+         CNOP  6,8                                                      03020000
+PARMDDNL DS    Y(8*12)                 LENGTH OF PARM LIST              03030003
+PARMDD1  DS    C'SYSLIN  '         #1  SYSLIN                           03040003
+PARMDD2  DS    C'TEMPNAME'         #2  MEMBER NAME (LKED)               03050003
+PARMDD3  DS    C'SYSLMOD '         #3  SYSLMOD     (LKED)               03060003
+PARMDD4  DS    C'SYSLIB  '         #4  SYSLIB                           03070003
+PARMDD5  DS    C'SYSIN   '         #5  SYSIN                            03080003
+PARMDD6  DS    C'SYSPRINT'         #6  SYSPRINT (OR SYSLOUT)            03090003
+PARMDD7  DS    C'SYSPUNCH'         #7  SYSPUNCH                         03100003
+PARMDD8  DS    C'SYSUT1  '         #8  SYSUT1                           03110003
+PARMDD9  DS    C'SYSUT2  '         #9  SYSUT2                           03120003
+PARMDD10 DS    C'SYSUT3  '         #10 SYSUT3                           03130003
+PARMDD11 DS    C'SYSUT4  '         #11 SYSUT4                           03140003
+PARMDD12 DS    C'SYSTERM '         #12 SYSTERM                          03150003
+DDNAME13 DS    C'SYSUT5  '         +96 SYSUT5                           03160003
+DDNAME14 DS    C'SYSUT6  '        +104 SYSUT6    SYSCIN                 03170003
+DDNAME15 DS    C'SYSUT7  '        +112 SYSUT7                           03180003
+DDNAME16 DS    C'DBRMLIB '        +120 DBRMLIB                          03190003
+*                                                                       03200000
+*---------------------------------------------------------------------* 03210004
+*        TASKLIB DCB AND ITS OPEN LIST                                * 03220004
+*---------------------------------------------------------------------* 03230004
+*                                                                       03240000
+OPENLIST OPEN  IHADCB,MF=L                                              03250000
+IHADCB   DS    13F                     MINI EXCP DCB                    03260000
+DCBDDNAM EQU   IHADCB+40,8             DDNAME                           03270000
+DCBOFLGS EQU   IHADCB+48,1             OPEN FLAGS                       03280003
+DCBMACR1 EQU   IHADCB+50,1             MACRF=E                          03290000
+DCBMACR2 EQU   IHADCB+51,1             MACRF=E                          03300000
+ATTACHL  ATTACH SF=L                                                    03310000
+DYNAML   EQU   *-DYNAM                                                  03320000
+         IKJPPL                        PARSE PARAMETER LIST             03330000
+         IKJCPPL                       COMMAND PROCESSOR PARM LIST      03340000
+         YREGS                         REGISTER EQUATES                 03350000
+         END   EXECPGM                                                  03360003
+//SYSLIB   DD DSN=SYS1.MACLIB,DISP=SHR                                  03370004
+//SYSUT1   DD UNIT=VIO,SPACE=(CYL,1)                                    03380004
+//SYSLIN   DD UNIT=VIO,SPACE=(TRK,1),DISP=(,PASS),BLKSIZE=3200          03390005
+//SYSPRINT DD SYSOUT=*                                                  03400004
+//*                                                                     03410000
+//LKED    EXEC PGM=IEWL,PARM='MAP,RENT,REFR,RMODE=ANY'                  03420005
+//SYSLIN   DD DSN=*.HLASM.SYSLIN,DISP=(OLD,PASS)                        03430005
+//SYSLMOD  DD DSN=&&LOADMOD(EXECPGM),DISP=(,PASS),                      03440005
+//            UNIT=VIO,SPACE=(TRK,(1,,1))                               03450005
+//SYSPRINT DD SYSOUT=*                                                  03460004
+//*                                                                     03470000
+//GO      EXEC PGM=IKJEFT01                                             03480000
+//STEPLIB  DD DSN=&&LOADMOD(EXECPGM),DISP=(OLD,PASS)                    03490004
+//         DD DSN=CBTTAPE.FILE183.LOAD,DISP=SHR                         03500005
+//SYSTSPRT DD SYSOUT=*                                                  03510004
+//SYSTSIN  DD *                                                         03520004
+EXECPGM IEBUPDTE PARM('NEW') +                                          03530005
+                 SYSIN(INDD) +                                          03540005
+                 SYSPRINT(PRTDD) +                                      03550005
+                 SYSUT2(OUTDD)                                          03560005
+//PRTDD    DD SYSOUT=*                           SYSPRINT               03570005
+//OUTDD    DD UNIT=VIO,SPACE=(TRK,(1,,1))        SYSUT2                 03580005
+//INDD     DD *                                  SYSIN                  03590005
+./ ADD NAME=LEMEMBRE                                                    03600005
+IIIIIIIIIIIIIIIIIIIIIIIIIIIII                                           03610005
+JJJJJJJJJJJJJJJJJJJJJJJJJJJJJ                                           03620005
+//*                                                                     03630000
+//LKED    EXEC PGM=IEWL,PARM='MAP,RENT'                                 03640003
+//SYSLIN   DD DSN=*.HLASM.SYSLIN,DISP=(OLD,PASS)                        03650005
+//SYSLMOD  DD DSN=CBTTAPE.FILE183.LOAD(EXECPGM),DISP=SHR                03660005
+//SYSPRINT DD SYSOUT=*                                                  03670004

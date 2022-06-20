@@ -1,0 +1,472 @@
+//SBGOLOBL JOB (ACCT#),LOCKTERM,                                        00010003
+// NOTIFY=&SYSUID,                                                      00020000
+// CLASS=A,MSGCLASS=H,COND=(0,NE)                                       00030000
+//ASMH EXEC PGM=ASMA90,PARM=(OBJECT,NODECK,NOESD,NORLD,NOXREF)          00040006
+*********************************************************************** 00050000
+*                                                                     * 00060000
+* MODULE NAME = LOCKTERM                                              * 00070000
+*                                                                     * 00080000
+* DESCRIPTIVE NAME = Lock TSO terminal                                * 00090000
+*                                                                     * 00100000
+* STATUS = R202                                                       * 00110006
+*                                                                     * 00120000
+* FUNCTION = This TSO command locks the TSO terminal until            * 00130000
+*            the user's LOGON password is entered.                    * 00140000
+*                                                                     * 00150000
+* AUTHOR = Gilbert Saint-Flour <carlos@gsf-soft.com>                  * 00160001
+*                                                                     * 00170000
+* ENVIRONMENT = SEE BELOW                                             * 00180000
+*                                                                     * 00190000
+*    DEPENDENCIES: MVS/ESA or OS/390                                  * 00200000
+*                  RACF or ACF2 6.x or TopSecret 5.x                  * 00210000
+*                                                                     * 00220000
+* MODULE TYPE = PROCEDURE, (CSECT TYPE)                               * 00230000
+*                                                                     * 00240000
+*    PROCESSOR = IBM OS/ASSEMBLER H VERSION 2 OR                      * 00250000
+*                IBM HIGH LEVEL ASSEMBLER/MVS                         * 00260000
+*                                                                     * 00270000
+*    MODULE SIZE = 4K                                                 * 00280000
+*                                                                     * 00290000
+*    ATTRIBUTES = REENTERABLE, RMODE ANY, AMODE 31,                   * 00300000
+*                 SUPERVISOR STATE, KEY 0                             * 00310000
+*                 APF AUTHORIZATION: YES                              * 00320000
+*                                                                     * 00330000
+* INSTALLATION: LOCKTERM must run authorized, which means it must     * 00340000
+*               be link-edited into an APF-authorized load library    * 00350000
+*               and be defined in the AUTHCMD section of IKJTSOnn.    * 00360000
+*                                                                     * 00370000
+* OPERATION = SEE BELOW                                               * 00380000
+*                                                                     * 00390000
+*   When invoked as a TSO command, LOCKTERM locks up the TSO terminal * 00400000
+*   until the LOGON password is entered to resume the TSO session.    * 00410000
+*   If the words CANCEL or LOGOFF are entered instead of the LOGON    * 00420001
+*   password, then the TSO session is abended with code S222.         * 00430001
+*                                                                     * 00440000
+*   During the time the TSO terminal is locked, messages are          * 00450000
+*   not accepted and time-out abends (S522) will not occur.           * 00460000
+*                                                                     * 00470000
+* PARAMETERS = None                                                   * 00480000
+*                                                                     * 00490000
+* HISTORY = This program is based on the LOCK command written         * 00500000
+*           by Leonard D. Woren in 1984 at Hughes Aircraft and        * 00510000
+*           found in file 179 of the CBT tape.  Among other           * 00520000
+*           things, I simplified the code by removing non-IBM         * 00530000
+*           macros and added the CANCEL and NOINTERCOM features.      * 00540000
+*                                                                     * 00550000
+* RETURN-CODES = Always Zero                                          * 00560000
+*                                                                     * 00570000
+* CHANGE ACTIVITY                                                     * 00580000
+*                                                                     * 00590000
+* 200 Initial release for the CBT tape                                * 00600000
+* 201 Make LOGOFF an alias of CANCEL                                  * 00610001
+*     STCOM NO only issued on OS390R4                                 * 00620001
+* 202 Adjust size of TSO userid for 8 characters                      * 00630006
+*                                                                     * 00631006
+&REL     SETC  'R202'                                                 * 00640006
+*********************************************************************** 00650000
+LOCKTERM CSECT                                                          00660000
+LOCKTERM RMODE ANY                                                      00670000
+         B     BEGIN-*(,R15)           skip eye-catcher                 00680000
+         DC    C'GSF Utilities - LOCKTERM &REL '                        00690000
+BEGIN    BAKR  R14,0                                                    00700000
+         LR    R12,R15                 BASE REGISTER                    00710000
+         USING LOCKTERM,R12                                             00720000
+         LR    R11,R1                  POINT AT CPPL                    00730000
+         USING CPPL,R11                                                 00740000
+         MODESET MODE=SUP              GET S047 IF NOT AUTHORISED       00750000
+*--------------------------------------*                                00790000
+*  INITIALISATION                      *                                00800000
+*--------------------------------------*                                00810000
+         STORAGE OBTAIN,ADDR=(R10),LENGTH=DYNAML,                      X00820000
+               LOC=BELOW,BNDRY=PAGE                                     00830000
+         USING DYNAM,R10                                                00840000
+         L     R14,=A(SCREEN$)         MODEL ADDR                       00850000
+         LA    R15,SCREENL             MODEL LENGTH                     00860000
+         LA    R0,SCREEN               "TO" ADDR                        00870000
+         LR    R1,R15                  "TO" LENGTH                      00880000
+         MVCL  R0,R14                  MOVE MODEL TO DYNAMIC            00890000
+         LA    R9,SCREEN               screen image in dynamic storage  00900000
+         USING SCREEN$,R9                                               00910000
+         MVI   BLANKS,C' '                                              00920000
+         MVC   BLANKS+1(L'BLANKS-1),BLANKS                              00930000
+         XC    RACINITL(RACINITLL),RACINITL                             00940000
+         MVI   RACINITL,RACINITLL      INIT LENGTH                      00950000
+*                                                                       00960000
+*        Retrieve SMF SID                                               00970000
+*                                                                       00980000
+         L     R8,CVTPTR               addr of the CVT                  00990001
+         USING CVTMAP,R8                                                01000001
+         MVC   SYSNAME,CVTSNAME        SYSTEM NAME                      01010000
+         L     R4,CVTSMCA              SMF                              01020001
+         USING SMCABASE,R4                                              01030001
+         MVC   SMFSID,SMCASID          system ID                        01040000
+*                                                                       01050000
+*        Retrieve ACEE addr and terminal name                           01060000
+*                                                                       01070000
+         L     R4,PSAAOLD-PSA          MY ASCB                          01080000
+         USING ASCB,R4                                                  01090000
+         L     R5,ASCBASXB             MY ASXB                          01100000
+         USING ASXB,R5                                                  01110000
+         MVC   USERID,ASXBUSER         TSO USERID                       01120000
+         L     R6,ASXBSENV             MY ACEE                          01130000
+         USING ACEE,R6                                                  01140000
+         MVC   TERMNAME,ACEETRID       terminal name                    01150000
+*                                                                       01160000
+*        Initial time and date                                          01170000
+*                                                                       01180000
+         TIME  DEC                     GET CURRENT TIME (HHMMSSTH)      01190000
+         ST    R0,DWD                  STORE FOR EDIT                   01200000
+         MVC   TIMELOCK,TIMEMASK       MOVE EDIT MASK TO SCREEN         01210000
+         ED    TIMELOCK,DWD            HH:MM:SS                         01220000
+*                                                                       01230000
+*        PROFILE NOINTERCOM                                             01240001
+*                                                                       01250001
+*        This code prevents messages issued using the SEND command      01260001
+*        (which includes NOTIFY from JES) to the LOCKTERM'd session     01270001
+*        from being totally lost in OS/390 R4; as of 99/3/3, this       01280001
+*        mysterious bug is still being researched by TSO L2 support.    01290001
+*                                                                       01300000
+         TM    CVTOSLV2,CVTOS390_R4    OS390 R4?                        01310001
+         BNO   NCOM5                   no, skip STCOM                   01320001
+         L     R7,CPPLUPT              User Profile Table               01330000
+         USING UPT,R7                                                   01340000
+         MVC   $UPTSWS,UPTSWS          save NOINTERCOM indicator        01350000
+         TM    $UPTSWS,UPTNCOM         NOINTERCOM                       01360000
+         BO    NCOM5                   flag on, skip NCOM               01370000
+         STCOM NO                      NOINTERCOM                       01380000
+NCOM5    EQU   *                                                        01400000
+*                                                                       01410000
+*        Trap ATTN/PA1 keys                                             01420000
+*                                                                       01430000
+         STAX  DEFER=YES               IGNORE ATTENTIONS                01440000
+         STFSMODE ON,INITIAL=YES       Switch to full-screen mode       01450000
+         STTMPMD ON,KEYS=ALL           Trap ATTN/PA1                    01460000
+*                                                                       01470000
+*        Prevent S522 abends                                            01480000
+*                                                                       01490000
+         MODESET EXTKEY=ZERO                                            01500000
+         OI    ASCBRCTF,ASCBTOFF       no S522                          01510000
+         MODESET KEY=NZERO                                              01520000
+*--------------------------------------*                                01530000
+*  MAIN LOOP                           *                                01540000
+*--------------------------------------*                                01550000
+         SR    R3,R3                   CLEAR LOOP COUNTER               01560000
+*loop                                                                   01570000
+LOOP     CVD   R3,DWD                  loop counter                     01580000
+         MVC   NUM,=X'40202020'                                         01590000
+         ED    NUM,DWD+6                                                01600000
+         TIME  DEC                     GET CURRENT TIME (HHMMSSTH)      01610000
+         ST    R0,DWD                  STORE FOR EDIT                   01620000
+         MVC   TIMETPUT,TIMEMASK       MOVE EDIT MASK TO SCREEN         01630000
+         ED    TIMETPUT,DWD            HH:MM:SS                         01640000
+         TPUT  SCREEN,SCREENL,FULLSCR                                   01650000
+         CH    R15,=H'20'              RC TOO BIG?                      01660000
+         BH    TPUT$ERR                YES - ABEND                      01670000
+         B     *+4(R15)                DECODE RC                        01680000
+         B     TPUT$OK                 00 - CONTINUE                    01690000
+         B     TPUT$ERR                04 - NO BUFFERS FOR NOWAIT       01700000
+         B     ATTN$HIT                08 - ATTN HIT                    01710000
+         B     TPUT$ERR                0C - INPUT BUFFER TOO SMALL      01720000
+         B     TPUT$ERR                10 - INVALID PARAMETERS          01730000
+         B     CLEANUP                 14 - TERMINAL IS DISCONNECTED    01740000
+         SPACE 1                                                        01750000
+TPUT$ERR ABEND 93,,STEP                GET OUT FOR SURE                 01760000
+         SPACE 3                                                        01770000
+TPUT$OK  MVC   ATTNMSG,BLANKS          CLEAR MSG                        01780000
+         OC    WAITTIME,WAITTIME       ANY WAITTIME?                    01790000
+         BZ    NO$WAIT                 NO - GO DO TGET NOW              01800000
+         CLC   INBUF,BLANKS            WAS THERE ANY INPUT?             01810000
+         BE    NO$WAIT                 NO - DON'T DO THE WAIT           01820000
+         STIMER WAIT,BINTVL=WAITTIME   YES - MAKE HIM WAIT A WHILE      01830000
+         SPACE 1                                                        01840000
+NO$WAIT  TGET  INBUF,80                READ SOMETHING                   01850000
+         CH    R15,=H'20'              RC TOO BIG?                      01860000
+         BH    TGET$ERR                YES - ABEND                      01870000
+         B     *+4(R15)                DECODE RC                        01880000
+         B     TGET$OK                 00 - CONTINUE                    01890000
+         B     TGET$ERR                04 - NO BUFFERS FOR NOWAIT       01900000
+         B     ATTN$HIT                08 - ATTN HIT                    01910000
+         B     TGET$OK                 0C - INPUT BUFFER TOO SMALL      01920000
+         B     TGET$ERR                10 - INVALID PARAMETERS          01930000
+         B     CLEANUP                 14 - TERMINAL IS DISCONNECTED    01940000
+         SPACE 1                                                        01950000
+TGET$ERR ABEND 93,,STEP,REASON=(15)    GET OUT FOR SURE                 01960000
+         SPACE 3                                                        01970000
+*--------------------------------------*                                01980000
+*  SEE IF CORRECT PASSWORD SUPPLIED    *                                01990000
+*--------------------------------------*                                02000000
+TGET$OK  TCLEARQ INPUT                                                  02010000
+         OC    INBUF,BLANKS            UPPER CASE THE INPUT             02020000
+         CLC   INBUF,BLANKS            ANY INPUT?                       02030000
+         BE    NO$INPUT                NO - CLEAR MSG & RESHOW SCREEN   02040000
+         CLI   INBUF,C'>'              RESHOW???                        02050000
+         BNE   NOT$RS                  NO - CONTINUE                    02060000
+         CLC   INBUF+1(L'INBUF-1),BLANKS  ANY MORE INPUT?               02070000
+         BE    LOOP                    NO - JUST RESHOW SCREEN          02080000
+NOT$RS   LA    R3,1(,R3)               INCR ATTEMPTS COUNTER            02090000
+         MVC   ATTEMPTS,=C'Attempts'   MOVE IN TEXT STRING 'ATTEMPTS'   02100000
+         CH    R3,=H'1'                IS THIS THE FIRST ATTEMPT?       02110000
+         BNE   *+8                     NO - SKIP                        02120000
+         MVI   ATTEMPTS+L'ATTEMPTS-1,C' ' YES - MAKE IT SAY 'ATTEMPT '  02130000
+*                                                                       02140000
+         MVC   PASSWORD,INBUF          SET PASSWORD                     02150000
+         CLC   =CL8'CANCEL',PASSWORD   CANCEL request?                  02160000
+         BE    CANCEL                  yes, crash the TMP               02170000
+         CLC   =CL8'LOGOFF',PASSWORD   CANCEL request?                  02180001
+         BE    CANCEL                  yes, crash the TMP               02190001
+         MVI   PSWDL,L'PASSWORD        PASSWORD LENGTH                  02200000
+         RACINIT ENVIR=CREATE,                                         X02210000
+               USERID=ACEEUSRL,        TSO user ID                     X02220000
+               PASSWRD=PSWDL,          Password                        X02230000
+               TERMID=ACEETRID,        Terminal name                   X02240000
+               ACEE=$ACEE,             new ACEE                        X02250000
+               MF=(E,RACINITL)                                          02260000
+         SPACE 1                                                        02270000
+         CH    R15,=X'0034'            RC TOO BIG?                      02280000
+         BH    RACF$BAD                YES - JUST LOOP                  02290000
+         B     *+4(R15)                NO - DECODE IT                   02300000
+         B     RACF$00                 00 - OK                          02310000
+         B     RACF$04                 04 - USER NOT DEFINED TO RACF    02320000
+         B     RACF$08                 08 - PASSWORD NOT AUTHORIZED     02330000
+         B     RACF$0C                 0C - THE PASSWORD IS EXPIRED     02340000
+         B     RACF$10                 10 - THE NEW PSWD IS INVALID     02350000
+         B     RACF$14                 14 - USER NOT DEFINED TO GROUP   02360000
+         B     RACF$18                 18 - RACINIT FAILED BY INST EXT  02370000
+         B     RACF$1C                 1C - USER ACCESS REVOKED         02380000
+         B     RACFDOWN                20 - RACF IS NOT ACTIVE          02390000
+         B     RACF$24                 24 - USER ACC TO GROUP REVOKED   02400000
+         B     RACF$28                 28 - OID REQD NOT SUPPLIED       02410000
+         B     RACF$2C                 2C - OID CARD INVALID FOR USER   02420000
+         B     RACF$30                 30 - USER NOT AUTH TO TERMINAL   02430000
+         B     RACF$34                 34 - USER NOT AUTH TO APPL       02440000
+         SPACE 2                                                        02450000
+RACF$00  XC    RACINITL+4(44),RACINITL+4                                02460000
+         RACINIT ENVIR=DELETE,MF=(E,RACINITL)                           02470000
+         SPACE 1                                                        02480000
+         B     CLEANUP                 ALL DONE - LEAVE                 02490000
+         SPACE 2                                                        02500000
+RACF$BAD MVC   RACFMSG(27),=C'RACINIT return code > X''34'''            02510000
+         B     LOOP                                                     02520000
+         SPACE 2                                                        02530000
+RACF$04  MVC   RACFMSG(24),=C'User not defined to RACF'                 02540000
+         B     LOOP                                                     02550000
+         SPACE 2                                                        02560000
+RACF$08  MVC   RACFMSG(18),=C'Incorrect password'                       02570000
+*--------------------------------------*                                02580000
+*  IF INCORRECT PASSWORD ENTERED,      *                                02590000
+*  INCREASE DELAY TIME BEFORE USER IS  *                                02600000
+*  GIVEN ANOTHER TRY.                  *                                02610000
+*--------------------------------------*                                02620000
+         L     R1,WAITTIME             GET CURRENT WAIT TIME            02630000
+         LA    R1,100(,R1)             ADD 1 SECOND                     02640000
+         ST    R1,WAITTIME             SAVE NEW WAIT TIME               02650000
+         B     LOOP                    AND TRY AGAIN                    02660000
+         SPACE 2                                                        02670000
+RACF$0C  MVC   RACFMSG(19),=C'Password is expired'                      02680000
+         B     LOOP                                                     02690000
+         SPACE 2                                                        02700000
+RACF$10  MVC   RACFMSG(23),=C'New password is invalid'                  02710000
+         B     LOOP                                                     02720000
+         SPACE 2                                                        02730000
+RACF$14  MVC   RACFMSG(25),=C'User not defined to group'                02740000
+         B     LOOP                                                     02750000
+         SPACE 2                                                        02760000
+RACF$18  MVC   RACFMSG(27),=C'RACINIT failed by inst exit'              02770000
+         B     LOOP                                                     02780000
+         SPACE 2                                                        02790000
+RACF$1C  MVC   RACFMSG(19),=C'User access revoked'                      02800000
+         B     LOOP                                                     02810000
+         SPACE 2                                                        02820000
+RACF$24  MVC   RACFMSG(28),=C'User access to group revoked'             02830000
+         B     LOOP                                                     02840000
+         SPACE 2                                                        02850000
+RACF$28  MVC   RACFMSG(26),=C'OID required, not supplied'               02860000
+         B     LOOP                                                     02870000
+         SPACE 2                                                        02880000
+RACF$2C  MVC   RACFMSG(20),=C'OID invalid for user'                     02890000
+         B     LOOP                                                     02900000
+         SPACE 2                                                        02910000
+RACF$30  MVC   RACFMSG(31),=C'User not authorized to terminal'          02920000
+         B     LOOP                                                     02930000
+         SPACE 2                                                        02940000
+RACF$34  MVC   RACFMSG(34),=C'User not authorized to application'       02950000
+         B     LOOP                                                     02960000
+NO$INPUT MVC   RACFMSG,BLANKS          CLEAR MSG AREA                   02970000
+         B     LOOP                                                     02980000
+*endloop                                                                02990000
+         SPACE 3                                                        03000000
+*--------------------------------------*                                03010000
+*  RACF IS NOT UP.  ABEND              *                                03020000
+*--------------------------------------*                                03030000
+RACFDOWN EQU   CANCEL                                                   03040000
+         SPACE 3                                                        03050000
+*--------------------------------------*                                03060000
+*  CORRECT PSWD ENTERED.  CLEAN UP.    *                                03070000
+*--------------------------------------*                                03080000
+CLEANUP  STFSMODE OFF                  TURN OFF FULLSCREEN MODE         03090000
+         STTMPMD OFF,KEYS=NO           TURN OFF TMP MODE                03100000
+         STAX  DEFER=NO                ALLOW ATTENTIONS                 03110000
+*                                                                       03120000
+         MODESET EXTKEY=ZERO                                            03130000
+         NI    ASCBRCTF,X'FF'-ASCBTOFF S522 again                       03140002
+         MODESET KEY=NZERO                                              03150000
+*                                                                       03160000
+         TM    CVTOSLV2,CVTOS390_R4    OS390 R4?                        03170001
+         BNO   NCOM6                   no, skip STCOM                   03180001
+         TM    $UPTSWS,UPTNCOM         Initial status was NOINTERCOM?   03190000
+         BO    NCOM6                   yes, leave it this way           03200000
+         STCOM YES                     INTERCOM                         03210000
+NCOM6    EQU   *                                                        03230000
+*                                                                       03240000
+         STORAGE RELEASE,ADDR=(R10),LENGTH=DYNAML                       03250000
+         PR                            AND LEAVE                        03260000
+         SPACE 3                                                        03270000
+*--------------------------------------*                                03280000
+*  ATTN PRESSED.  PRETEND LIKE WE      *                                03290000
+*  IGNORED IT.                         *                                03300000
+*--------------------------------------*                                03310000
+ATTN$HIT MVC   ATTNMSG,ATTNMSGC                                         03320000
+         MVI   ATTNHIT,C'*'            PERMANENT INDICATOR              03330000
+         LA    R3,1(,R3)               INCR ATTEMPTS COUNTER            03340000
+         MVC   ATTEMPTS,=C'Attempts'   MOVE IN TEXT STRING 'ATTEMPTS'   03350000
+         CH    R3,=H'1'                IS THIS THE FIRST ATTEMPT?       03360000
+         BNE   *+8                     NO - SKIP                        03370000
+         MVI   ATTEMPTS+L'ATTEMPTS-1,C' ' YES - MAKE IT SAY 'ATTEMPT '  03380000
+         L     R1,WAITTIME             PICK UP WAITTIME                 03390000
+         SRL   R1,2                    DIVIDE BY 4                      03400000
+         ST    R1,WAITTIME             STORE REDUCED WAITTIME           03410000
+         STFSMODE ON                   ATTN TURNS OFF FULLSCR           03420000
+         B     LOOP                                                     03430000
+STAXEXIT BR    R14                     JUST RETURN, TGET RC=8           03440000
+         SPACE 3                                                        03450000
+*--------------------------------------*                                03460000
+*  CANCEL Processing                   *                                03470000
+*--------------------------------------*                                03480000
+         DROP                                                           03490000
+CANCEL   MODESET EXTKEY=ZERO           KEY=ZERO,MODE=SUP                03500000
+         LR    R3,R13                  save R13                         03510000
+         SETLOCK OBTAIN,TYPE=LOCAL,MODE=UNCOND                          03520000
+         SETLOCK OBTAIN,TYPE=CMS,MODE=UNCOND                            03530000
+         LR    R13,R3                  restore R13 corrupted by SETLOCK 03540000
+         LA    R0,X'222'               abend code                       03550000
+         L     R1,PSAAOLD-PSA          own ASCB                         03560000
+         L     R15,CVTPTR              get CVT address                  03570000
+         L     R15,CVTSIC-CVTMAP(,R15) system-initiated CANCEL          03580000
+         BALR  R14,R15              <- commit suicide !!!               03590000
+         SETLOCK RELEASE,TYPE=ALL                                       03600000
+         PR                                                             03610000
+*--------------------------------------*                                03620000
+*  MISCELLANEOUS CONSTANTS             *                                03630000
+*--------------------------------------*                                03640000
+ATTNMSGC DC    C'Nice try, but that would be too easy.'                 03650000
+TIMEMASK DC    C' ',X'2120',C':',X'2020',C':',X'2020'                   03660000
+         SPACE 3                                                        03670000
+*--------------------------------------*                                03680000
+*  3270 SCREEN BUFFER                  *                                03690000
+*--------------------------------------*                                03700000
+SCREEN$  CSECT                                                          03710000
+SCREEN$  RMODE ANY                                                      03720000
+         DC    X'27F5'                 ESC, ERASE WRITE STD             03730000
+         DC    X'C1'                   WCC:                             03740000
+*        F3270 ROW=24,COL=80,MODEL=2   SPF START                        03750000
+         DC    X'115D7F'               SBA                              03760000
+*        F3270 ROW=1,COL=1             ...                              03770000
+         DC    X'114040'               SBA                              03780000
+*        F3270 ROW=1,COL=1,RA=00       CLEAR WHOLE SCREEN               03790000
+         DC    X'3C4040',X'00'         RA                               03800000
+*        F3270 ROW=1,COL=1,ATTR=(SF,PROT,BRIGHT)                        03810000
+         DC    X'114040'               SBA                              03820000
+         DC    X'1DE8'                 SF                               03830000
+         DC    C'UserID='                                               03840000
+USERID   DC    CL8' '                  TSO User ID - 8 characters       03850006
+         DC    C' SMFSID='                                              03860005
+SMFSID   DC    CL4' '                  SMF System ID from SMCA          03870000
+         DC    C'  SYSNAME='                                            03880000
+SYSNAME  DC    CL8' '                  GRS name from CVTSNAME           03890000
+         DC    C'  Terminal='                                           03900000
+TERMNAME DC    CL8' '                  Terminal name from ACEE          03910000
+*        F3270 ROW=1,COL=70                                             03920000
+         DC    X'11C1C5'               SBA                              03930000
+TIMETPUT DC    C' HH:MM:SS'                                             03940000
+*        F3270 ROW=5,COL=1,ATTR=(SF,PROT,NORM)                          03950000
+         DC    X'11C540'               SBA                              03960000
+         DC    X'1D60'                 SF                               03970000
+         DC    C'This terminal locked at'                               03980000
+TIMELOCK DC    C' HH:MM:SS',C'.'                                        03990000
+*        F3270 ROW=7,COL=2                                              04000000
+         DC    X'11C761'               SBA                              04010000
+         DC    C'To unlock, enter logon password.'                      04020000
+*        F3270 ATTR=(SF,PROT,BRIGHT),INITIAL='===>'                     04030000
+         DC    X'1DE8'                 SF                               04040000
+         DC    C'===>'                 DATA                             04050000
+*        F3270 ATTR=(SF,NDISP,UNPROT),LENGTH=8                          04060000
+         DC    X'1D4C'                 SF                               04070000
+         DC    CL8' '                  DATA AREA                        04080000
+*        F3270 ATTR=(SF,PROT,BRIGHT)                                    04090000
+         DC    X'1DE8'                 SF                               04100000
+*        F3270 ROW=9,COL=2                                              04110000
+         DC    X'114AC1'               SBA                              04120000
+RACFMSG  DC    CL79' '                                                  04130000
+*        F3270 ROW=22,COL=1,ATTR=(SF,PROT,BRIGHT)                       04140000
+         DC    X'115A50'               SBA                              04150000
+         DC    X'1DE8'                 SF                               04160000
+NUM      DC    CL4' '                                                   04170000
+*        F3270 ATTR=(SF,PROT,NORM)                                      04180000
+         DC    X'1D60'                 SF                               04190000
+ATTEMPTS DC    CL8' '                  'ATTEMPTS'                       04200000
+*        F3270 ROW=22,COL=80                                            04210000
+         DC    X'115B5F'               SBA                              04220000
+ATTNHIT  DC    C' '                    ATTN HIT INDICATOR               04230000
+*        F3270 ROW=24,COL=5                                             04240000
+         DC    X'115CF4'               SBA                              04250000
+ATTNMSG  DC    CL(L'ATTNMSGC)' '                                        04260000
+*        F3270 ROW=7,COL=40                                             04270000
+         DC    X'11C8C7'               SBA                              04280000
+         DC    X'13'                   IC                               04290000
+SCREENL  EQU   *-SCREEN$                                                04300000
+         SPACE 2                                                        04310000
+*--------------------------------------*                                04320000
+*  WORK AREA                           *                                04330000
+*--------------------------------------*                                04340000
+DYNAM    DSECT                                                          04350000
+DWD      DS    D                       CVD WORK AREA                    04360000
+WAITTIME DS    F'0'                    WAITTIME BEFORE TGET, IN .01SEC  04370000
+RACINITL RACINIT MF=L                                                   04380000
+RACINITLL EQU *-RACINITL                                                04390000
+$ACEE    DS    A(ACEE)                 ACEE addr returned by RACINIT    04400000
+$UPTSWS  DS    AL1(UPTNCOM)            NOINTERCOM indicator             04410000
+PSWDL    DS    AL1(8)                  LENGTH OF PASSWORD               04420000
+PASSWORD DS    CL8' '                  PASSWORD                         04430000
+BLANKS   DS    CL80' '                 a bunch of blanks                04440000
+         DS    0D                      *** double-word alignment ***    04450000
+INBUF    DS    CL80                    TGET INPUT BUFFER                04460000
+SCREEN   DS    XL(SCREENL)             UNPROTECTED STORAGE              04470000
+DYNAML   EQU   *-DYNAM                 LENGTH TO GETMAIN                04480000
+         SPACE 2                                                        04490000
+*--------------------------------------*                                04500000
+*  CONTROL BLOCK DSECTS                *                                04510000
+*--------------------------------------*                                04520000
+         PRINT NOGEN                                                    04530000
+         CVT   DSECT=YES                                                04540000
+         AIF   (D'CVTOS390_R4).CVT99                                    04550001
+CVTOS390_R4 EQU X'80'                  OS/390 R4                        04560001
+.CVT99   ANOP                                                           04570001
+         IHAPSA                                                         04580000
+         IEESMCA                                                        04590000
+         IHAASCB                                                        04600000
+         IHAASXB                                                        04610000
+         IHAACEE                                                        04620000
+         IKJCPPL                                                        04630000
+         IKJUPT                                                         04640000
+         YREGS                                                          04650000
+         END                                                            04660000
+//SYSLIB   DD DSN=SYS1.MACLIB,DISP=SHR                                  04680000
+//         DD DSN=SYS1.MODGEN,DISP=SHR                                  04690000
+//SYSUT1   DD UNIT=VIO,SPACE=(CYL,5)                                    04700000
+//SYSPRINT DD SYSOUT=*                                                  04710000
+//SYSLIN   DD UNIT=VIO,SPACE=(TRK,1),DISP=(,PASS),DCB=BLKSIZE=3200      04720000
+//*                                                                     04730000
+//LKED    EXEC PGM=HEWL,PARM='MAP,RENT,AC=1'                            04740004
+//SYSLIN   DD DSN=*.ASMH.SYSLIN,DISP=(OLD,DELETE)                       04750000
+//SYSLMOD  DD DSN=SYS1.W$$.LINKLIB(LOCKTERM),DISP=SHR                   04760003
+//SYSPRINT DD SYSOUT=*                                                  04780000

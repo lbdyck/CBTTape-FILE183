@@ -1,0 +1,88 @@
+/*************************************************************** REXX */00010000
+/*                                                                    */00020000
+/* MODULE NAME = LVL                                                  */00030000
+/*                                                                    */00040000
+/* DESCRIPTIVE NAME = Compress level numbers and adjust pos 79-80     */00050000
+/*                                                                    */00060000
+/* STATUS = R200                                                      */00070000
+/*                                                                    */00080000
+/* FUNCTION = This ISPF EDIT Macro compresses level numbers for       */00090000
+/*     FB-80 PDS members with STATS ON and NUMBER STD.                */00100000
+/*                                                                    */00110000
+/*     LVL reuses "gas levels", i.e. levels which are not used        */00120000
+/*     in any record in the member and adjusts pos 79-80 of the       */00130000
+/*     records accordingly.                                           */00140000
+/*                                                                    */00150000
+/*     If the macro invocation includes a number, then levels         */00160000
+/*     up to the specified number are reset to zero.                  */00170000
+/*                                                                    */00180000
+/* Author: Gilbert Saint-Flour <carlos@gsf-soft.com>                  */00190000
+/*                                                                    */00200000
+/**********************************************************************/00210000
+ADDRESS "ISPEXEC"                                                       00220000
+"ISREDIT MACRO (MIN)"                                                   00230000
+IF MIN='' THEN                                                          00240000
+  MIN=0                                                                 00250000
+ELSE                                                                    00260000
+  MIN=MIN+0                                                             00270000
+"ISREDIT (NUMMODE,NUMTYPE) = NUMBER"   /* QUERY NUMBER MODE INFO    */  00280000
+IF NUMMODE='ON' THEN                                                    00290000
+  "ISREDIT NUMBER = OFF"               /* TURN OFF NUMBER MODE      */  00300000
+                                                                        00310000
+DO LEV=0 TO 99; N.LEV=0 ; END          /* INIT ARRAY          */        00320000
+HWM=0                                                                   00330000
+                                                                        00340000
+'ISREDIT (ZLAST) = LINENUM .ZLAST'     /* LAST LINE           */        00350000
+    /*--------------------------------------------------*\              00360000
+    |*     DETERMINE WHICH LEVEL NUMBERS ARE USED       *|              00370000
+    \*--------------------------------------------------*/              00380000
+DO L=1 TO ZLAST                                                         00390000
+  "ISREDIT (LINE) = LINE" L                /* GET CURRENT LINE */       00400000
+  IF RC>0 THEN EXIT RC                                                  00410000
+  LEV=RIGHT(LINE,2) + 0                /* EXTRACT LEVEL             */  00420000
+  IF HWM<LEV THEN HWM=LEV              /* GET HIGHEST LEV           */  00430000
+  N.LEV=N.LEV+1                        /* EXTRACT LEVEL             */  00440000
+ /*  SAY LEV LINE N.LEV */                                              00450000
+END                                                                     00460000
+    /*---------------------------------------------*\                   00470000
+    |*          COMPRESS LEVEL NUMBERS             *|                   00480000
+    \*---------------------------------------------*/                   00490000
+RELEVEL=0                                                               00500000
+IF N.0 = 0 THEN                                                         00510000
+  N=-1                                                                  00520000
+ELSE                                                                    00530000
+  N=0                                                                   00540000
+DO LEV=0 TO HWM                                                         00550000
+  IF N.LEV > 0 THEN DO                                                  00560000
+    IF LEV>0 THEN DO                                                    00570000
+      IF LEV > MIN THEN                                                 00580000
+        N=N+1                                                           00590000
+      ELSE DO                                                           00600000
+        N=0                                                             00610000
+        RELEVEL=1                                                       00620000
+        END                                                             00630000
+      END                                                               00640000
+    SAY RIGHT(LEV,3) RIGHT(N.LEV,5) 'N='N RELEVEL                       00650000
+    N.LEV=N                            /* NEW LEVEL NUMBER          */  00660000
+    END                                                                 00670000
+  ELSE DO                              /* THIS LVL IS NOT USED      */  00680000
+    SAY RIGHT(LEV,3)                                                    00690000
+    RELEVEL=1                                                           00700000
+    END                                                                 00710000
+END                                                                     00720000
+    /*--------------------------------------------------*\              00730000
+    |*              UPDATE LEVEL NUMBERS                *|              00740000
+    \*--------------------------------------------------*/              00750000
+IF RELEVEL THEN DO L=1 TO ZLAST                                         00760000
+  "ISREDIT (LINE) = LINE" L                /* GET CURRENT LINE */       00770000
+  IF RC>0 THEN EXIT RC                                                  00780000
+  LEV=RIGHT(LINE,2) + 0                /* EXTRACT LEVEL             */  00790000
+  IF LEV\=N.LEV THEN DO                /* LEVEL NEEDS BE CHANGED    */  00800000
+    LINE2 = LEFT(LINE,LENGTH(LINE)-2) || RIGHT(N.LEV,2,'0')             00810000
+    "ISREDIT LINE" L "= (LINE2)"       /* UPDATE CURRENT LINE */        00820000
+    END                                                                 00830000
+END                                                                     00840000
+                                                                        00850000
+"ISREDIT (L) = LEVEL"                    /* CURRENT LEVEL NUMBER */     00860000
+IF L \= N THEN                                                          00870000
+  "ISREDIT LEVEL =" N                    /* NEW LEVEL NUMBER    */      00880000

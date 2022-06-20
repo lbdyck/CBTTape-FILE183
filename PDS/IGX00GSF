@@ -1,0 +1,230 @@
+//GILBERTG JOB (ACCT#),IGX00GSF,                                        00010000
+// NOTIFY=&SYSUID,                                                      00020000
+// CLASS=A,MSGCLASS=X,COND=(0,NE)                                       00030000
+//ASMH EXEC PGM=ASMA90,PARM=(OBJECT,NODECK,NOESD,NORLD,NOXREF)          00040000
+*********************************************************************** 00050000
+*                                                                     * 00060000
+* MODULE NAME = IGX00GSF                                              * 00070000
+*                                                                     * 00080000
+* DESCRIPTIVE NAME = Authorization SVC routine for ShowMVS and STEPLIB* 00090000
+*                                                                     * 00100000
+* STATUS = R202                                                       * 00110002
+*                                                                     * 00120000
+* FUNCTION = This extended SVC routine (ESR) allows an un-authorized  * 00130000
+*            program to switch to MODE=SUP.  Only programs that have  * 00140000
+*            been registered and meet security requirements will      * 00150000
+*            successfully be switched to MODE=SUP.                    * 00160000
+*                                                                     * 00170000
+* AUTHOR = Gilbert Saint-Flour <carlos@gsf-soft.com>                  * 00180002
+*                                                                     * 00190000
+* ENVIRONMENT = SEE BELOW                                             * 00200000
+*                                                                     * 00210000
+*    DEPENDENCIES: MVS/XA, MVS/ESA, OS/390, z/OS                      * 00220002
+*                                                                     * 00230000
+* MODULE TYPE = PROCEDURE, (CSECT TYPE)                               * 00240000
+*                                                                     * 00250000
+*    PROCESSOR = IBM OS/ASSEMBLER H VERSION 2 OR                      * 00260000
+*                IBM HIGH LEVEL ASSEMBLER/MVS                         * 00270000
+*                                                                     * 00280000
+*    MODULE SIZE = 1K                                                 * 00290000
+*                                                                     * 00300000
+*    ATTRIBUTES = REENTERABLE, RMODE ANY, AMODE 31,                   * 00310000
+*                 PROBLEM STATE, KEY 8                                * 00320000
+*                 APF AUTHORIZATION: NONE                             * 00330000
+*                                                                     * 00340000
+* OPERATION = SEE BELOW                                               * 00350000
+*                                                                     * 00360000
+*   IGX00GSF checks that its caller is registered and meets           * 00370000
+*   security requirements.  If all of the tests are successful,       * 00380000
+*   IGX00GSF sets the caller's PSW to supervisor mode.                * 00390000
+*                                                                     * 00400000
+* INSTALLATION = SEE BELOW                                            * 00410000
+*                                                                     * 00420000
+*   IGX00GSF must be installed in SYS1.LPALIB under the name          * 00430000
+*   IGX00nnn where nnn is a number between 000 and the maximum        * 00440000
+*   allowed for a type=3 ESR, which generally is 255.                 * 00450000
+*   Of course, the number chosen must not conflict with any other     * 00460000
+*   type-3 ESR in use on the system, keeping in mind that some        * 00470000
+*   software products dynamically update the ESR table for their      * 00480000
+*   own needs.  ShowMVS displays active and inactive ESR entries      * 00490000
+*   and can be used to determine which numbers are available.         * 00500000
+*                                                                     * 00510000
+*   Since the ESR entry number is not fixed, programs such as         * 00520000
+*   ShowMVS and STEPLIB that invoke it must determine the entry       * 00530000
+*   number by scanning all active entries in the type-3 ESR table     * 00540000
+*   for the proper signature.                                         * 00550000
+*                                                                     * 00560000
+* PARAMETERS = NONE                                                   * 00570000
+*                                                                     * 00580000
+* RETURN-CODES = SEE BELOW                                            * 00590000
+*                                                                     * 00600000
+*          0                    OK                                    * 00610000
+*          8                    Caller not running under a PRB        * 00620000
+*         12                    Unknown caller                        * 00630000
+*         16                    Caller not from APF library           * 00640000
+*         20                    Caller's prefix invalid               * 00650000
+*         24                    Caller issued ESTAE                   * 00660000
+*         28                    Caller invoked via XCTL               * 00670000
+*         32                    Caller not RENT                       * 00680000
+*         36                    SVC 109 not within caller's module    * 00690000
+*         40                    Caller in AMODE=64                    * 00700002
+*                                                                     * 00710000
+* CHANGE ACTIVITY                                                     * 00720000
+*                                                                     * 00730000
+*  $200 Initial release for ShowMVS R618                              * 00740000
+*  $201 Fix invalid CDREN check                                       * 00750001
+*  $202 RC=40 when caller is in AMODE=64                              * 00760002
+*       Add LLIBDEF to list of registered callers                     * 00770002
+*                                                                     * 00780000
+&REL     SETC  '202'                                                  * 00790002
+*********************************************************************** 00800000
+IGX00GSF CSECT                                                          00810000
+IGX00GSF RMODE ANY                 AMODE(31),RMODE(ANY)                 00820000
+*                                                                       00830000
+RPRB     EQU   5                                                        00840000
+         USING RBBASIC,RPRB                                             00850000
+RBASE    EQU   6                                                        00860000
+         USING BEGIN,RBASE                                              00870000
+RCDE     EQU   7                                                        00880000
+R9       EQU   9                                                        00890000
+R10      EQU   10                                                       00900000
+R11      EQU   11                                                       00910000
+R14      EQU   14                                                       00920000
+R15      EQU   15                                                       00930000
+*                                                                       00940000
+BEGIN    B     GETPRB              BRANCH AROUND EYE-CATCHER            00950000
+         DC    C'IGX00GSF'         SIGNATURE                            00960000
+         DC    C' R&REL '          VVMM                                 00970000
+*                                                                       00980000
+*        POINT AT CALLER'S PRB                                          00990000
+*                                                                       01000000
+GETPRB   EQU   *                                                        01010000
+         L     RPRB,RBLINK         GET ADDRESS OF CALLER'S RB           01020000
+         SH    RPRB,=AL2(RBBASIC-RBPRFX) POINT AT RB PREFIX             01030000
+         USING RBPREFIX,RPRB                                            01040000
+*                                                                       01050000
+RC8      TM    RBSTAB,RBFTP        IS THIS A PRB ?                      01060000
+         BZ    RC12                YES, JUMP                            01070000
+         LA    R15,8               INDICATE NOT RUNNING UNDER A PRB     01080000
+         BR    R14                 GOBACK                               01090000
+*                                                                       01100000
+RC12     SLR   RCDE,RCDE                                                01110000
+         ICM   RCDE,B'0111',RBCDE+1 GET CDE ADDRESS                     01120000
+         BZ    BADPGM              ERROR IF NO CDE (SYNCH, IRB)         01130000
+         USING CDENTRY,RCDE                                             01140000
+         TM    CDATTR,CDMIN        IS THIS ENTRY AN ALIAS ?             01150000
+         BNO   *+8                 NO, JUMP                             01160000
+         L     RCDE,CDXLMJP        YES, GET ADDRESS OF MAJOR CDE        01170000
+*                                                                       01180000
+CHECKPGM EQU   *                                                        01190001
+         CLC   CDNAME,=CL8'SHOWMVS' IS THIS A REGISTERED CALLER?        01200000
+         BE    GOODPGM             YES, JUMP                            01210000
+         CLC   CDNAME,=CL8'STEPLIB' IS THIS A REGISTERED CALLER?        01220000
+         BE    GOODPGM             YES, JUMP                            01230000
+         CLC   CDNAME,=CL8'LLIBDEF' IS THIS A REGISTERED CALLER?        01240002
+         BE    GOODPGM             YES, JUMP                            01250002
+*                                                                       01260000
+BADPGM   EQU   *                                                        01270000
+         LA    R15,12              CALLED FROM UNKNOWN MODULE           01280000
+         BR    R14                 GOBACK                               01290000
+GOODPGM  EQU   *                                                        01300000
+*                                                                       01310000
+RC16     TM    CDATTR2,CDSYSLIB    IS MODULE FROM AUTHORIZED LIBRARY ?  01320000
+         BO    RC20                YES, EXIT                            01330000
+         LA    R15,16              MODULE NOT FROM AUTHORIZED LIBRARY   01340000
+         BR    R14                 GOBACK                               01350000
+*                                                                       01360000
+*        CALLER MUST HAVE THE FOLLOWING PREFIX :                        01370000
+*                                                                       01380000
+*                B     BEGIN-*(,R15)       +0                           01390000
+*                DC    A(0)                +4  UNUSED                   01400000
+*                DC    A(SVC109+2+VL)      +8  CHECKED BY IGX00GSF      01410000
+*        BEGIN   SAVE                                                   01420000
+*                . . .                                                  01430000
+*        SVC109  SVC   109                                              01440000
+*                                                                       01450000
+RC20     L     R9,CDENTPT          CALLER'S EP ADDRESS (MAJOR CDE)      01460000
+         CLC   RBOPSWA,8(R9)       ADDRESS OF SVC 109 MATCHES PREFIX?   01470000
+         BE    RC24                YES, JUMP                            01480000
+         LA    R15,20              BAD MODULE PREFIX                    01490000
+         BR    R14                 GOBACK                               01500000
+*                                                                       01510000
+RC24     TM    RBFLAGS1,RBSCB      IS ESTAE SET ?                       01520000
+         BNO   RC28                NO, JUMP                             01530000
+         LA    R15,24              CALLER HAS ISSUED ESTAE              01540000
+         BR    R14                 GOBACK                               01550000
+*                                                                       01560000
+RC28     TM    RBCDFLGS,RBCDXCTL   IS XCTL BIT ON ?                     01570000
+         BZ    RC32                NO, JUMP                             01580000
+         LA    R15,28              CALLER WAS INVOKED VIA XCTL          01590000
+         BR    R14                 GOBACK                               01600000
+*                                                                       01610000
+RC32     TM    CDATTR,CDREN        IS CALLING MODULE REENTRANT ?        01620001
+         BO    RC36                YES, JUMP                            01630000
+         LA    R15,32              CALLING MODULE NON REENTRANT         01640000
+         BR    R14                 GOBACK                               01650000
+*                                                                       01660000
+RC36     L     R9,RBOPSWA          ADDRESS OF SVC 109                   01670000
+         LA    R9,0(,R9)           CLEAN UP AMODE BIT                   01680000
+         LM    R10,R11,LPDEXTLN-LPDE+CDENTRY length,loadpt              01690000
+         TM    CDATTRB,CDELPDE     IS THIS AN LPDE?                     01700000
+         BO    RC36OFFS            YES, JUMP                            01710000
+         L     R10,CDXLMJP         GET ADDRESS OF THE EXTENT LIST       01720000
+         LM    R10,R11,XTLMSBLA-XTLST(R10) length,loadpt                01730000
+         LA    R10,0(,R10)         zero end-of-extent-list indicator    01740000
+RC36OFFS SLR   R9,R11              GET OFFSET TO SVC 109                01750000
+         CH    R9,=H'8'            SVC 109 IN CALLER'S MODULE ?         01760000
+         BNH   RC36ERR             NO, JUMP                             01770000
+         SH    R10,=H'8'           R10=length-8                         01780000
+         BNP   RC36ERR             length too small, error              01790000
+         CLR   R9,R10              SVC 109 IN CALLER'S MODULE ?         01800000
+         BL    RC40                YES, JUMP                            01810000
+RC36ERR  LA    R15,36              SVC 109 ADDR NOT IN CALLING MODULE   01820000
+         BR    R14                 GOBACK                               01830000
+*                                                                       01840000
+RC40     EQU   *                                                        01850002
+         TM    RBOPSWB4,RBOPSW64   Caller in AMODE=64 ?                 01860002
+         BNO   RC44                No, continue                         01870002
+         LA    R15,40              Caller in AMODE=64                   01880002
+         BR    R14                 GOBACK                               01890002
+*                                                                       01900002
+RC44     EQU   *                   RESERVED                             01910002
+*                                                                       01920000
+*---------------------------------------------------------------------* 01930000
+*        CALLER PASSED ALL THE TESTS: SWITCH PSW TO MODE=SUP          * 01940000
+*---------------------------------------------------------------------* 01950000
+*                                                                       01960000
+         NI    RBOPSWB2,255-RBOPSWPS PROBLEM-STATE BIT OFF              01970000
+         SR    R15,R15             INDICATE GOOD RETURN                 01980000
+         BR    R14                 RETURN                               01990000
+*                                                                       02000000
+         PRINT NOGEN                                                    02010000
+PRINT    OPSYN ANOP                                                     02020000
+         IKJRB                     REQUEST BLOCK                        02030000
+         AIF   (D'RBOPSWB4).A64                                         02040002
+RBOPSWB4 EQU   RBOPSW+3,1,C'B'     OLD PSW BYTE 4                       02050002
+RBOPSW64 EQU   X'01'               AMODE 64                             02060002
+.A64     ANOP                                                           02070002
+         IHACDE                    CONTENTS DIRECTORY ENTRY             02080000
+         IHALPDE                   LPA DIRECTORY ENTRY                  02090000
+         IHAXTLST                  EXTENT LIST                          02100000
+         END   BEGIN                                                    02150000
+//SYSLIB   DD DSN=SYS1.MACLIB,DISP=SHR                                  02160000
+//         DD DSN=SYS1.MODGEN,DISP=SHR                                  02170000
+//SYSUT1   DD UNIT=VIO,SPACE=(CYL,1)                                    02180000
+//SYSPRINT DD SYSOUT=*                                                  02190000
+//SYSLIN   DD UNIT=VIO,SPACE=(TRK,1),DISP=(,PASS),BLKSIZE=3200          02200002
+//*                                                                     02210000
+//LKED    EXEC PGM=IEWL,PARM=RENT                                       02220000
+//SYSLIN   DD DSN=*.ASMH.SYSLIN,DISP=(OLD,PASS)                         02230000
+//SYSPRINT DD SYSOUT=*                                                  02240000
+//SYSLMOD  DD DSN=ADCD.ZOSV1R2.LPALIB(IGX00000),DISP=SHR                02250002
+//                                                                      02260000
+//*                                                                     02270000
+//DELMLPA  EXEC PGM=LOADMLPA,PARM=(DELETE,IGX00000)                     02280000
+//*                                                                     02290000
+//LOADMLPA EXEC PGM=LOADMLPA,PARM=(LOAD,IGX00000)                       02300000
+//STEPLIB  DD DSN=ADCD.ZOSV1R2.LPALIB.LPALIB,DISP=SHR                   02310002
+//*                                                                     02320000
+//ESR     EXEC PGM=SVCUPDTE,PARM=(109,IGX00000)                         02330000
+//SYSUDUMP DD SYSOUT=*                                                  02340000

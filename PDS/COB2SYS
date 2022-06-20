@@ -1,0 +1,116 @@
+//GILBERTS JOB (ACCT#),COB2SYS,                                         00010000
+// NOTIFY=&SYSUID,                                                      00020000
+// CLASS=A,MSGCLASS=H,COND=(0,NE)                                       00030000
+//*                                                                     00040000
+//COB2 EXEC PGM=IGYCRCTL                                                00050000
+ CBL NOLIB,APOST,NODECK,OBJECT,NOSEQ,BUF(10000),NONAME                  00060000
+ CBL NOMAP,NOLIST,NOOFFSET,NOXREF                                       00070000
+       Identification Division.                                         00080000
+         Program-ID. Cob2Sys.                                           00090000
+         Author. Gilbert Saint-Flour <carlos@gsf-soft.com>.             00100000
+      *----------------------------------------------------------------*00110000
+      *                                                                *00120000
+      *    This program retrieves specific system-related data from    *00130000
+      *    MVS control blocks and moves it to Working-storage.         *00140000
+      *                                                                *00150000
+      *    The name of the control-block is indicated in pos 1-6 of    *00160000
+      *    the Procedure Division lines.                               *00170000
+      *    The layout of the MVS control blocks is described in the    *00180000
+      *    MVS Data Areas manuals, which can be found on any MVS or    *00190000
+      *    OS/390 CD collection or viewed on-line by going to:         *00200000
+      *        http://www.s390.ibm.com/bookmgr-cgi/bookmgr.cmd/library *00210000
+      *    and searching for:                                          *00220000
+      *        MVS DATA AREAS                                          *00230000
+      *                                                                *00240001
+      *    Origin = http://gsf-soft.com/Freeware/                      *00250001
+      *                                                                *00260000
+      *----------------------------------------------------------------*00270000
+       Data Division.                                                   00280000
+        Working-Storage Section.                                        00290000
+         01 Results.                                                    00300000
+           05 sys-name Pic x(8).                                        00310000
+           05 real-storage-m Pic s9(6) comp.                            00320000
+           05 prodi Pic x(8).                                           00330000
+           05 prodn Pic x(8).                                           00340000
+           05 mdl Pic 9999.                                             00350000
+           05 smf-name Pic x(4).                                        00360000
+           05 ipl-jdate Pic 9(7) comp-3.                                00370000
+           05 SU-sec Pic s9(6) comp.                                    00380000
+           05 cpu-type Pic x(6).                                        00390000
+           05 cpu-model Pic x(3).                                       00400000
+           05 sysplex-name  Pic x(8).                                   00410000
+           05 OS-name    Pic X(16).                                     00420001
+           05 OS-release Pic X(6).                                      00430001
+           05 hardware-name Pic x(8).                                   00440000
+           05 lpar-name Pic x(8).                                       00450000
+           05 VM-userid Pic x(8).                                       00460000
+         01 four-bytes.                                                 00470000
+           05 full-word Pic s9(8) Comp.                                 00480000
+           05 ptr4      Redefines full-word Pointer.                    00490000
+           05 pl4       Redefines full-word Pic 9(7) comp-3.            00500000
+        Linkage Section.                                                00510000
+         01 cb1.  05 ptr1 Pointer Occurs 512.                           00520000
+         01 cvt.  05 cvt1 Pointer Occurs 512.                           00530000
+       Procedure Division.                                              00540000
+ PSA       SET ADDRESS OF cb1 TO NULL                                   00550000
+ CVT       SET ADDRESS OF cvt TO ptr1(5)                                00560000
+           MOVE cvt(341:8) TO sys-name                                  00570000
+           MOVE cvt(857:4) TO four-bytes                                00580000
+           COMPUTE real-storage-m = (full-word + 1023) / 1024           00590000
+           DISPLAY ' SYSNAME='  sys-name                                00600000
+           DISPLAY ' STOR='     real-storage-m 'M'                      00610000
+CVTFIX     SET ptr4 to ADDRESS OF cvt                                   00620000
+           SUBTRACT 256 FROM full-word                                  00630000
+           SET ADDRESS OF cb1 TO ptr4                                   00640000
+           MOVE cb1(217:8) TO prodi                                     00650000
+           MOVE cb1(225:8) TO prodn                                     00660000
+           MOVE ZERO to pl4                                             00670000
+           MOVE cb1(251:2) TO four-bytes(1:2)                           00680000
+           COMPUTE mdl = pl4 / 1000                                     00690000
+           DISPLAY ' PRODI=' prodi                                      00700000
+           DISPLAY ' PRODN=' prodn                                      00710000
+           DISPLAY ' MODEL=' mdl                                        00720000
+ SMCA      SET ADDRESS OF cb1 TO cvt1(50)                               00730000
+           MOVE cb1(17:4) TO smf-name                                   00740000
+           MOVE cb1(341:4) TO four-bytes                                00750000
+           COMPUTE ipl-jdate = pl4 + 1900000                            00760000
+           DISPLAY ' SMFSID='   smf-name                                00770000
+           DISPLAY ' IPL='      ipl-jdate                               00780000
+ RMCT      SET ADDRESS OF cb1 TO cvt1(152)                              00790000
+           MOVE cb1(65:4) TO four-bytes                                 00800000
+           COMPUTE SU-sec = 16000000 / full-word                        00810000
+           DISPLAY ' Speed='   SU-sec ' SU/s'                           00820000
+ HID       SET ADDRESS OF cb1 TO cvt1(268)                              00830000
+           MOVE cb1(27:6) TO cpu-type                                   00840000
+           MOVE cb1(33:3) TO cpu-model                                  00850000
+           DISPLAY ' CPU='     cpu-type '-' cpu-model                   00860000
+ ECVT      SET ADDRESS OF cb1 TO cvt1(36)                               00870000
+           MOVE cb1(9:8) TO sysplex-name                                00880000
+           MOVE cb1(337:8) TO hardware-name                             00890000
+           MOVE cb1(345:8) TO lpar-name                                 00900000
+           MOVE cb1(353:8) TO VM-userid                                 00910000
+           MOVE cb1(497:16) TO OS-name                                  00920001
+           MOVE cb1(513:6) TO OS-release                                00930001
+           DISPLAY ' SYSPLEX=' sysplex-name                             00940000
+           DISPLAY ' HWNAME='  hardware-name                            00950000
+           DISPLAY ' LPAR='    lpar-name                                00960000
+           DISPLAY ' VM='      VM-userid                                00970000
+           DISPLAY ' OS_Name=' OS-name                                  00980001
+           DISPLAY ' Release=' OS-release                               00990001
+           GOBACK.                                                      01000000
+/*                                                                      01010000
+//SYSUT1 DD UNIT=VIO,SPACE=(TRK,1)                                      01020000
+//SYSUT2 DD UNIT=VIO,SPACE=(TRK,1)                                      01030000
+//SYSUT3 DD UNIT=VIO,SPACE=(TRK,1)                                      01040000
+//SYSUT4 DD UNIT=VIO,SPACE=(TRK,1)                                      01050000
+//SYSUT5 DD UNIT=VIO,SPACE=(TRK,1)                                      01060000
+//SYSUT6 DD UNIT=VIO,SPACE=(TRK,1)                                      01070000
+//SYSUT7 DD UNIT=VIO,SPACE=(TRK,1)                                      01080000
+//SYSLIN DD UNIT=VIO,SPACE=(TRK,1),DISP=(,PASS),BLKSIZE=3200            01090000
+//SYSPRINT DD SYSOUT=*                                                  01100000
+//*                                                                     01110000
+//GO    EXEC PGM=LOADER,PARM=PRINT                                      01120000
+//SYSLIN DD DSN=*.COB2.SYSLIN,DISP=(OLD,PASS)                           01130000
+//SYSLIB DD DSN=CEE.SCEELKED,DISP=SHR                                   01140000
+//SYSLOUT DD SYSOUT=*                                                   01150000
+//SYSOUT DD SYSOUT=*                                                    01160000

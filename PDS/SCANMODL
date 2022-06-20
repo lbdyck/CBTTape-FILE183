@@ -1,0 +1,181 @@
+//GILBERTH JOB (ACCT#),SCANMODL,                                        00010000
+//*RESTART=HLASM2,                                                      00020001
+// NOTIFY=&SYSUID,                                                      00030000
+// CLASS=A,MSGCLASS=H,COND=(0,NE)                                       00040000
+//HLASM EXEC PGM=ASMA90,PARM=(OBJECT,NODECK,NOESD,NORLD,NOXREF)         00050001
+*********************************************************************** 00060000
+*                                                                     * 00070000
+* MODULE NAME = SCANMODL                                              * 00080000
+*                                                                     * 00090000
+* DESCRIPTIVE NAME = RETRIEVE OFFSET & LENGTH OF A JES2 FIELD         * 00100000
+*                                                                     * 00110000
+* FUNCTION = THIS MODULE LOADS AN IPCS MODEL FROM SYS1.MIGLIB AND     * 00120000
+*            RETURNS THE OFFSET & LENGTH OF A GIVEN FIELD.            * 00130000
+*            IT IS USED TO WRITE PROGRAMS THAT ACCESS JES2 CONTROL    * 00140000
+*            BLOCKS WITHOUT USING HASPSRC AND CONSEQUENTLY,           * 00150000
+*            ARE RELEASE-INDEPENDENT.                                 * 00160000
+*                                                                     * 00170000
+* STATUS = R101                                                       * 00180001
+*                                                                     * 00190000
+* AUTHOR = GILBERT SAINT-FLOUR <carlos@gsf-soft.com>                  * 00200000
+*                                                                     * 00210000
+* INVOCATION = VIA CALL OR LINK                                       * 00220000
+*                                                                     * 00230000
+*          LA   R2,=CL8'HASMSDB'          HASP SDB                    * 00240001
+*          LA   R3,=CL8'SDBRECCT'         RECORD COUNT                * 00250001
+*          LINK EP=SCANMODL,PARAM=((R2),(R3))                         * 00260001
+*          LH   R4,0(,R1)                 OFFSET                      * 00270001
+*          LH   R5,2(,R1)                 LENGTH                      * 00280001
+*                                                                     * 00290000
+* NOTES = SEE BELOW                                                   * 00300000
+*                                                                     * 00310000
+*    DEPENDENCIES = MVS/ESA V4.1 OR ABOVE                             * 00320000
+*                                                                     * 00330000
+*    AUTHORIZATION = NONE                                             * 00340000
+*                                                                     * 00350000
+* MODULE TYPE = PROCEDURE, (SUB-ROUTINE)                              * 00360000
+*                                                                     * 00370000
+*    PROCESSOR = IBM OS/ASSEMBLER H VERSION 2 OR                      * 00380000
+*                IBM HIGH LEVEL ASSEMBLER/MVS                         * 00390000
+*                                                                     * 00400000
+*    MODULE SIZE = 4K                                                 * 00410000
+*                                                                     * 00420000
+*    ATTRIBUTES = REENTERABLE, RMODE ANY, AMODE 31,                   * 00430000
+*                 PROBLEM STATE, TCB KEY                              * 00440000
+*                                                                     * 00450000
+* OPERATION = SEE DOCUMENTATION                                       * 00460000
+*                                                                     * 00470000
+* CHANGE ACTIVITY                                                     * 00480000
+*                                                                     * 00490000
+*   @100 INITIAL VERSION                                              * 00500000
+*   @101 MINOR CHANGES                                                * 00501001
+*                                                                     * 00510000
+*********************************************************************** 00520000
+SCANMODL CSECT                                                          00530000
+SCANMODL RMODE ANY                                                      00540000
+         B     BEGIN-*(,R15)                                            00550000
+         DC    C'GSF UTILITIES - SCANMODL R101 '                        00560001
+BEGIN    BAKR  R14,0                                                    00570000
+         LR    R11,R15                                                  00580000
+         USING SCANMODL,R11                                             00590000
+         LM    R8,R9,0(R1)             R8=HASMSDB,R9=SDBRECCT           00600000
+         L     R1,16(,0)               CVTPTR                           00610001
+         L     R1,8(,R1)               CVTLINK                          00620000
+         LOAD  EPLOC=(R8),DCB=(R1),ERRET=RC12                           00630000
+         LR    R4,R0                   IM$SDB                           00640000
+         USING HEADER,R4                                                00650000
+         SLR   R1,R1                                                    00660000
+         IC    R1,HDROFFSET            OFFSET TO 1ST FIELD DESC         00670000
+         LA    R5,HEADER(R1)           ADDR OF 1ST FIELD DESC           00680000
+         USING FLDDESC,R5                                               00700000
+*LOOP                                                                   00710000
+LOOP5    CLC   FLDNAME,0(R9)           REQUESTED FIELD?                 00720000
+         BE    LOOP5X                  YES, EXIT                        00730000
+         LA    R5,FLD_NEXT             NEXT FIELD DESCRIPTOR            00760000
+         CLI   FLDDESC,0               END OF MODEL?                    00770000
+         BNE   LOOP5                   NO, PROCESS NEXT FIELD           00780000
+*ENDLOOP                                                                00790000
+         LA    R15,8                   RC=8  (FIELD NOT FOUND)          00800000
+         PR                                                             00810000
+*                                                                       00820000
+*        RETURN OFFSET AND LENGTH IN SAVEAREA+8                         00830000
+*                                                                       00840000
+LOOP5X   LA    R1,8(,R13)              4-BYTE WORK AREA CALLER'S AMODE  00850000
+         MVC   0(4,R1),FLDOFFSET       MOVE OFFSET & LENGTH             00860000
+         SLR   R15,R15                 RC=0                             00870000
+         PR                                                             00880000
+*                                                                       00890000
+RC12     LA    R15,12                  RC=12 (LOAD FAILED)              00900000
+         PR                                                             00910000
+*        BLSQCBM                   CONTROL BLOCK MODEL USED BY BLSQFORM 00920000
+HEADER   DSECT                                                          00930000
+HDRACRO  DS    CL8                     EBCDIC CB ACRONYM                00940000
+HDRUTHDR DS    CL8'$SDB'               OUTPUT HEADER                    00950000
+HDRMLVL  DS    CL8'HJE4430'            MAINTENANCE LEVEL                00960000
+HDRCBLEN DS    FL2                     LENGTH OF CONTROL BLOCK          00970000
+HDRAOFF  DS    FL2                     OFFSET TO ACRONYM                00980000
+HDRALEN  DS    FL1                     LENGTH OF ACRONYM                00990000
+HDRLLEN  DS    FL1                     LABEL LENGTH                     01000000
+HDRSCOL  DS    FL1                     START COLUMN OR LEFT MARGIN      01010000
+HDRNCOL  DS    FL1                     NUMBER OF COLS BETWEEN LABELS    01020000
+HDRFLAGS DS    XL1                     NUMBER OF COLS BETWEEN LABELS    01030000
+HDROFFSET DS   FL1                     OFFSET TO 1ST FIELD DESC         01040000
+HDRMODLVL DS   FL1                     MODEL LEVEL                      01050000
+          DS   X                       RESERVED                         01060000
+*                                                                       01070000
+FLDDESC  DSECT                                                          01080000
+FLDNAME  DS    CL8                0    FIELD NAME                       01090000
+FLDFLAGS DS    X,X                8    FLAGS                            01100000
+FLDVIEW  DS    XL2               10    VIEW                             01110000
+FLDOFFSET DS   FL2               12    OFFSET                           01120000
+FLDLENGTH DS   FL2               14    LENGTH                           01130000
+FLD_NEXT EQU   *                 16                                     01140000
+         YREGS                                                          01150000
+         END                                                            01160000
+//SYSLIB   DD DSN=SYS1.MACLIB,DISP=SHR                                  01170000
+//SYSUT1   DD UNIT=VIO,SPACE=(CYL,2)                                    01180000
+//SYSPRINT DD SYSOUT=*                                                  01190000
+//SYSLIN   DD UNIT=VIO,SPACE=(TRK,1),DISP=(,PASS),BLKSIZE=3200          01200001
+//*                                                                     01210000
+//LKED    EXEC PGM=IEWL,PARM=RENT                                       01220000
+//SYSLIN   DD DSN=*.HLASM.SYSLIN,DISP=(OLD,DELETE)                      01230001
+//SYSLMOD  DD DSN=CBTTAPE.FILE183.LOAD(SCANMODL),DISP=SHR               01240001
+//SYSPRINT DD SYSOUT=*                                                  01250000
+//*                                                                     01260000
+//*      TEST PROGRAM - DISPLAY OFFSETS NEEDED BY SYSDEBUG              01270001
+//*                                                                     01280001
+//HLASM2 EXEC PGM=ASMA90,PARM=(OBJECT,NODECK,NOESD,NORLD,NOXREF)        01290001
+TEMPNAME CSECT                                                          01300000
+         BAKR  R14,0                                                    01310001
+         LR    R12,R15                                                  01320001
+         USING TEMPNAME,R12                                             01330001
+         LOAD  EP=SCANMODL             PRE-LOAD                         01340001
+         OPEN  (SYSPRINT,OUTPUT)                                        01350001
+         LA    R2,=CL8'HASMSDB'                                         01360001
+         LA    R3,=CL8'SDBDEB'                                          01370001
+         BAL   R14,DISPLAY          <- DISPLAY SDBDEB                   01380001
+         LA    R3,=CL8'SDBUBF'                                          01390001
+         BAL   R14,DISPLAY          <- DISPLAY SDBUBF                   01400001
+         LA    R2,=CL8'HASMBUFR'                                        01410001
+         LA    R2,=CL8'HASMBFD'        HJE7707                          01420001
+         LA    R3,=CL8'BFDLOC'                                          01430001
+         BAL   R14,DISPLAY          <- DISPLAY BFDLOC                   01440001
+         LA    R3,=CL8'TPBUFST'                                         01450001
+         LA    R3,=CL8'BFDSTART'       HJE7707                          01460001
+         BAL   R14,DISPLAY          <- DISPLAY TPBUFST (BFDDATA)        01470001
+         PR                                                             01480001
+*                                                                       01490001
+DISPLAY  BAKR  R14,0                                                    01500001
+         LINK  EP=SCANMODL,PARAM=((R2),(R3))                            01510001
+         ST    R15,RC                  RETURN CODE                      01520001
+         MVC   OFFSET,0(R1)            OFFSET                           01530001
+         MVC   LENGTH,2(R1)            LENGTH                           01540001
+         STRING ' CB=',((R2),8),       CONTROL BLOCK                   X01550001
+               ' FLD=',((R3),8),       FIELD                           X01560001
+               ' RC=',(RC,F,R3Z),                                      X01570001
+               ' OFFSET=',(OFFSET,,X),                                 X01580001
+               ' LENGTH=',(LENGTH,,X),                                 X01590001
+               INTO=WORK121                                             01600001
+         PUT   SYSPRINT,WORK121                                         01610001
+         L     R15,RC                  RETURN CODE                      01620001
+         PR                                                             01630001
+*                                                                       01640001
+SYSPRINT DCB   DSORG=PS,MACRF=PM,DDNAME=SYSPRINT,RECFM=FBA,LRECL=121    01650001
+RC       DS    F                                                        01660001
+OFFSET   DS    H                       OFFSET                           01670001
+LENGTH   DS    H                       LENGTH                           01680001
+WORK121  DS    CL121                                                    01690001
+         STRING GENERATE                                                01700001
+         YREGS                                                          01710001
+         END                                                            01720000
+//SYSLIB   DD DSN=SYS1.MACLIB,DISP=SHR                                  01730000
+//         DD DSN=CBTTAPE.FILE183.PDS,DISP=SHR            STRING        01740001
+//SYSUT1   DD UNIT=VIO,SPACE=(CYL,2)                                    01750000
+//SYSPRINT DD SYSOUT=*                                                  01760000
+//SYSLIN   DD UNIT=VIO,SPACE=(TRK,1),DISP=(,PASS),BLKSIZE=3200          01770001
+//*                                                                     01780000
+//GO      EXEC PGM=LOADER,PARM=NOPRINT                                  01790000
+//STEPLIB  DD DSN=CBTTAPE.FILE183.LOAD,DISP=SHR           SCANMODL      01800001
+//*DD DSN=SYS1.SHASMIG,DISP=SHR                           HASMSDB       01810001
+//SYSLIN   DD DSN=*.HLASM2.SYSLIN,DISP=(OLD,DELETE)                     01820001
+//SYSPRINT DD SYSOUT=*                                                  01830000

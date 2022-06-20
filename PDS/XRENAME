@@ -1,0 +1,280 @@
+/*************************************************************** REXX */00010000
+/*                                                                    */00020000
+/* MODULE NAME = XRENAME                                              */00030000
+/*                                                                    */00040000
+/* DESCRIPTIVE NAME = Rename data sets using generic name             */00050000
+/*                                                                    */00060000
+/* STATUS = R101                                                      */00070001
+/*                                                                    */00080000
+/* FUNCTION = The XRENAME command scans the catalog for data set      */00090000
+/*            names that match a filter (such as USERID.*.C%K*.**)    */00100000
+/*            then issues an ALTER command for each data set.         */00110000
+/*            Tape data sets and migrated data sets can't be ALTER'd  */00120000
+/*            and are ignored.                                        */00130000
+/*                                                                    */00140000
+/* AUTHOR   =  Gilbert Saint-Flour <carlos@gsf-soft.com>              */00150000
+/*             http://gsf-soft.com/Freeware/                          */00160000
+/*                                                                    */00170000
+/* DEPENDENCIES = TSO/E V2                                            */00180000
+/*                DFP 3.2.0                                           */00190000
+/*                Catalog Search Interface                            */00200000
+/*                                                                    */00210000
+/* SYNTAX   =  XRENAME                                                */00220000
+/*                generic_name      generic name specification        */00230000
+/*                old-string        old string                        */00240000
+/*                new-string        replacement string                */00250000
+/*                EXECUTE           indicates that ALTER commands     */00260000
+/*                                  will actually be issued for       */00270000
+/*                                  selected data sets.               */00280000
+/*                                  ALTER commands are only           */00290000
+/*                                  displayed otherwise.              */00300000
+/*                                                                    */00310000
+/* SPECIFYING THE GENERIC NAME                                        */00320000
+/*                                                                    */00330000
+/* The generic name defines the level qualifiers for the data set     */00340000
+/* names to be included in the list.  Qualifiers can be specified     */00350000
+/* fully, partially or defaulted.  For data sets that are cataloged   */00360000
+/* in CVOL or VSAM catalogs, the high level qualifier must be         */00370000
+/* specified fully.  For ICF catalogs, at least one qualifier must    */00380000
+/* be partially specified.  A Dsname Level of '*' or '**' or any      */00390000
+/* combination of '*' and '**' qualifiers is invalid.                 */00400000
+/*                                                                    */00410000
+/* The following examples are valid for generic_name:                 */00420000
+/*                                                                    */00430000
+/*  DSNAME LEVEL              Data Set List                           */00440000
+/* ------------------------------------------------------------------ */00450000
+/*  SYS1.PARMLIB         One data set name.                           */00460000
+/*                                                                    */00470000
+/*  SYS1.*               All data set names with SYS1 as the first    */00480000
+/*                       qualifier and one more qualifier.            */00490000
+/*                                                                    */00500000
+/*  SYS1 or SYS1.**      All data set names with SYS1 as the first    */00510000
+/*                       qualifier.                                   */00520000
+/*                                                                    */00530000
+/*  **.LIST              All data set names with a qualifier of LIST. */00540000
+/*                                                                    */00550000
+/*  AAA%*.B*%%%B         All data sets that start with AAA, have at   */00560000
+/*                       least one more character in the high level   */00570000
+/*                       qualifier and have a second qualifier that   */00580000
+/*                       begins and ends in B with at least three     */00590000
+/*                       letters between the Bs.                      */00600000
+/*                                                                    */00610000
+/* Data set name qualifiers can be partially specified using asterisks*/00620000
+/* as global file-name characters and percent signs as placeholders:  */00630000
+/*      *  A single asterisk by itself indicates that at least one    */00640000
+/*         qualifier is needed to occupy that position.  A single     */00650000
+/*         asterisk within a qualifier indicates that zero or more    */00660000
+/*         characters can occupy that position.                       */00670000
+/*     **  A double asterisk indicates that zero or more qualifiers   */00680000
+/*         can occupy that position.  A double asterisk within a      */00690000
+/*         qualifier is invalid.                                      */00700000
+/*      %  A single percent sign indicates that any one single        */00710000
+/*         alphameric or national character can occupy that position. */00720000
+/*  %%...  One to eight percent signs can be specified in each        */00730000
+/*         qualifier.                                                 */00740000
+/*                                                                    */00750000
+/* INSTALLATION = XRENAME can be installed in a library concatenated  */00760000
+/*                to SYSEXEC, SYSPROC, or any private library         */00770000
+/*                accessible to the EXEC command.                     */00780000
+/*                                                                    */00790000
+/*                The CSI module (IGGCSI00) must be available at      */00800000
+/*                execution time.  IGGCSI00 is available with         */00810000
+/*                DFSMS/MVS V1R4 or the CSI PRPQ (5799-CSI).          */00820000
+/*                                                                    */00830000
+/*                Recent MVS systems also contain a copy of IGGCSI00  */00840000
+/*                in the following distribution libraries:            */00850000
+/*                                                                    */00860000
+/*                      1. SYS1.AOS28(ARCCSI)                         */00870000
+/*                      2. SYS1.AAPPMOD2(APPCSI00)                    */00880000
+/*                                                                    */00890000
+/* EXECUTION = XRENAME is invoked as a TSO command, either on-line    */00900000
+/*          or in batch, as shown in the following example.           */00910000
+/*                                                                    */00920000
+/*          //XRENAME EXEC PGM=IKJEFT01                               */00930000
+/*          //SYSEXEC  DD DSN=GSFSOFT.FILE183.PDS,DISP=SHR            */00940000
+/*          //SYSTSPRT DD SYSOUT=*                                    */00950000
+/*          //SYSTSIN  DD *                                           */00960000
+/*          %XRENAME  ABC*.D%%FG*.**  D23FG44.A  K56A.CC  EXEC        */00970000
+            /*                                                        */00980000
+/*                                                                    */00990000
+/* DOCUMENTATION = The documentation for the CSI can be found in      */01000000
+/*                 DFSMS/MVS V1R4 Managing Catalogs (Appendix D)      */01010000
+/*                 and on the Web at:                                 */01020000
+/*                                                                    */01030000
+/* ppdbooks.pok.ibm.com/cgi-bin/bookmgr/bookmgr.cmd/BOOKS/DGT1C104/D.0*/01040000
+/*                                                                    */01050000
+/* CHANGE ACTIVITY                                                    */01060000
+/*                                                                    */01070000
+/*  100   New exec, built from XDELETE R203                           */01080000
+/*  101   TRANSLATE(STRIP(execute))                                   */01090001
+/*                                                                    */01100000
+/**********************************************************************/01110000
+ARG filter oldstr newstr execute    /*   GET FILTER KEY              */ 01120000
+IF newstr='' THEN DO                                                    01130000
+  SAY 'Syntax: XRENAME filter old-string new-string <EXECute>'          01140000
+  EXIT 12                           /*   newstr is missing           */ 01150000
+  END                                                                   01160000
+execute=TRANSLATE(STRIP(execute))                                       01170001
+IF execute\='' THEN                                                     01180000
+  IF ABBREV('EXECUTE',execute,4) THEN                                   01190000
+    execute='EXECUTE'                                                   01200000
+  ELSE                                                                  01210000
+    SAY 'The fourth operand is invalid and will be ignored'             01220000
+ /*------------------------------------------------------------------*/ 01230000
+ /*                                                                  */ 01240000
+ /*  Initialize the parm list and the work variables                 */ 01250000
+ /*                                                                  */ 01260000
+ /*------------------------------------------------------------------*/ 01270000
+csifiltk = STRIP(filter,'BOTH',"'") /*  FILTER KEY                  */  01280000
+csicatnm = ''                       /*  CLEAR CATALOG NAME          */  01290000
+csiresnm = ''                       /*  CLEAR RESUME NAME           */  01300000
+csidtyps = 'ACH'                    /*  NVSAM, CLUSTER, GDS         */  01310000
+csicldi  = 'Y'                      /*  RETURN DATA & INDEX         */  01320000
+csicldi  = ' '                      /*  Do not return Data & Index  */  01330000
+csiresum = ' '                      /*  CLEAR RESUME FLAG           */  01340000
+csis1cat = 'Y'                      /*  Search only one catalog     */  01350000
+csis1cat = ' '                      /*  SEARCH ALL CATALOGS         */  01360000
+                                                                        01370000
+csifldno = 2                        /*  NUMBER OF FIELDS            */  01380000
+fldnm.1  = 'DEVTYP'                 /*    field name                */  01390000
+fldnm.2  = 'VOLSER'                 /*    field name                */  01400000
+                                                                        01410000
+csiopts  = csicldi || csiresum || csis1cat || ' '                       01420000
+csifield = LEFT(csifiltk,44) || LEFT(csicatnm,44) || LEFT(csiresnm,44), 01430000
+        || LEFT(CSIDTYPS,16) || CSIOPTS  || D2C(csifldno,2)             01440000
+DO i=1 to csifldno                                                      01450000
+  csifield = csifield || left(fldnm.i,8)                                01460000
+END                                                                     01470000
+                                                                        01480000
+modrsnrc = COPIES(' ',4)            /*  CLEAR MODULE/RETURN/REASON  */  01490000
+worklen = 256*1024                  /*  Size of work-area in bytes  */  01500000
+worka = LEFT(D2C(worklen,4),worklen,'00'X)                              01510000
+maxcc=0                             /*  Init highest return-code    */  01520000
+                                                                        01530000
+ /********************************************************************/ 01540000
+ /*                                                                  */ 01550000
+ /*  Main CSI Loop Until csiresum=' '                                */ 01560000
+ /*                                                                  */ 01570000
+ /********************************************************************/ 01580000
+DO FOREVER                                                              01590000
+   /*--------------------------------------------------------------*\   01600000
+   |           Issue LINK to the Catalog Search Interface           |   01610000
+   \*--------------------------------------------------------------*/   01620000
+  ADDRESS LINKPGM 'IGGCSI00 MODRSNRC CSIFIELD worka'                    01630000
+  IF RC>0 THEN DO                                                       01640000
+    rtn=C2D(SUBSTR(modrsnrc,4,1))      /* Return Code                */ 01650000
+    rsn=C2D(SUBSTR(modrsnrc,3,1))      /* Reason Code                */ 01660000
+    IF LEFT(modrsnrc,2)='FFFF'X THEN DO                                 01670000
+      SAY 'IGGCSI00 Error - RC='rtn 'RSN='rsn                           01680000
+      IF RC>4 THEN                     /* Severe Error, QUIT         */ 01690000
+        EXIT rc                                                         01700000
+      END                                                               01710000
+    ELSE DO                                                             01720000
+      SAY 'IDC3009I VSAM CATALOG RETURN CODE IS' rtn,                   01730000
+          '- REASON CODE IS IGG0CLA' || LEFT(modrsnrc,2) '-' rsn        01740000
+      END                                                               01750000
+    END                                                                 01760000
+  csiresnm = SUBSTR(CSIFIELD,89,44) /* GET RESUME name FOR NEXT LOOP */ 01770000
+  csiresum = SUBSTR(CSIFIELD,150,1) /* GET RESUME FLAG FOR NEXT LOOP */ 01780000
+  usedlen = C2D(SUBSTR(worka,9,4))  /* GET AMOUNT OF WORK AREA USED  */ 01790000
+  pos1=15                           /* STARTING POSITION             */ 01800000
+   /*--------------------------------------------------------------*\   01810000
+   |              Process Data Returned in Work Area                |   01820000
+   \*--------------------------------------------------------------*/   01830000
+  DO WHILE pos1 < usedlen           /* DO UNTIL ALL DATA IS PROCESSED*/ 01840000
+                                                                        01850000
+    flag  = SUBSTR(worka,pos1+0,1)     /* EXTRACT FLAG               */ 01860000
+    type = SUBSTR(worka,pos1+1,1)      /* EXTRACT ENTRY TYPE         */ 01870000
+    dsname = SUBSTR(worka,pos1+2,44)   /* EXTRACT ENTRY NAME         */ 01880000
+    IF type='0' THEN DO                /* CATALOG                    */ 01890000
+      catname=dsname                   /* Save catalog name          */ 01900000
+      dlen=50                          /* Length of Catalog entry    */ 01910000
+      END                                                               01920000
+    ELSE DO                                                             01930000
+      pos1 = pos1 + 46                 /* skip flag, type, name      */ 01940000
+      csieretn=''                                                       01950000
+      csienter='40'X                   /* Error Indicator            */ 01960000
+      IF csienter=BITAND(flag,csienter) THEN DO                         01970000
+        csieretn= SUBSTR(worka,pos1,4) /* error codes: mod,rsn,rtn   */ 01980000
+        rtn=C2D(SUBSTR(csieretn,4,1))  /* Return Code                */ 01990000
+        rsn=C2D(SUBSTR(csieretn,3,1))  /* Reason Code                */ 02000000
+        SAY '**Error Processing catalog entry - Name='STRIP(dsname),    02010000
+            'Type='type 'Flag='C2X(flag) 'CAT='STRIP(catname)           02020000
+        SAY 'IDC3009I VSAM CATALOG RETURN CODE IS' rtn,                 02030000
+            '- REASON CODE IS IGG0CLA' || LEFT(csieretn,2) '-' rsn      02040000
+        dlen=4                         /* Length of Error Info       */ 02050000
+        maxcc=12                       /* Remember we had an error   */ 02060000
+        END                                                             02070000
+      ELSE DO                                                           02080000
+        dlen = C2D(SUBSTR(worka,pos1,2)) /* length of data           */ 02090000
+        CALL Process_Catalog_Entry       /* Process current entry    */ 02100000
+        END                                                             02110000
+      END                                                               02120000
+    pos1 = pos1 + dlen                   /* next catalog entry       */ 02130000
+  END    /* DO WHILE pos1 < usedlen */                                  02140000
+  IF csiresum\='Y' THEN LEAVE                                           02150000
+END /* RESUME = Y */                                                    02160000
+IF cmd='CMD' THEN                                                       02170000
+  SAY "No data sets renamed"                                            02180000
+EXIT maxcc                                                              02190000
+ /********************************************************************/ 02200000
+ /*                                                                  */ 02210000
+ /*  Process current catalog entry                                   */ 02220000
+ /*                                                                  */ 02230000
+ /********************************************************************/ 02240000
+Process_Catalog_Entry:                                                  02250000
+  pos2 = pos1+4                        /* start of length array    */   02260000
+  pos3 = pos2+csifldno*2               /* start of data array      */   02270000
+   /*--------------------------------------------------------------*\   02280000
+   |              Parse data into named variables                   |   02290000
+   \*--------------------------------------------------------------*/   02300000
+  DO i=1 TO csifldno                                                    02310000
+    l    = C2D(SUBSTR(worka,pos2,2))   /* length of current field  */   02320000
+    x=VALUE(fldnm.i,SUBSTR(worka,pos3,l)) /* move value            */   02330000
+    pos2=pos2+2                        /* next length              */   02340000
+    pos3=pos3+l                        /* next data                */   02350000
+    END                                                                 02360000
+   /*--------------------------------------------------------------*\   02370000
+   |              Generate ALTER commands                           |   02380000
+   \*--------------------------------------------------------------*/   02390000
+  IF cmd='CMD' & execute\='EXECUTE' THEN                                02400000
+    SAY "EXECUTE option not specified; Data sets will NOT be renamed."  02410000
+  dsname = "'" || STRIP(dsname) || "'"  /* Enclose dsname in quotes  */ 02420000
+  cmd='';head=''                                                        02430000
+                                                                        02440000
+  SELECT                                                                02450000
+    WHEN volser='MIGRAT' THEN DO        /* Migrated data set         */ 02460000
+      SAY dsname 'is migrated'                                          02470000
+      RETURN                                                            02480000
+      END                                                               02490000
+    WHEN (type='A' | type='H') & SUBSTR(devtyp,3,1) /= '20'x THEN DO    02500000
+      SAY dsname 'is on tape'                                           02510000
+      RETURN                                                            02520000
+      END                                                               02530000
+    OTHERWISE DO                                                        02540000
+      i = INDEX(dsname,oldstr)                                          02550000
+      SELECT                                                            02560000
+        WHEN i=0 THEN DO                                                02570000
+          SAY dsname 'does not contain' oldstr                          02580000
+          RETURN                                                        02590000
+          END                                                           02600000
+        OTHERWISE DO                                                    02610000
+          head = LEFT(dsname,i-1)                                       02620000
+          tail = RIGHT(dsname,LENGTH(dsname)-i-LENGTH(oldstr)+1)        02630000
+          newnm = head || newstr || tail                                02640000
+     /* SAY dsname 'head='head 'tail='tail 'newnm='newnm */             02650000
+          cmd="ALTER " || dsname || " NEWNM(" || newnm || ")"           02660000
+          END                                                           02670000
+        END                                                             02680000
+      END                                                               02690000
+    END                                                                 02700000
+   /*--------------------------------------------------------------*\   02710000
+   |               Execute ALTER commands                           |   02720000
+   \*--------------------------------------------------------------*/   02730000
+  IF execute='EXECUTE' THEN DO          /* EXECUTE option specified? */ 02740000
+    cmd                                 /*   YES, issue ALTER cmd    */ 02750000
+    IF rc>0 THEN maxcc=12               /*  remember we had an error */ 02760000
+    END                                                                 02770000
+  ELSE                                                                  02780000
+    SAY cmd                             /*   NO, display command     */ 02790000
+  RETURN                                                                02800000

@@ -1,0 +1,83 @@
+/*************************************************************** REXX */00010000
+/*                                                                    */00020000
+/* MODULE NAME = XREN                                                 */00030000
+/*                                                                    */00040000
+/* DESCRIPTIVE NAME = Rename Current Member (EDIT Macro)              */00050000
+/*                                                                    */00060000
+/* FUNCTION = This EDIT macro renames the member being edited         */00070000
+/*  to the specified new name.                                        */00080000
+/*                                                                    */00090000
+/*  If a new name is not specified in the command, the member name    */00100000
+/*  at the cursor position is extracted and used as the new name.     */00110000
+/*                                                                    */00120000
+/*  If "XREN newname END" or "XREN newname SAVE" is specified,        */00130000
+/*  then an END or SAVE command is issued after the successful        */00140000
+/*  completion of the rename operation.                               */00150000
+/*                                                                    */00160000
+/* STATUS = R200                                                      */00170000
+/*                                                                    */00180000
+/* Author: Gilbert Saint-Flour <carlos@gsf-soft.com>                  */00190000
+/*                                                                    */00200000
+/**********************************************************************/00210000
+ADDRESS ISPEXEC; "ISREDIT MACRO (NEWNM ENDSAVE)"                        00220000
+                                                                        00230000
+   /* If the new name is not specified in the command,  */              00240000
+   /* extract the member name at the cursor position    */              00250000
+                                                                        00260000
+IF newnm='' THEN DO                                                     00270000
+  "ISREDIT (LINE,CSRP) = CURSOR"      /*   TO RETRIEVE THE LINE AND   */00280000
+  "ISREDIT (LINE) = LINE .ZCSR"       /*   CURSOR POSITION            */00290000
+  IF CSRP>0 THEN DO                   /*   THEN                       */00300000
+    P = POS(' ',LINE,CSRP); IF P>CSRP THEN LINE=LEFT(LINE,P-1)          00310000
+    P = POS(',',LINE,CSRP); IF P>CSRP THEN LINE=LEFT(LINE,P-1)          00320000
+    P = POS('.',LINE,CSRP); IF P>CSRP THEN LINE=LEFT(LINE,P-1)          00330000
+    P = POS(')',LINE,CSRP); IF P>CSRP THEN LINE=LEFT(LINE,P-1)          00340000
+    P = POS('(',LINE,CSRP); IF P>CSRP THEN LINE=LEFT(LINE,P-1)          00350000
+    LINE = REVERSE(LINE)                                                00360000
+    P = POS(' ',LINE); IF P>1 THEN LINE=LEFT(LINE,P-1)                  00370000
+    P = POS(',',LINE); IF P>1 THEN LINE=LEFT(LINE,P-1)                  00380000
+    P = POS('.',LINE); IF P>1 THEN LINE=LEFT(LINE,P-1)                  00390000
+    P = POS('=',LINE); IF P>1 THEN LINE=LEFT(LINE,P-1)                  00400000
+    P = POS('(',LINE); IF P>1 THEN LINE=LEFT(LINE,P-1)                  00410000
+    P = POS(')',LINE); IF P>1 THEN LINE=LEFT(LINE,P-1)                  00420000
+    newnm = REVERSE(LINE)                                               00430000
+  END                                                                   00440000
+END                                                                     00450000
+                                                                        00460000
+         /* If a new name is not available, issue error messsage */     00470000
+                                                                        00480000
+IF newnm = "" THEN DO                                                   00490000
+  ZEDSMSG='New Name Missing'                                            00500000
+  ZEDLMSG='A new member name was not specified in the command'          00510000
+  "SETMSG MSG(ISRZ000)"                                                 00520000
+  EXIT 12                                                               00530000
+  END                                                                   00540000
+                                                                        00550000
+         /* Rename the member using the LMMREN service */               00560000
+                                                                        00570000
+"CONTROL ERRORS RETURN"                                                 00580000
+"ISREDIT (DD1) = DATAID"                                                00590000
+"ISREDIT (MBR) = MEMBER"                                                00600000
+"LMOPEN DATAID("DD1") OPTION(OUTPUT)"                                   00610000
+IF RC > 0 THEN SIGNAL ERROR                                             00620000
+"LMMREN DATAID("DD1") MEMBER("MBR") NEWNAME("newnm")"                   00630000
+IF RC = 12 THEN                                                         00640000
+  "LMMREN DATAID("DD1") MEMBER("MBR") NEWNAME("newnm") NOENQ"           00650000
+IF RC > 0 THEN SIGNAL ERROR                                             00660000
+ZEDSMSG = "Member renamed"                                              00670000
+ZEDLMSG = "Member" mbr "renamed to" TRANSLATE(newnm)                    00680000
+"SETMSG MSG(ISRZ000)"                                                   00690000
+"LMCLOSE DATAID("DD1")"                                                 00700000
+                                                                        00710000
+         /* Optionally Issue END or SAVE then EXIT */                   00720000
+                                                                        00730000
+IF endsave ^= '' THEN                                                   00740000
+  "ISREDIT" TRANSLATE(endsave)                                          00750000
+EXIT                                                                    00760000
+                                                                        00770000
+         /* Error, issue error message */                               00780000
+                                                                        00790000
+ERROR:                                                                  00800000
+  "SETMSG MSG("ZERRMSG")"                                               00810000
+  "LMCLOSE DATAID("DD1")"                                               00820000
+  EXIT 20                                                               00830000

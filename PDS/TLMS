@@ -1,0 +1,412 @@
+//GILBERTT JOB (ACCT#),TLMS,                                            00010000
+// NOTIFY=&SYSUID,                                                      00020000
+// CLASS=A,MSGCLASS=H,COND=(0,NE)                                       00030000
+//HLASM EXEC PGM=ASMA90,PARM=(NODECK,OBJECT,NOESD,NORLD,NOXREF)         00040002
+*PROCESS USING(NOMAP,WARN(8))                                           00050001
+*********************************************************************** 00060000
+*                                                                     * 00070000
+* MODULE NAME = TLMS                                                  * 00080000
+*                                                                     * 00090000
+* DESCRIPTIVE NAME = DISPLAY A VMF RECORD (CA/TLMS)                   * 00100000
+*                                                                     * 00110000
+* FUNCTION = THE TLMS PROGRAM READS THE VMF RECORD FOR THE FIRST      * 00120000
+*        VOLUME OF A TAPE DATA SET, FORMATS IT PRETTY MUCH LIKE       * 00130000
+*        THE CATLTSO COMMAND, THEN INVOKES BRIF TO DISPLAY THE        * 00140000
+*        RESULT.  MAY ONLY BE USED AS A LINE COMMAND ON THE DATA      * 00150000
+*        SET LIST PANEL (OPTION 3.4 OF ISPF/PDF).                     * 00160000
+*                                                                     * 00170000
+* STATUS = R202                                                       * 00180002
+*                                                                     * 00190000
+* AUTHOR = GILBERT SAINT-FLOUR <carlos@gsf-soft.com>                  * 00200000
+*                                                                     * 00210000
+* NOTES = SEE BELOW                                                   * 00220000
+*                                                                     * 00230000
+*    DEPENDENCIES = CA/TLMS                                           * 00240000
+*                   STRING MACRO                                      * 00250000
+*                                                                     * 00260000
+*    AUTHORIZATION = NONE                                             * 00270000
+*                                                                     * 00280000
+*    RESTRICTIONS = NONE                                              * 00290000
+*                                                                     * 00300000
+* MODULE TYPE = PROCEDURE, (BATCH PROGRAM)                            * 00310000
+*                                                                     * 00320000
+*    PROCESSOR = IBM OS/ASSEMBLER H VERSION 2 OR                      * 00330000
+*                IBM HIGH LEVEL ASSEMBLER/MVS                         * 00340000
+*                                                                     * 00350000
+*    MODULE SIZE = 4K                                                 * 00360000
+*                                                                     * 00370000
+*    ATTRIBUTES = REUSABLE, RMODE 24, AMODE 24,                       * 00380000
+*                 PROBLEM STATE, KEY 8                                * 00390000
+*                                                                     * 00400000
+* CHANGES                                                             * 00410000
+*                                                                     * 00420000
+*201 TLMS 5.5 (VMF RECORDS CAN BE BLOCKED)                            * 00430001
+*202 TLMS 5.5 (VMF RECORDS MAY NOT NECESSARILY BE BLOCKED)            * 00440002
+*                                                                     * 00450000
+&VMFDSN  SETC  'CAI.TLMS.VMF'          <== DSNAME OF VMF              * 00460000
+*********************************************************************** 00470000
+TLMS     CSECT                                                          00480000
+         SAVE  (14,12),,'GSF UTILITIES - TLMS R202'                     00490002
+         LR    R12,R15                                                  00500001
+         USING TLMS,R12                                                 00510001
+         GETMAIN R,LV=DYNAML,SP=2      DYNAMIC STORAGE                  00520001
+         ST    R13,4(,R1)                                               00530000
+         ST    R1,8(,R13)                                               00540000
+         LR    R13,R1                                                   00550000
+         USING DYNAM,R13                                                00560000
+         ST    R13,DDATA               PARM FOR READ RTNE               00570000
+         TIME  DEC                                                      00580000
+         STCM  R1,B'1111',TODAY        00YYDDDF                         00590000
+         MVI   BLANKS,C' '                                              00600000
+         MVC   BLANKS+1(L'BLANKS-1),BLANKS                              00610000
+*                                                                       00650000
+         CALL  ISPLINK,(VDEFINE,DSNVOL,DSNAME,FORMATL,LENL,LIST),VL     00660000
+         LTR   R15,R15                                                  00670000
+         BNZ   QUIT16                                                   00680000
+         CALL  ISPLINK,(VGET,DSNVOL),VL                                 00690000
+         LTR   R15,R15                                                  00700000
+         BNZ   QUIT16                                                   00710000
+         LA    R1,=A(S99RB+VL)                                          00720000
+         SVC   99                      ALLOCATE THE DATA SET            00730000
+         LTR   R15,R15                                                  00740000
+         BNZ   QUIT16                  SVC99 FAILED, QUIT               00750000
+         PACK  WK1,VOLSER              030001                           00770000
+         UNPK  WK2(6),WK1              UNPACK FOR CLC                   00780001
+         OI    WK2+5,X'F0'             NO SIGN                          00790001
+         CLC   WK2(6),VOLSER           NUMERIC VOLSER?                  00800000
+         BNE   QUIT16                  NO, QUIT                         00810000
+         OPEN  MF=(E,OPENLIST)                                          00820000
+         LTR   R15,R15                                                  00830000
+         BNZ   QUIT16                                                   00840000
+         CLC   DCB1BLKSI,=AL2(L'S3SEGREC) BLOCKED VMF?                  00870002
+         BNE   *+8                     YES, JUMP                        00880002
+         OI    BLKREF+3,1              NO, READ 2ND RECORD              00890002
+*                                                                       00900001
+*        READ FIRST BLOCK                                               00910001
+*                                                                       00920001
+         LA    R3,BUFFER               32K BUFFER                       00930001
+         READ  DECB1,DI,DCB1,(R3),'S','S',BLKREF+1                      00940001
+         CHECK DECB1                   WAIT FOR COMPLETION (OR SYNAD)   00950001
+         CLC   DCB1BLKSI,=AL2(L'S3SEGREC) BLOCKED VMF?                  00980002
+         BE    *+8                     NO, JUMP                         00990002
+         LA    R3,BUFFER+L'S3SEGREC    SKIP 1ST RECORD (CONTROL)        01000001
+         USING S3SEGSCT,R3                                              01010001
+         LH    R4,S3SEGNUM             MAX NUMBER OF SEGMENTS IN FILE   01020001
+*---------------------------------------------------------------------* 01030001
+*                                                                     * 01040001
+*        PROCESS SEGMENT RECORDS TO DETERMINE THE                     * 01050001
+*        BLOCK NUMBER OF MY VMFBASE RECORD                            * 01060001
+*                                                                     * 01070001
+*---------------------------------------------------------------------* 01080001
+         SLR   R5,R5                   BLOCK NUMBER                     01090001
+*LOOP                                                                   01110000
+SCANSEG1 CLI   S3RECTYP,C'S'           IS THIS A SEGMENT RECORD?        01120001
+         BNE   QUIT16                  NO, QUIT                         01130000
+         LA    R1,S3SEGTAB             POINT TO 1ST SEGMENT ENTRY       01140001
+         USING S3SEGENT,R1                                              01150001
+         LA    R2,S3SEGCNT             # OF SEGMENTS IN A VMFSEGMT      01160001
+*--LOOP                                                                 01170000
+SCANSEG4 SLR   R14,R14                                                  01180001
+         ICM   R14,B'0111',S3SEGSFX    1ST VOLSER IN SEGMENT            01190001
+         SLR   R15,R15                                                  01200001
+         ICM   R15,B'0111',S3NUMSFX    NUMBER OF VOLSERS IN SEGMENT     01210001
+         CVB   R0,WK1                  MY VOLSER                        01220001
+         SR    R0,R14                  GET DIFFERENCE                   01290001
+         BL    SCANSEG5                NOT IN THIS SEGMENT              01300001
+         CR    R0,R15                  ARE WE WITHIN IT?                01310002
+         BNH   SCANSEG9                YES, EXIT LOOP                   01320000
+SCANSEG5 AR    R5,R15                  INCREMENT VOLSER COUNT           01330001
+         LA    R1,S3SEGENT+L'S3SEGENT  NEXT SEGMENT                     01340001
+         BCT   R4,*+8                  DECREMENT SEGMENT COUNT          01350000
+         B     QUIT16                  VOLSER NOT FOUND IN TABLE        01360000
+         BCT   R2,SCANSEG4             NEXT SEGMENT IN CURRENT VMFSEGMT 01370000
+*--ENDLOOP                                                              01380000
+         LA    R3,S3SEGREC+L'S3SEGREC  NEXT SEGMENT RECORD              01390001
+         B     SCANSEG1                NEXT VMFSEGMT                    01400000
+*ENDLOOP                                                                01410000
+         DROP  R1                      S3SEGTAB                         01420001
+SCANSEG9 AR    R5,R0                   ADD DIFFERENCE                   01430001
+         LA    R5,1(,R5)               ADD 1 MORE                       01440001
+         AH    R5,S3SEGMAX             ADD # OF LAST SEGMENT RECORD     01450001
+*                                                                       01460001
+*        CONVERT RECORD NUMBER TO BLKREF/OFFSET                         01470001
+*                                                                       01480001
+         SLR   R4,R4                   OFFSET=ZERO                      01490002
+         CLC   DCB1BLKSI,=AL2(L'S3SEGREC) BLOCKED VMF?                  01500002
+         BE    CALCBLK3                NO, JUMP                         01510002
+         LA    R4,L'B3BSEREC           LRECL                            01540001
+         MR    R4,R4                   MULT RECNO BY LRECL              01550001
+         LH    R0,DCB1+62              BLKSIZE                          01580001
+         DR    R4,R0                   RECORDS PER BLOCK                01590001
+CALCBLK3 EQU   *                                                        01620002
+         CL    R5,DCB1+16              BLKREF TOO HIGH?                 01630001
+         BH    QUIT16                  YES, QUIT                        01640000
+*---------------------------------------------------------------------* 01650001
+*                                                                     * 01660001
+*        READ THE VMF RECORD FOR MY VOLSER                            * 01670001
+*        EDIT ITS CONTENTS INTO "LINES"                               * 01680001
+*                                                                     * 01690001
+*---------------------------------------------------------------------* 01700001
+         CL    R5,BLKREF               FIRST BLOCK?                     01710001
+         BE    CLOSE1                  YES, SKIP READ                   01720001
+         ST    R5,BLKREF               SAVE BLOCK NUMBER                01730001
+         READ  DECB1,DI,MF=E           READ VMF RECORD FOR MY VOLSER    01740001
+         CHECK DECB1                   WAIT FOR COMPLETION (OR SYNAD)   01750000
+CLOSE1   CLOSE MF=(E,OPENLIST)                                          01760001
+         LA    R5,BUFFER(R4)           START OF BASE RECORD             01770001
+         USING B3BSEREC,R5                                              01780001
+*                                                                       01790000
+         LA    R3,LINES                FIRST LINE                       01800000
+         MVC   0(L'LINES,R3),BLANKS                                     01810000
+         LA    R3,L'LINES(,R3)         NEXT LINE                        01820000
+*                                                                       01830000
+         MVC   WK1,=C'NO '             SCRATCH 1/3                      01840000
+         TM    B3SRVSCR,C'1'           SCRATCH 1/3                      01850001
+         BO    LINE1W                  SCRATCH 1/3                      01860000
+         MVC   WK1,=C'YES'             SCRATCH 1/3                      01870000
+LINE1W   STRING INTO=((R3),L'LINES),                                   X01880000
+               '  VSN.....',B3VOLSER,  VOLSER                          X01890001
+               '     SCRATCH.',(WK1,3), IN SERVICE, SCRATCH            X01900000
+               '     CDS....',(B3CDSSEQ,H,R4Z), CTL DATA SET SEQNO     X01910001
+               '     BASE VOLUME....',B3CHNVOL  1ST VOL                 01920001
+         LA    R3,L'LINES(,R3)         NEXT LINE                        01930000
+*                                                                       01940000
+         MVC   WK1,=C'OUT'             NOT IN SERVICE                   01950000
+         CLI   B3SRVSCR,C'2'           CHECK STATUS                     01960001
+         BH    LINE2W                  NO, JUMP                         01970000
+         MVC   WK1,=C'IN '             IN SERVICE                       01980000
+LINE2W   STRING INTO=((R3),L'LINES),                                   X01990000
+               '  SERVICE.',(WK1,3),  IN SERVICE, SCRATCH              X02000000
+               '   VOLSEQ.. ',(B3VOLSEQ,P,R3Z), VOL SEQNO              X02010001
+               '   VOLCNT. ',(B3VOLCNT,P,R3Z),  VOL COUNT              X02020001
+               '   FILESEQ. ',(B3FILSEQ,H,R4Z), FILE SEQNO             X02030001
+               '   FILECNT. ',(B3FILCNT,H,R4Z)  FILE COUNT              02040001
+         LA    R3,L'LINES(,R3)         NEXT LINE                        02050000
+*                                                                       02060000
+         MVC   0(L'LINES,R3),BLANKS                                     02070000
+         LA    R3,L'LINES(,R3)         NEXT LINE                        02080000
+*                                                                       02090000
+         MVC   WK1,=C'ACTIVE  '                                         02100000
+         CP    TODAY,B3EXPDAT          DATA SET EXPIRED?                02110001
+         BH    LINE3W                  NO, JUMP                         02120000
+         MVC   WK1,=C'EXPIRED '                                         02130000
+LINE3W   STRING INTO=((R3),L'LINES),2X,WK1,                            X02140000
+               ' VERSION. ','000',     ???                             X02150000
+               '  DSN. ',B3DSN         DATA SET NAME                    02160001
+         LA    R3,L'LINES(,R3)         NEXT LINE                        02170000
+*                                                                       02180000
+LINE4    STRING INTO=((R3),L'LINES),                                   X02190000
+               '  LRECL... ',(B3RECSIZ,F,R5Z),                         X02200001
+               '     BLKSIZE. ',(B3BLKSIZ,F,R5Z),                      X02210001
+               '     RECFM.... ',B3RFM,                                X02220001
+               '   LABEL. ',B3LABTYP                                    02230001
+         LA    R3,L'LINES(,R3)         NEXT LINE                        02240000
+*                                                                       02250000
+LINE5    STRING INTO=((R3),L'LINES),                                   X02260000
+               '  BLKCNT.. ',(B3BLKCNT,F,R7Z),                         X02270001
+               '   CPU..... ',B3CPUSMF,                                X02280001
+               '      ABEND... ',B3ABDFLG,                             X02290001
+               '      DEN... ',B3DEN,                                  X02300001
+               '      TRTCH. ',B3TAPMOD                                 02310001
+         LA    R3,L'LINES(,R3)         NEXT LINE                        02320000
+*                                                                       02330000
+         MVC   0(L'LINES,R3),BLANKS                                     02340000
+         LA    R3,L'LINES(,R3)         NEXT LINE                        02350000
+*                                                                       02360000
+LINE6    STRING INTO=((R3),L'LINES),                                   X02370000
+               '  EXPDT... ',(B3EXPDAT,P,YY/MM/DD),                    X02380001
+               '  KEEPDT.. ',(B3KEPDAT,P,YY/MM/DD),                    X02390001
+               '  EXPIRED.. ',(B3EXPDAT,P,YY/MM/DD)                     02400001
+         LA    R3,L'LINES(,R3)         NEXT LINE                        02410000
+*                                                                       02420000
+LINE7    STRING INTO=((R3),L'LINES),                                   X02430000
+               '  CJOB.... ',B3CREJOB, CREATION JOB                    X02440001
+               '  CSTEP... ',B3CRESTP, CREATION STEP                   X02450001
+               '  CDATE.... ',(B3CREDAT,P,YY/MM/DD) CREATION DATE       02460001
+         LA    R3,L'LINES(,R3)         NEXT LINE                        02470000
+*                                                                       02480000
+LINE8    OI    B3CRETIM+L'B3CRETIM-1,15 NO SIGN                         02490001
+         UNPK  WK1,B3CRETIM            00HHMMSS                         02500001
+         MVC   WK1+0(2),WK1+2          HHHHMMSS                         02510000
+         MVI   WK1+2,C':'              HH:HMMSS                         02520000
+         MVC   WK1+3(2),WK1+4          HH:MMMSS                         02530000
+         MVI   WK1+5,C':'              HH:HM:SS                         02540000
+         STRING INTO=((R3),L'LINES),                                   X02550000
+               '  CUNIT... ',B3CREDEV,5X, UNIT                         X02560001
+               '  CTIME... ',WK1,      HH:MM:SS                        X02570000
+               '  JACCT.... ',B3USR001 ACCOUNTING FIELD                 02580001
+         LA    R3,L'LINES(,R3)         NEXT LINE                        02590000
+*                                                                       02600000
+LINE9    STRING INTO=((R3),L'LINES),                                   X02610000
+               '  IJOB.... ',B3LASJOB, LAST JOB                        X02620001
+               '  IDATE... ',(B3LASDAT,P,YY/MM/DD), LAST DATE          X02630001
+               '  IUNIT.... ',B3LASDEV                                  02640001
+         LA    R3,L'LINES(,R3)         NEXT LINE                        02650000
+*                                                                       02660000
+         MVC   0(L'LINES,R3),BLANKS                                     02670000
+         LA    R3,L'LINES(,R3)         NEXT LINE                        02680000
+*                                                                       02690000
+LINE10   STRING INTO=((R3),L'LINES),                                   X02700000
+               '  CERTDT.. ',(B3CRTDAT,P,YY/MM/DD),                    X02710001
+               '  CERTCNT. ',(B3CRTCNT,H,R4Z),4X,                      X02720001
+               '  CLEANDT.. ',(B3CLNDAT,P,YY/MM/DD),                   X02730001
+               '  CLEANCNT. ',(B3CLNCNT,H,R4Z)                          02740001
+         LA    R3,L'LINES(,R3)         NEXT LINE                        02750000
+*                                                                       02760000
+LINE11   STRING INTO=((R3),L'LINES),                                   X02770000
+               '  ERG..... ',(B3ERGCNT,H,R4Z),4X,                      X02780001
+               '  MAX-ERG. ',(B3ERGMAX,H,R4Z),4X,                      X02790001
+               '  TMPRDERR. ',(B3REDERR,H,R4Z)                          02800001
+         LA    R3,L'LINES(,R3)         NEXT LINE                        02810000
+*                                                                       02820000
+LINE12   STRING INTO=((R3),L'LINES),                                   X02830000
+               '  CLN-USE. ',(B3USECLN,H,R4Z),4X,                      X02840001
+               '  CER-USE. ',(B3USECRT,H,R4Z),4X,                      X02850001
+               '  LOC...... ',B3LOC    LOCATION                         02860001
+         LA    R3,L'LINES(,R3)         NEXT LINE                        02870000
+*                                                                       02880000
+*        USER-UPDATED FIELDS                                            02890000
+*                                                                       02900000
+LINE13   STRING INTO=((R3),L'LINES),                                   X02910000
+               '  LOST.... ',B3LOSCDE,7X,                              X02920001
+               '  PURCHDT. ',(B3BUYDAT,P,YY/MM/DD), PURCHASE DATE      X02930001
+               '  TAPETYPE. ',B3TAPTYP,6X,                             X02940001
+               '  VENDOR... ',B3VENDER MANUFACTURER                     02950001
+         LA    R3,L'LINES(,R3)         NEXT LINE                        02960000
+*                                                                       02970000
+LINE14   STRING INTO=((R3),L'LINES),                                   X02980000
+               '  LENGTH.. ',(B3TAPLEN,H,R4Z),4X,                      X02990001
+               '  DAMAGE.. ',B3DAMCDE,7X,                              X03000001
+               '  DESTROY.. ',B3DESCDE,7X,                             X03010001
+               '  DESTRYDT. ',(B3DESDAT,P,YY/MM/DD) DESTROYED DATE      03020001
+         LA    R3,L'LINES(,R3)         NEXT LINE                        03030000
+*                                                                       03040000
+         MVC   0(L'LINES,R3),BLANKS                                     03050000
+         LA    R3,L'LINES(,R3)         NEXT LINE                        03060000
+*                                                                       03070000
+LINE15   STRING INTO=((R3),L'LINES),                                   X03080000
+               '  SCRDT... ',(B3SCRDAT,P,YY/MM/DD), DATE VOL SCRATCHED X03090001
+               '  MOVEDT.. ',(B3MOVDAT,P,YY/MM/DD),                    X03100001
+               '  EXPDT.... ',(B3CDSEXP,P,YY/MM/DD),                   X03110001
+               '  KEEPDT... ',(B3CDSKEP,P,YY/MM/DD)                     03120001
+         LA    R3,L'LINES(,R3)         NEXT LINE                        03130000
+*                                                                       03140000
+         MVC   0(L'LINES,R3),BLANKS                                     03150000
+         LA    R3,L'LINES(,R3)         NEXT LINE                        03160000
+*                                                                       03170000
+*        SHOW TODAY'S DATE FOR AIR-HEADS LIKE ME                        03180000
+*                                                                       03190000
+         STRING INTO=((R3),L'LINES),'  TODAY... ',(TODAY,P,YY/MM/DD)    03200000
+         LA    R3,L'LINES(,R3)         NEXT LINE                        03210000
+*                                                                       03220000
+         MVC   0(L'LINES,R3),BLANKS                                     03230000
+         LA    R3,L'LINES(,R3)         NEXT LINE                        03240000
+*---------------------------------------------------------------------* 03250001
+*                                                                     * 03260001
+*        INVOKE ISPF/PDF "BRIF" SERVICE                               * 03270001
+*                                                                     * 03280001
+*---------------------------------------------------------------------* 03290001
+         LA    R0,LINES                FIRST LINE                       03330000
+         SLR   R2,R2                                                    03340000
+         SLR   R3,R0                   LENGTH USED                      03350000
+         D     R2,MAXLRECL             NUMBER OF LINES WRITTEN          03360000
+         ST    R3,MAXRECNO             NUMBER OF LINES WRITTEN          03370000
+         CALL  ISPLINK,(BRIF,DSNAME,RECFM,MAXLRECL,RADDR,,DDATA),VL     03380000
+*                                                                       03390000
+QUIT00   L     R13,4(,R13)                                              03400000
+         RETURN (14,12),RC=00                                           03410000
+*                                                                       03420000
+QUIT16   CLOSE MF=(E,OPENLIST)                                          03430000
+         L     R13,4(,R13)                                              03440000
+         RETURN (14,12),RC=16                                           03450000
+*------- ISPLINK CONSTANTS -------------------------------------------  03460000
+VDEFINE  DC    C'VDEFINE '             FUNCTION                         03470000
+VGET     DC    C'VGET    '             FUNCTION                         03480000
+DSNVOL   DC    C'(ZDLDSN ZDLVOL)'                                       03490000
+FORMATL  DC   2C'CHAR    '                                              03500000
+LENL     DC    AL4(L'DSNAME,L'VOLSER)                                   03510000
+LIST     DC    C'LIST    '                                              03520000
+BRIF     DC    C'BRIF    '             FUNCTION                         03530000
+RECFM    DC    C'F '                                                    03540000
+DSNAME   DS    CL44                    ZDLDSN                           03550000
+VOLSER   DS    C'030001'               ZDLVOL                           03560000
+RADDR    DC    A(READRTN)                                               03570000
+DDATA    DS    A(DYNAM)                BASE ADDRESS                     03580001
+VL       EQU   X'80000000'                                              03590000
+*------- BLOCS POUR ALLOCATION DYNAMIQUE DES FICHIERS ----------------  03600000
+S99RB    DC    A(X'14010000',0,S99TUPL,0,0)                             03610000
+S99TUPL  DC    A(S99T1,S99T2,S99T4+VL)                                  03620000
+S99T1    DC    AL2(1,1,6),C'CAIVMF'    DDNAME                           03630001
+S99T2    DC    AL2(2,1,L'VMFDSN)       DSNAME                           03640001
+VMFDSN   DC    C'&VMFDSN'                                               03650000
+S99T4    DC    AL2(4,1,1),X'08'        DISP=SHR                         03660001
+         DROP                                                           03670000
+*********************************************************************** 03680001
+*                                                                     * 03690001
+*        READ ROUTINE (BRIF)                                          * 03700001
+*                                                                     * 03710001
+*********************************************************************** 03720001
+READRTN  SAVE  (14,12),,'READRTN'                                       03730000
+         LM    R4,R7,0(R1)             INPUT PARMS                      03740000
+         LR    R11,R15                                                  03750001
+         USING READRTN,R11                                              03760001
+         L     R12,0(,R7)              =A(DYNAM)                        03770001
+         USING DYNAM,R12                                                03780000
+*                                                                       03790000
+         L     R3,0(,R6)               RECORD NUMBER (FROM BROWSE)      03800000
+         C     R3,MAXRECNO             BEYOND END OF FILE?              03810000
+         BH    GOBACK8                 YES, EXIT                        03820000
+         BCTR  R3,0                    CALCULATE OFFSET                 03830000
+         M     R2,MAXLRECL             CALCULATE OFFSET                 03840000
+         LA    R3,LINES(R3)            CHANGE OFFSET TO ADDRESS         03850000
+         ST    R3,0(,R4)               PASS RECORD ADDRESS TO BRIF      03860000
+         RETURN (14,12),RC=00                                           03870000
+*                                                                       03880000
+GOBACK8  MVC   0(4,R6),MAXRECNO        RETURN MAX RECORD NUMBER         03890000
+         RETURN (14,12),RC=8                                            03900000
+*                                                                       03910001
+OPENLIST OPEN  DCB1,MF=L                                                03920000
+DCB1     DCB   DSORG=DA,MACRF=RIC,OPTCD=R,DDNAME=CAIVMF                 03930001
+DCB1BLKSI EQU  DCB1+62,2,C'H'          BLKSIZE                          03940002
+BLKREF   DC    F'0'                    BLOCK NUMBER                     03950001
+MAXLRECL DC    A(L'LINES)                                               03960000
+*---------------------------------------------------------------------* 03970001
+*        DYNAMIC STORAGE                                              * 03980001
+*---------------------------------------------------------------------* 03990001
+DYNAM    DSECT                                                          04000000
+         DS    18F                                                      04010000
+TODAY    DS    PL4                     CVTDATE                          04020000
+WK1      DS    D                                                        04030000
+WK2      DS    D                                                        04040000
+WK3      DS    D                                                        04050000
+WK4      DS    D                                                        04060000
+MAXRECNO DS    F                       MAX RECORD NUMBER                04070000
+BLANKS   DS    CL(L'LINES)                                              04080000
+LINES    DS    32CL81                                                   04090000
+         DS    0D                                                       04100001
+BUFFER   DS    XL32760                 32K BUFFER                       04110001
+DYNAML   EQU   *-DYNAM                                                  04120000
+ISPLINK  CSECT                                                          04130000
+         USING *,R15                                                    04140000
+         ST    R1,24(,R13)                                              04150000
+         LOAD  EP=ISPLINK                                               04160000
+         LR    R15,R0                                                   04170000
+         L     R1,24(,R13)                                              04180000
+         BR    R15                                                      04190000
+S3       TLMVMF TYPE=SEG,DEFINE=YES,DSECT=YES                           04200001
+B3       TLMVMF TYPE=BSE,DEFINE=YES,DSECT=YES                           04210001
+         PRINT NOGEN                                                    04220001
+         STRING GENERATE                                                04230001
+         YREGS                                                          04240001
+         END                                                            04250000
+//SYSLIB   DD DSN=SYS1.MACLIB,DISP=SHR                                  04280000
+//         DD DSN=CAI.CAIMAC,DISP=SHR                           TLMVMF  04290002
+//         DD DSN=CBTTAPE.FILE183.PDS,DISP=SHR                  STRING  04300000
+//SYSUT1   DD UNIT=VIO,SPACE=(CYL,2)                                    04310000
+//SYSPRINT DD SYSOUT=*                                                  04320000
+//SYSLIN   DD UNIT=VIO,SPACE=(TRK,1),DISP=(,PASS),BLKSIZE=3200          04330002
+//*                                                                     04340002
+//LKED    EXEC PGM=HEWL,PARM='MAP,REUS'                                 04350000
+//SYSLIN   DD DSN=*.HLASM.SYSLIN,DISP=(OLD,PASS)                        04360002
+//SYSLMOD  DD DSN=CBTTAPE.FILE183.LOAD(TLMS),DISP=SHR                   04370002
+//SYSPRINT DD SYSOUT=*                                                  04380000

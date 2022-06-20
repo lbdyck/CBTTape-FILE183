@@ -1,0 +1,257 @@
+/*************************************************************** REXX */00010000
+/*                                                                    */00020000
+/* MODULE NAME = PASTE                                                */00030000
+/*                                                                    */00040000
+/* DESCRIPTIVE NAME = PASTE EDIT Macro for ISPF/PDF                   */00050000
+/*                                                                    */00060000
+/* STATUS   =  R403                                                   */00070003
+/*                                                                    */00080000
+/* FUNCTION =  Retrieve the data stored in a clip-board by the CUT    */00090000
+/*             macro and insert it into the the current data set.     */00100000
+/*                                                                    */00110000
+/*             PASTE is functionally similar to a COPY command.       */00120000
+/*             It is used in conjunction with the CUT macro.          */00130000
+/*                                                                    */00140000
+/*             PASTE's OUTTRAP function executes a specified TSO      */00150002
+/*             command and pastes its output into the EDIT data set.  */00160002
+/*                                                                    */00170003
+/* AUTHOR   =  Gilbert Saint-Flour <carlos@gsf-soft.com>              */00180003
+/*                                                                    */00190002
+/* SYNTAX   =  PASTE                                                  */00200000
+/*                 clipboard             name of clip-board           */00210000
+/*                 BEFORE|AFTER .label   destination                  */00220000
+/*                                                                    */00230000
+/*             clip-board is the name you specified in the CUT        */00240000
+/*             command that you entered to CUT the data you now       */00250000
+/*             want to PASTE.                                         */00260000
+/*                                                                    */00270000
+/*             Destination indicates where the data should be copied  */00280000
+/*             into the current data set.  Specification is the same  */00290000
+/*             as in a COPY command:                                  */00300000
+/*                                                                    */00310000
+/*             1. as an operand of the PASTE command, such as:        */00320000
+/*                                                                    */00330000
+/*                     PASTE BEFORE .X                                */00340000
+/*                or                                                  */00350000
+/*                     PASTE AFTER .ZL                                */00360000
+/*                                                                    */00370000
+/*             2. with the A or B line commands.                      */00380000
+/*                                                                    */00390000
+/*             BEFORE and AFTER can be abbreviated BEF and AFT,       */00400000
+/*             respectively.  The destination is not required if      */00410000
+/*             the current data set is empty.                         */00420000
+/*                                                                    */00430000
+/*             The data present in the clip-board are not deleted     */00440003
+/*             by the PASTE command and can be PASTE'd again until    */00450003
+/*             the end the TSO session.                               */00460003
+/*                                                                    */00470002
+/* SYNTAX   =  PASTE                                                  */00480002
+/*                 *                     indicates OUTTRAP function   */00490002
+/*                 TSO Command           TSO command to execute       */00500002
+/*                                                                    */00510002
+/*             When the user specifies an asterisk as clip-board name */00520002
+/*             and a TSO command, as in PASTE * LISTA the TSO command */00530003
+/*             is executed, its output trapped with the OUTTRAP       */00540002
+/*             function and pasted at the specified destination.      */00550002
+/*                                                                    */00560000
+/* DEPENDENCIES =  MVS/ESA 4.2.2                                      */00570000
+/*                 TSO/E V2                                           */00580000
+/*                 ISPF and ISPF/PDF V3                               */00590000
+/*                 CUTPGM utility program R400                        */00600000
+/*                                                                    */00610000
+/* CHANGE ACTIVITY                                                    */00620000
+/*                                                                    */00630000
+/*  $401  Remove EXIT stmt before last SETMSG command                 */00640001
+/*  $402  OUTTRAP function                                            */00650002
+/*  $403  Clip-board name may be enclosed in quotes                   */00660003
+/*                                                                    */00670000
+/**********************************************************************/00680000
+ADDRESS ISPEXEC; 'CONTROL ERRORS RETURN'; ZERRMSG=''                    00690000
+                                                                        00700000
+CALL Parse_parm                           /*  Analyse the command    */ 00710000
+CALL Process_dest                         /*  Process Destination    */ 00720002
+                                                                        00730002
+IF LENGTH(Parm) > 2 & LEFT(Parm,2)='* ' THEN                            00740002
+  CALL Paste_OUTTRAP                                                    00750002
+ELSE DO                                                                 00760002
+  /*-----------------------------------------------------------------*/ 00770000
+  /*   Build the parm for the CUTPGM program, as follows:            */ 00780000
+  /*                                                                 */ 00790000
+  /*     parm=Pcccccccc111111                                        */ 00800000
+  /*                                                                 */ 00810000
+  /*         P          function=PASTE                               */ 00820000
+  /*         cccccccc   8-character clipboard name (or blanks)       */ 00830000
+  /*         111111     first line                                   */ 00840000
+  /*-----------------------------------------------------------------*/ 00850000
+                                                                        00860000
+  'ISREDIT (Nummode,Numtype) = NUMBER'   /* Query number mode info    */00870002
+  IF Nummode='ON' THEN DO                                               00880002
+    IF WORDPOS('COBOL',Numtype) >0 THEN                                 00890002
+      'ISREDIT NUMBER = OFF'             /* Turn OFF number mode      */00900002
+    END                                                                 00910002
+                                                                        00920002
+  parm='P'||LEFT(clipboard,8)||RIGHT(Line1,6,'0')                       00930002
+                                                                        00940002
+  'SELECT PGM(CUTPGM) PARM('parm')'; Pgmrc=rc                           00950002
+                                                                        00960002
+  'ISREDIT NUMBER =' Nummode              /* Turn number mode back ON */00970002
+                                                                        00980002
+  IF Pgmrc = 12 THEN SIGNAL Empty_clipboard                             00990002
+END                                                                     01000002
+  /*-----------------------------------------------------------------*/ 01010000
+  /*   Issue completion message and exit                             */ 01020000
+  /*-----------------------------------------------------------------*/ 01030000
+                                                                        01040000
+'ISREDIT (Line1) = LINENUM .ZLAST'       /* NUMBER OF LINES NOW       */01050000
+I=Line1-Line2                            /* NUMBER OF LINES PASTED    */01060000
+zedsmsg=I 'Lines pasted'                                                01070000
+IF clipboard='' THEN                                                    01080000
+  zedlmsg=i 'lines have been copied from the default clipboard '        01090000
+ELSE                                                                    01100000
+  zedlmsg=i 'lines have been copied from clipboard' clipboard           01110000
+'SETMSG MSG(ISRZ000)'                                                   01120000
+EXIT 0                                                                  01130002
+/**********************************************************************/01140000
+/*                                                                    */01150000
+/*            Parse Input Parm, process line commands.                */01160000
+/*                                                                    */01170000
+/**********************************************************************/01180000
+Parse_parm:                                                             01190000
+  'ISREDIT MACRO (PARM) NOPROCESS'                                      01200000
+  IF rc>0 THEN                                                          01210000
+    SIGNAL Not_an_EDIT_macro                  /* Invoked as a TSO cmd */01220000
+                                                                        01230000
+  IF parm='?' THEN                                                      01240000
+    SIGNAL HELP_panel                                                   01250000
+                                                                        01260000
+  UPPER parm; clipboard=''; after=''; Line1=''                          01270000
+  'ISREDIT (Line2) = LINENUM .ZLAST'          /* Number of lines now  */01280000
+                                                                        01290002
+  IF LENGTH(Parm) > 2 & LEFT(Parm,2)='* ' THEN    /* OUTTRAP function */01300002
+    RETURN                                                              01310002
+                                                                        01320000
+  DO i=1 to WORDS(parm)                                                 01330000
+    p=WORD(parm,i)                            /* Extract current word */01340000
+    IF LEFT(p,1)='.' THEN                                               01350000
+      SIGNAL Invalid_label                                              01360000
+    ELSE DO                                                             01370000
+      IF ABBREV('BEFORE',p,3) | ABBREV('AFTER',p,3) THEN DO             01380000
+        IF after\='' THEN SIGNAL Invalid_label                          01390000
+        IF i=WORDS(parm) THEN SIGNAL Missing_Label                      01400000
+        after=LEFT(p,1)                       /* save A or B          */01410000
+        i=i+1                                                           01420000
+        p=WORD(parm,i)                        /* get next word (label)*/01430000
+        IF LEFT(p,1)='.' THEN DO                                        01440000
+          'ISREDIT (Line1) = LINENUM' p                                 01450000
+          IF rc>0 then SIGNAL Invalid_label                             01460000
+          IF after='B' THEN                                             01470000
+            Line1=Line1-1                     /* Before .X            */01480000
+          END                                                           01490000
+        ELSE                                                            01500000
+          SIGNAL Invalid_label                /* AFTER xyz            */01510000
+        END                                                             01520000
+      ELSE DO                                                           01530000
+        IF clipboard\='' THEN                                           01540000
+          SIGNAL Invalid_label                /* Duplicate clip-board */01550000
+        /*    Check the clip-board name for correct syntax.           */01560000
+        IF LEFT(p,1)="'" | LEFT(p,1)='"' THEN /* Quoted string        */01570003
+          p=STRIP(p,'B',LEFT(p,1))                                      01580003
+        IF LENGTH(p)>8 THEN                   /* name is too long     */01590000
+          SIGNAL Bad_clip_board                                         01600000
+        IF VERIFY(p,'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#$ ') > 0 THEN01610000
+          SIGNAL Bad_clip_board               /* invalid character    */01620000
+        clipboard=p                                                     01630000
+        END                                                             01640000
+    END                                                                 01650000
+  END                                                                   01660000
+  RETURN                                                                01670002
+/**********************************************************************/01680002
+/*                                                                    */01690002
+/*      Check if the user selected a destination by entering a line   */01700002
+/*      command such as A or B.  If it is the case, set line1 to the  */01710002
+/*      line number after which the data should be inserted.  If the  */01720002
+/*      user selected a destination both in the PASTE command (as in  */01730002
+/*      PASTE AFT .X) and in a line command, issue an error message.  */01740002
+/*                                                                    */01750002
+/**********************************************************************/01760002
+Process_dest:                                                           01770002
+  'ISREDIT PROCESS DEST'                 /* set .ZDEST to destination */01780000
+  SELECT                                                                01790000
+    WHEN RC=0 THEN DO                    /* A or B entered */           01800000
+      IF Line1\='' THEN SIGNAL Command_conflict                         01810000
+      'ISREDIT (Line1) = LINENUM .ZDEST'                                01820000
+    END                                                                 01830000
+    WHEN RC=8 THEN DO                    /* Neither A nor B entered */  01840000
+      IF Line1='' THEN DO                                               01850000
+        zerrsm = 'Enter A or B line cmd'                                01860000
+        zerrlm = 'PASTE requires an A or B line command'                01870000
+        SIGNAL Beep_msg                                                 01880000
+      END                                                               01890000
+    END                                                                 01900000
+    WHEN RC=20 THEN                      /* Empty data set           */ 01910000
+      Line1=0                                                           01920000
+    OTHERWISE                            /* Line command conflict    */ 01930000
+      SIGNAL SETMSG                      /* Edit has created message */ 01940000
+  END                                                                   01950000
+  RETURN                                                                01960000
+/**********************************************************************/01970002
+/*                                                                    */01980002
+/*      OUTTRAP Function (Sub-routine)                                */01990002
+/*                                                                    */02000002
+/*      This function is executed when the user specifies an asterisk */02010002
+/*      as clip-board name and a TSO command, as in PASTE * LISTA.    */02020002
+/*      The TSO command is executed, its output trapped with the      */02030002
+/*      OUTTRAP function and pasted at the specified destination.     */02040002
+/*                                                                    */02050002
+/**********************************************************************/02060002
+Paste_OUTTRAP:                                                          02070002
+  cmd=RIGHT(Parm,LENGTH(Parm)-2)               /* delete leading "*"  */02080002
+  Pgmrc = OUTTRAP('MSG.')                      /* TRAP PUTLINE        */02090002
+  ADDRESS TSO cmd                                                       02100002
+  DO I=MSG.0 TO 1 BY -1                                                 02110002
+    Line=Msg.I                                                          02120002
+    "ISREDIT LINE_AFTER" Line1 "= DATALINE (LINE)"                      02130002
+  END                                                                   02140002
+  RETURN                                                                02150002
+/**********************************************************************/02160000
+/*            Exception Routines                                      */02170000
+/**********************************************************************/02180000
+Not_an_EDIT_macro:                                                      02190000
+  Zedsmsg = "EDIT Macro Only"                  /* Short message    */   02200000
+  Zedlmsg = "PASTE may only be invoked as an EDIT macro"                02210000
+  "SETMSG MSG(ISRZ001)"                        /* send the message */   02220000
+  EXIT 8                                                                02230000
+HELP_panel:                                                             02240000
+  'DISPLAY PANEL(CUTHLP2)'               /* Display HELP panel        */02250000
+  IF rc>8 THEN                                                          02260000
+    SIGNAL SETMSG                        /* HELP panel is missing     */02270000
+  EXIT 0                                                                02280000
+Missing_Label:                                                          02290000
+  zerrsm='Missing Label'                                                02300000
+  p='You must specify a label after the "BEFORE" or "AFTER" keyword.'   02310000
+  zerrlm=p                                                              02320000
+  SIGNAL Beep_msg                                                       02330000
+Invalid_label:                                                          02340000
+  zerrsm='Probable label error'                                         02350000
+  zerrlm=p 'recognized as invalid or undefined label.'                  02360000
+  SIGNAL Beep_msg                                                       02370000
+Command_conflict:                                                       02380000
+  zerrsm='Command Conflict'                                             02390000
+  zerrlm='A or B conflicts with range specification; blank it out.'     02400000
+  SIGNAL Beep_msg                                                       02410000
+Bad_clip_board:                                                         02420000
+  zerrsm='Invalid clip-board'                                           02430000
+  zerrlm='The clip-board name must be a valid member name'              02440000
+  SIGNAL Beep_msg                                                       02450000
+Empty_clipboard:                                                        02460000
+  zerrsm='Empty clip-board'                                             02470000
+  zerrlm='Nothing was cut to this clip-board during this TSO session.'  02480000
+  SIGNAL Beep_msg                                                       02490000
+Beep_msg:                                                               02500000
+  zerralrm='YES'                  /*   ALARM=YES                      */02510000
+  zerrhm='CUTHLP2'                /*   HELP Panel                     */02520000
+  'SETMSG MSG(ISRZ002)'           /*   Issue error message            */02530000
+  EXIT 20                                                               02540000
+SETMSG:                                                                 02550000
+  'SETMSG MSG('zerrmsg')'                                               02560000
+  EXIT 20                                                               02570000

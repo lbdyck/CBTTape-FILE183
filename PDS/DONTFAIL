@@ -1,0 +1,539 @@
+//GILBERTF JOB (ACCT#),DONTFAIL,                                        00010000
+// NOTIFY=&SYSUID,                                                      00020000
+// CLASS=A,MSGCLASS=H,COND=(0,NE)                                       00030000
+//ASMH EXEC PGM=ASMA90,PARM=(OBJECT,NODECK,NOESD,NORLD,NOXREF)          00040006
+*********************************************************************** 00050000
+*                                                                     * 00060000
+* MODULE NAME = DONTFAIL                                              * 00070000
+*                                                                     * 00080000
+* DESCRIPTIVE NAME = DUMMY OUT NEXT STEP'S UNCATALOGED DATA SETS      * 00090000
+*                                                                     * 00100000
+* FUNCTION = This program has been designed to prevent jobs that      * 00110000
+*            accept multiple inputs from failing in the middle        * 00120000
+*            of the night because of a "typo" in a data set name.     * 00130000
+*            When DONTFAIL detects that an input data set is not      * 00140000
+*            cataloged, it converts it to a null data set and         * 00150000
+*            allows the job to run with partial input.                * 00160000
+*                                                                     * 00170000
+* STATUS = R106                                                       * 00180006
+*                                                                     * 00190000
+* AUTHOR = Gilbert Saint-Flour <carlos@gsf-soft.com>                  * 00200006
+*                                                                     * 00210000
+* NOTES = SEE BELOW                                                   * 00220000
+*                                                                     * 00230000
+*    DEPENDENCIES = MVS/ESA                                           * 00240000
+*                   STRING macro R507                                 * 00250006
+*                                                                     * 00260000
+*    AUTHORIZATION = APF                                              * 00270000
+*                                                                     * 00280000
+*    RESTRICTIONS = NONE                                              * 00290000
+*                                                                     * 00300000
+* MODULE TYPE = PROCEDURE, (Batch Program)                            * 00310001
+*                                                                     * 00320000
+*    PROCESSOR = IBM OS/ASSEMBLER H VERSION 2 OR                      * 00330000
+*                IBM HIGH LEVEL ASSEMBLER/MVS                         * 00340000
+*                                                                     * 00350000
+*    MODULE SIZE = 4K                                                 * 00360000
+*                                                                     * 00370000
+*    ATTRIBUTES = REENTERABLE, RMODE ANY, AMODE 31,                   * 00380000
+*                 SUPERVISOR STATE, KEY 1                             * 00390000
+*                                                                     * 00400000
+* OPERATION = see below                                               * 00410000
+*                                                                     * 00420000
+*            DONTFAIL must be executed immediately before the job     * 00430000
+*            step to "protect", as shown in the following example:    * 00440000
+*                                                                     * 00450000
+*              //DONTFAIL EXEC PGM=DONTFAIL                           * 00460000
+*              //*                                                    * 00470000
+*              //SORT53    EXEC PGM=SORT                              * 00480000
+*              //SORTIN     DD DSN=USER.INPUT1,DISP=SHR               * 00490000
+*              //           DD DSN=USER.INPUT2,DISP=SHR               * 00500000
+*                                                                     * 00510000
+*            If any input data set in step SORT52 in not cataloged,   * 00520000
+*            DONTFAIL will make it a null data set, preventing the    * 00530000
+*            job from failing with a DATA SET NOT FOUND error.        * 00540000
+*                                                                     * 00550000
+*            To detect uncataloged data sets and correct them,        * 00560000
+*            DONTFAIL proceeds as follows:                            * 00570000
+*                                                                     * 00580000
+*            1. scan the SWA control blocks that represent            * 00590000
+*               the following step's DD statements for input          * 00600000
+*               data sets (i.e. DISP=OLD or DISP=SHR)                 * 00610000
+*            2. check the catalog status of each input data set       * 00620000
+*            3. modify SWA control blocks to convert each             * 00630000
+*               non-cataloged data set to a null data set             * 00640000
+*            4. set DCB attributes (optional, see below)              * 00650000
+*                                                                     * 00660000
+*            NOTES:                                                   * 00670000
+*                                                                     * 00680000
+*              a. DONTFAIL must be executed once for every            * 00690000
+*                 job step that needs to be protected.                * 00700000
+*                                                                     * 00710000
+*              B. Prior to using DONTFAIL, you must allocate and      * 00720000
+*                 catalog an empty disk data set and specify its      * 00730000
+*                 name in the SETC instruction below.  You can use    * 00740000
+*                 an already-defined pattern DSCB if it has been      * 00750000
+*                 created with RECFM=,LRECL=0,BLKSIZE=0.              * 00760000
+*                                                                     * 00770000
+*              C. The last DD in a concatenation (or the only DD      * 00780000
+*                 of a non-concatenated data set) is changed to       * 00790000
+*                 DD DUMMY; for other DD statements, the DSN          * 00800000
+*                 is changed to &DONTFAIL                             * 00810000
+*                                                                     * 00820000
+&DONTFAIL SETC 'SYS2.DONTFAIL'    <=== DSN of the empty data set        00830004
+*                                                                     * 00850000
+*            DCB ATTRIBUTES                                           * 00860000
+*                                                                     * 00870000
+*              When changing the DSN of a data set in a concate-      * 00880000
+*              nation, DONTFAIL also carries DCB attributes (RECFM,   * 00890000
+*              LRECL, BLKSIZE) from DDs previously concatenated to    * 00900000
+*              the same DDname. This prevents utility programs such   * 00910000
+*              as SORT or IDCAMS REPRO from failing when the empty    * 00920000
+*              data set has incompatible DCB attributes or no DCB     * 00930000
+*              attributes at all.                                     * 00940000
+*                                                                     * 00950000
+*              Example:                                               * 00960000
+*                                                                     * 00970000
+*                //COPY53  EXEC PGM=IDCAMS                            * 00980000
+*                //DD1      DD DSN=USER.INPUT1,DISP=SHR,              * 00990000
+*                //            RECFM=FB,LRECL=124                     * 01000000
+*                //         DD DSN=USER.INPUT2,DISP=SHR               * 01010000
+*                //         DD DSN=USER.INPUT3,DISP=SHR               * 01020000
+*                //DD2      DD DSN=USER.INPUT4,DISP=SHR,              * 01030000
+*                //            RECFM=FB,LRECL=124                     * 01040000
+*                                                                     * 01050000
+*                In this example, if USER.INPUT2 is not cataloged,    * 01060000
+*                it is changed to DSN=&DONTFAIL, and                  * 01070000
+*                RECFM=FB,LRECL=124,BLKSIZE=124 are added also.       * 01080000
+*                If BLKSIZE is not specified, it is set equal to      * 01090000
+*                LRECL+4 if RECFM=VB was specified, otherwise,        * 01100000
+*                BLKSIZE is set equal to LRECL.  In this example      * 01110000
+*                also, if USER.INPUT3 or USER.INPUT4 are not          * 01120000
+*                cataloged, they are changed to DD DUMMY.             * 01130000
+*                                                                     * 01140000
+* CHANGE ACTIVITY                                                     * 01150000
+*                                                                     * 01160000
+* 100 Program rewritten for MVS/ESA                                   * 01170000
+* 101 Ignore data sets with VOL=REF to a DISP=NEW DD                  * 01180001
+* 102 Force SDATA=(LSQA,SWA) in case of an abend                      * 01190002
+* 103 Change to DSN=&DONTFAIL instead of DD DUMMY                     * 01200003
+*     if JCL specifies FREE=CLOSE                                     * 01210003
+* 104 Ignore temporary data sets                                      * 01220004
+* 105 Invoke PGM=RECALL if it's been linked with DONTFAIL             * 01230005
+* 106 Change STRING GENERATE to STRING 507 format                     * 01240006
+*                                                                     * 01250000
+&REL     SETA  106                                                    * 01260006
+*********************************************************************** 01270000
+DONTFAIL CSECT                                                          01280000
+DONTFAIL RMODE ANY                                                      01290000
+         DC    C'GSF UTILITIES - DONTFAIL R&REL '                       01300005
+BEGIN    BAKR  R14,0                   SAVE REGISTERS                   01310001
+         LR    R12,R15                                                  01320006
+         USING BEGIN,R12                                                01330006
+         MODESET MODE=SUP              SWITCH TO SUPERVISOR MODE        01340000
+         ESTAE DUMPOPT,CT                                               01350002
+         STORAGE OBTAIN,LENGTH=DYNAML,SP=230,KEY=1                      01390000
+         ST    R1,8(,R13)              chain save areas                 01400004
+         MODESET EXTKEY=JES            SWITCH TO KEY=1                  01410004
+         ST    R13,4(,R1)              chain save areas                 01420004
+         LR    R13,R1                  ADDRESS OF DYNAMIC STORAGE AREA  01430000
+         USING DYNAM,R13                                                01440000
+         LA    R0,DYNAM+72             CLEAR WORKING STORAGE TO X'00'   01450000
+         LA    R1,DYNAML-72            CLEAR WORKING STORAGE TO X'00'   01460000
+         SLR   R15,R15                 CLEAR WORKING STORAGE TO X'00'   01470000
+         MVCL  R0,R14                  CLEAR WORKING STORAGE TO X'00'   01480000
+*********************************************************************** 01490000
+*                                                                     * 01500000
+*        LOCATE TCB, JSCB, GDGNT.                                     * 01510000
+*        LOCATE SCT AND 1ST SIOT FOR NEXT STEP.                       * 01520000
+*                                                                     * 01530000
+*********************************************************************** 01540000
+         L     R1,540(,0)              PSATOLD                          01550006
+         L     R3,TCBJSCB-TCB(,R1)     GET THE ADDRESS OF MY JSCB       01560000
+         USING IEZJSCB,R3                                               01570000
+         L     R4,JSCBJCT              Address of JCT prefix            01580002
+         USING INJMJCT-16,R4                                            01590002
+*                                                                       01600000
+         ICM   R1,B'0111',JCTGDGNT     3-BYTE SVA OF GDG NAME TABLE     01610000
+         BZ    MY_SCT                  JUMP IF THERE IS NO GDGN TABLE   01620000
+         BAL   R14,SWAREQ              CONVERT SVA TO 31-BIT ADDRESS    01630004
+         ST    R1,GDGNTPTR             KEEP ADDRESS OF GDG NAMES TABLE  01640000
+*                                                                       01650000
+MY_SCT   SLR   R5,R5                                                    01660000
+         ICM   R5,B'0111',JSCSCTP      3-BYTE SVA OF CURRENT STEP'S SCT 01670000
+         USING INSMSCT-16,R5                                            01680002
+*                                                                       01690000
+NEXT_SCT ICM   R5,B'0111',SCTANSCT     LOAD 3-BYTE SVA OF NEXT SCT      01700000
+         BZ    RETURN                  RETURN IF THERE IS NO NEXT STEP  01710000
+         ICM   R1,B'0111',SCTFSIOT     LOAD 3-BYTE SVA OF 1ST SIOT      01720000
+         BZ    RETURN                  NO DD CARDS, RETURN              01730000
+*********************************************************************** 01740000
+*                                                                     * 01750000
+*        LOOP THRU THE SIOT BLOCKS                                    * 01760000
+*                                                                     * 01770000
+*********************************************************************** 01780000
+*LOOP                                                                   01790000
+LOOPSIOT BAL   R14,SWAREQ              CONVERT SVA TO 31-BIT ADDRESS    01800004
+         LR    R6,R1                   ADDRESS OF SIOT                  01810000
+         USING SIOT,R6                                                  01820000
+         IC    R1,SEQNO                INCREMENT CURRENT SEQNO          01830000
+         LA    R1,1(,R1)               INCREMENT CURRENT SEQNO          01840000
+         STC   R1,SEQNO                INCREMENT CURRENT SEQNO          01850000
+         TM    SCTSBYT1,SIOTCCAT       CHECK FOR CONCATENATION          01860000
+         BO    TESTDISP                JUMP IF NO DDNAME                01870000
+         MVC   DDNAME,SCTDDNAM         KEEP DDNAME                      01880000
+         MVI   SEQNO,0                 RESET DDSEQ                      01890000
+         SLR   R0,R0                                                    01900000
+         STCM  R0,B'0001',RECFM        zero DCB attributes              01910000
+         STCM  R0,B'0011',LRECL        zero DCB attributes              01920000
+         STCM  R0,B'0011',BLKSIZE      zero DCB attributes              01930000
+*                                                                       01940000
+TESTDISP TM    SCTSBYT3,SCTSOLD        Check for DISP=OLD (or SHR)      01950000
+         BNO   NEXTSIOT                JUMP IF NOT DISP=OLD             01960000
+         CLI   SCTUTYPE,C' '           CHECK UNIT NAME                  01970000
+         BH    NEXTSIOT                JUMP IF THERE IS A UNIT NAME     01980000
+*                                                                       01990001
+*        Ignore DD with VOL=REF to a DISP=NEW data set                  02000001
+*                                                                       02010001
+         ICM   R1,B'0111',SIOTVRSB     LOAD 3-BYTE SVA OF VOL=REF SIOT  02020001
+         BZ    LOCJFCB                 NO VOL=REF, JUMP                 02030001
+         BAL   R14,SWAREQ              CONVERT SVA TO 31-BIT ADDRESS    02040004
+         TM    SCTSBYT3-SIOT(R1),SCTSNEW   VOL=REF DD has DISP=NEW?     02050001
+         BO    NEXTSIOT                yes, ignore current DD           02060001
+*                                                                       02070001
+LOCJFCB  ICM   R1,B'0111',SCTPJFCB     LOAD 3-BYTE SVA OF JFCB          02080001
+         BAL   R14,SWAREQ              CONVERT SVA TO 31-BIT ADDRESS    02090004
+         LR    R7,R1                   ADDRESS OF JFCB                  02100000
+         USING JFCB,R7                                                  02110000
+         TM    JFCBIND2,JFCTEMP        temporary data set?              02120004
+         BO    NEXTSIOT                yes, ignore current DD           02130004
+         CLI   JFCBELNM,C'+'           DSNAME(+1)  ?                    02140004
+         BE    NEXTSIOT                YES, IGNORE                      02150004
+         MVC   DSNAME,JFCBDSNM         MOVE DSN TO UNPROTECTED STORAGE  02160000
+*                                                                       02170000
+SAVEDCB  ICM   R0,B'0001',JFCRECFM     RECFM present on this DD?        02180000
+         BZ    SAVEDCB2                no, jump                         02190000
+         STCM  R0,B'0001',RECFM        save non-zero DCB attributes     02200000
+SAVEDCB2 ICM   R0,B'0011',JFCLRECL     LRECL present on this DD?        02210000
+         BZ    SAVEDCB8                no, jump                         02220000
+         STCM  R0,B'0011',LRECL        save non-zero DCB attributes     02230000
+         ICM   R0,B'0001',JFCRECFM     RECFM present on this DD?        02240000
+         BNZ   SAVEDCB8                yes, jump                        02250000
+         MVI   RECFM,JFCFIX+JFCRFB     if LRECL is present but RECFM   +02260000
+                                       is not, assume RECFM=FB          02270000
+SAVEDCB8 ICM   R0,B'0011',JFCBLKSI     LRECL present on this DD?        02280000
+         BZ    *+8                     no, jump                         02290000
+         STCM  R0,B'0011',BLKSIZE      save non-zero DCB attributes     02300000
+*--------------------------------------------------------------------*  02310000
+*                                                                    *  02320000
+*        IF THE CURRENT DATA SET IS A GDG, SCAN THE GDG NAMES TABLE  *  02330000
+*        FOR THE CURRENT APPARENT GEN (0), IF ANY.                   *  02340000
+*                                                                    *  02350000
+*--------------------------------------------------------------------*  02360000
+GDG000   TM    JFCBIND1,JFCGDG         CHECK GDG INDICATOR              02370000
+         BNO   GDG099                  JUMP IF NOT GDG                  02380000
+         ICM   R1,B'1111',GDGNTPTR     LOAD ADDR OF GDG NAMES TABLE     02390000
+         BZ    GDG080                  JUMP IF NO GDGNT                 02400000
+         USING GDGNTABL,R1                                              02410000
+*--loop                                                                 02420000
+GDG010   SLR   R14,R14                 PREPARE IC                       02430000
+         IC    R14,GDGNNO              GET NUMBER OF ENTRIES            02440000
+*----loop                                                               02450000
+GDG015   CLC   GDGNGDG,DSNAME          COMPARE TABLE ENTRY W/ DSNAME    02460000
+         BE    GDG040                  JUMP IF NOT THE SAME             02470000
+         LA    R1,GDGNGDG2             BUMP UP TO NEXT ENTRY IN BLOCK   02480000
+         BCT   R14,GDG015              LOOP UNTIL END OF BLOCK          02490000
+*----endloop                                                            02500000
+         ICM   R1,B'1111',GDGNNEXT     LOAD ADDR OF NEXT GDGNT BLOCK    02510000
+         BNZ   GDG010                  PROCESS NEXT BLOCK               02520000
+*--endloop                                                              02530000
+         NI    CTGOPTN3,255-CTGGDGL    CTGWAGB IS NOT SET               02540000
+         B     GDG080                  EXIT GDGNT SCAN LOOP             02550000
+*                                                                       02560000
+GDG040   LA    R0,GDGNGDGZ             GET PTR TO APPARENT GEN(0)       02570000
+         ST    R0,CTGWAGB              SET POINTER IN SVC 26 WORK AREA  02580000
+         OI    CTGOPTN3,CTGGDGL        SHOW CTGWAGB IS SET              02590000
+         DROP  R1                      GDGNTABL                         02600000
+*                                                                       02610000
+*        append relative gen number to end of data set name             02620000
+*                                                                       02630000
+GDG080   STRING (JFCBDSNM,,T),'(',(JFCBELNM,,T),')',INTO=DSNAME         02640004
+GDG099   EQU   *                                                        02650004
+*--------------------------------------------------------------------*  02660000
+*                                                                    *  02670000
+*        GET DEVICE TYPE INFORMATION FROM THE CATALOG.               *  02680000
+*                                                                    *  02690000
+*--------------------------------------------------------------------*  02700000
+LOCATE   LA    R0,DSNAME               DATA SET NAME                    02710000
+         ST    R0,CTGENT               ENTRY ADDRESS                    02720000
+         OI    CTGOPTN1,CTGNAME        CTGENT POINTS TO ENTRY NAME      02730000
+         LA    R0,CTGWA                WORK AREA FOR SUPERLOCATE        02740000
+         ST    R0,CTGWKA               WORK AREA FOR SUPERLOCATE        02750000
+         OI    CTGOPTN3,CTGSUPLT       SUPER LOCATE                     02760000
+         OI    CTGOPTN3,CTGAM0         OS/VS2 CATALOG MGMT REQUEST      02770000
+         LA    R0,CTGVL                GET ADDR OF VOLUME LIST          02780000
+         ST    R0,CTGWAVL              UPDATE PTR                       02790000
+         LA    R0,CTGVLLEN             GET LENGTH OF VOLUME LIST        02800000
+         STH   R0,CTGWALV              UPDATE LENGTH                    02810000
+         LOCATE CTGPL                  ISSUE SUPERLOCATE                02820000
+         LTR   R15,R15                 DATA SET cataloged?              02830000
+         BZ    NEXTSIOT                yes, ignore it                   02840000
+*---------------------------------------------------------------------* 02850000
+*                                                                     * 02860000
+*        If this data set is not cataloged, modify the SIOT & JFCB    * 02870000
+*                                                                     * 02880000
+*          1.  if the DD has other DDs concatenated behind it,        * 02890000
+*              or the DD has FREE=CLOSE,                              * 02900005
+*                set DSNAME to "&DONTFAIL"                            * 02910000
+*              else                                                   * 02920000
+*                set DD DUMMY flag in SIOT                            * 02930000
+*          2.  carry DCB attributes from previous DD in               * 02940000
+*              concatenation                                          * 02950000
+*          3.  Issue message to operator                              * 02960000
+*                                                                     * 02970000
+*---------------------------------------------------------------------* 02980000
+MSG00    MVC   WTO1L(WTO1LL),WTO1M     move model to dynamic            02990000
+         STRING '&DONTFAIL',INTO=DSNAME                                 03000000
+*                                                                       03010000
+         ICM   R1,B'0111',SCTPSIOT     SVA OF NEXT SIOT                 03020000
+         BZ    MSG12                   last DD, jump                    03030000
+         BAL   R14,SWAREQ              CONVERT SVA TO 31-BIT ADDRESS    03040004
+         TM    SCTSBYT1-INDMSIOT(R1),SIOTCCAT   concatenated DD?        03050000
+         BO    MSG20                   yes, jump                        03060000
+         TM    SCTSBYT2,SIOCLUNL       FREE=CLOSE?                      03070003
+         BO    MSG20                   yes, jump                        03080003
+*                                                                       03090000
+MSG12    STRING 'DD DUMMY',INTO=DSNAME                                  03100000
+         OI    SCTSBYT1,SCTDUMMY       DD DUMMY                         03110000
+*                                                                       03120000
+MSG20    STRING 'DONTFAIL - ',                                         +03130000
+               (JFCBDSNM,,T),' changed to ',(DSNAME,,T),               +03140000
+               '  (DDN=',DDNAME,       do not close parenthesis        +03150001
+               INTO=WTO1TEXT                                            03160000
+         CLI   SEQNO,0                 first DD in concat?              03170000
+         BE    MSG80                   yes, jump                        03180000
+         STRING (WTO1TEXT,,T),'+',(SEQNO,FL1,L),                       +03190000
+               INTO=WTO1TEXT                                            03200000
+*                                                                       03210000
+MSG80    CLC   =C'DD ',DSNAME          changed to DD DUMMY ?            03220000
+         BE    MSG81                   yes, do not change JFCB          03230000
+         MVC   JFCBDSNM,DSNAME         move new dsname                  03240000
+*                                                                       03250000
+*        Carry DCB attributes from previous DD                          03260000
+*                                                                       03270000
+MSG81    ICM   R0,B'0001',JFCRECFM     RECFM specified in JCL?          03280000
+         BNZ   MSG88L                  yes, jump                        03290000
+         MVC   JFCRECFM,RECFM          no, carry from previous DD       03300000
+MSG88L   ICM   R0,B'0011',JFCLRECL     LRECL specified in JCL?          03310000
+         BNZ   MSG88B                  yes, jump                        03320000
+         MVC   JFCLRECL,LRECL          no, carry from previous DD       03330000
+MSG88B   ICM   R1,B'0011',JFCBLKSI     BLKSIZE specified in JCL?        03340000
+         BNZ   MSG90                   yes, exit                        03350000
+         ICM   R1,B'0011',BLKSIZE      BLKSIZE on previous DD?          03360000
+         BNZ   MSG88B4                 yes, use it                      03370000
+         ICM   R1,B'0011',LRECL        LRECL on previous DD?            03380000
+         BZ    MSG90                   no, exit                         03390000
+         TM    JFCRECFM,JFCVAR         RECFM=V ?                        03400000
+         BZ    MSG88B4                 no, set BLKSIZE=LRECL            03410000
+         LA    R1,4(,R1)               yes, set BLKSIZE=LRECL+4         03420000
+MSG88B4  STCM  R1,B'0011',JFCBLKSI     update BLKSIZE                   03430000
+*                                                                       03440000
+*        Issue message to operator                                      03450000
+*                                                                       03460000
+MSG90    STRING (WTO1TEXT,,T),',DCB=',(JFCRECFM,,X),'/',               X03470000
+               (JFCLRECL,H,L),'/',(JFCBLKSI,H,L),')',INTO=WTO1TEXT      03480000
+         WTO   MF=(E,WTO1L)            NOTIFY PROGRAMMER                03490000
+*                                                                       03500000
+NEXTSIOT ICM   R1,B'0111',SCTPSIOT     SVA OF NEXT SIOT                 03590000
+         BNZ   LOOPSIOT                PROCESS NEXT DD CARD IN STEP     03600000
+*ENDLOOP                                                                03610000
+         DROP  R5,R6,R7                SCT, SIOT, JFCB                  03620000
+*********************************************************************** 03630000
+*                                                                     * 03640000
+*        CLEAN-UP, RETURN TO CALLER.                                  * 03650000
+*                                                                     * 03660000
+*********************************************************************** 03670000
+RETURN   LR    R1,R13                  addr of work area                03680005
+         L     R13,4(,R13)             caller's save area               03690005
+         STORAGE RELEASE,LENGTH=DYNAML,ADDR=(R1),SP=230,KEY=1           03700005
+*                                                                       03710005
+*        invoke PGM=RECALL                                              03720005
+*                                                                       03730005
+         WXTRN RECALL                  optional                         03740005
+         MODESET KEY=NZERO                                              03750005
+         ICM   R15,B'1111',=A(RECALL)  get addr of RECALL pgm           03760005
+         BZ    RETURN99                not available, jump              03770005
+         EREG  R0,R1                   restore parm address             03780005
+         BALR  R14,R15              <- invoke PGM=RECALL                03790005
+*                                                                       03800005
+         SLR   R15,R15                 RC=00                            03810000
+RETURN99 EQU   *                                                        03820005
+         PR                            GOBACK                           03830000
+*********************************************************************** 03840000
+*        SUB-ROUTINE TO ACCESS THE SWA MANAGER                        * 03850000
+*********************************************************************** 03860000
+SWAREQ   BAKR  R14,0                   save registers                   03870004
+         LA    R2,CTGVL                WORK AREA                        03880000
+         ST    R2,EPAPTR               STORE POINTER                    03890000
+         USING ZB505,R2                                                 03900000
+         XC    SWAEPAX,SWAEPAX         CLEAR 32 BYTES                   03910000
+         STCM  R1,B'0111',SWVA         STORE 3-BYTE SVA                 03920000
+         SWAREQ FCODE=RL,EPA=EPAPTR,MF=(E,SWAREQL1)                     03930004
+         L     R1,SWBLKPTR             LOAD SWA CONTROL BLOCK ADDRESS   03940000
+         PR                            GOBACK                           03950004
+         DROP  R2                      WAS ZB505                        03960000
+*                                                                       03970000
+&WTO1    SETC  (120)' '                                                 03980000
+WTO1M    WTO   '&WTO1',MF=L,ROUTCDE=11                                  03990000
+*---------------------------------------------------------------------  04000002
+*        ESTAE routine: changed dump options                            04010002
+*---------------------------------------------------------------------  04020002
+         USING SDWA,R1                                                  04030002
+DUMPOPT  OI    SDWASDA0,SDWALSQA+SDWASWA dump LSQA and SWA              04040002
+         OI    SDWADPFS,SDWADLST       DUMP OPTIONS VALID               04050002
+         BR    R14                                                      04060002
+*---------------------------------------------------------------------  04070000
+*        DYNAMIC STORAGE AREA, BASED BY R13.                            04080000
+*---------------------------------------------------------------------  04090000
+DYNAM    DSECT                                                          04100000
+         DS    18F                     STANDARD SAVE AREA               04110000
+SWAREQL1 SWAREQ MF=L                   PARM LIST FOR SWAREQ             04120000
+EPAPTR   DS    F                       POINTER TO EPA (ZB505)           04130000
+GDGNTPTR DS    A(GDGNTABL)             POINTER TO GDG NAMES TABLE       04140000
+TAPE1    DS    XL2                     INTERNAL DD# FOR 1ST TAPE DD     04150000
+DDNAME   DS    CL8                     DDNAME                           04160000
+RECFM    DS    X                       RECFM                            04170000
+LRECL    DS    H                       LRECL                            04180000
+BLKSIZE  DS    H                       BLKSIZE                          04190000
+SEQNO    DS    FL1                     SEQNO (concatenation)            04200000
+DSNAME   DS    CL44                    MODIFIABLE DSNAME                04210000
+WTO1L    WTO   '&WTO1',MF=L,ROUTCDE=11                                  04220000
+WTO1LL   EQU   *-WTO1L                                                  04230000
+WTO1TEXT EQU   WTO1L+4,120                                              04240000
+*---------------------------------------------------------------------* 04250000
+*        CATALOG PARAMETER LIST                                         04260000
+*---------------------------------------------------------------------* 04270000
+CTGPL    DS    0D                                                       04280000
+CTGOPTN1 DS    B              FIRST OPTION BYTE:                        04290000
+CTGNAME  EQU   X'04' .... .1..  CTGENT CONTAINS DSNAME OR SERIAL ADDR   04300000
+CTGOPTN2 DS    B              SECOND OPTION BYTE                        04310000
+CTGOPTN3 DS    B     XXX. ....  SPECIFIES THE CALLER-REQUESTED FUNCTION 04320000
+CTGSUPLT EQU   X'10' ...1 ....  SUPERLOCATE FUNCTION                    04330000
+CTGGDGL  EQU   X'08' .... 1...  GDG LOCATE - CALLER SUPPLIED BASE LEVEL 04340000
+CTGAM0   EQU   X'01' .... ...1  OS/VS2 CATALOG MANAGMENT REQUEST        04350000
+CTGOPTN4 DS    B              FOURTH OPTION BYTE                        04360000
+CTGLBASE EQU   X'80' 1... ....  LOCATE BASE LEVEL (SUPERLOCATE GDG)     04370000
+CTGENT   DS    A              ADDRESS OF CATALOG RECORD IDENTIFIER      04380000
+CTGCAT   DS    A              ADDRESS OF CATALOG DSNAME OR ACB          04390000
+CTGWKA   DS    A              ADDRESS OF CALLER'S WORK AREA             04400000
+CTGOPTNS DS    B              CATALOG MANAGMENT SERVICES REQUEST OPTION 04410000
+         DS    B              RESERVED                                  04420000
+CTGTYPE  DS    C              TYPE OF CATALOG RECORD                    04430000
+CTGNOFLD DS    FL1            NUMBER OF ENTRIES IN CTGFIELD             04440000
+CTGFDBK  DS    XL2            FEEDBACK AREA (IF NOT SUPERLOCATE)        04450000
+CTGFBFLG DS    B              FLAGS (SUPERLOCATE)                       04460000
+CTGPAR   EQU   X'80' 1... ....  PARALLEL MOUNT                          04470000
+CTGKEEP  EQU   X'40' .1.. ....  FORCED KEEP                             04480000
+CTGGDGB  EQU   X'20' ..1. ....  GDG BASE LOCATED                        04490000
+CTGNGDSN EQU   X'10' ...1 ....  GDG DSNAME GENERATED (DSNAME.GXXXXVYY)  04500000
+         DS    B              RESERVED (SUPERLOCATE)                    04510000
+CTGPSWD  DS    A              ADDRESS OF CALLER-SUPPLIED PASSWORD       04520000
+*---------------------------------------------------------------------* 04530000
+*        CATALOG WORK AREA                                              04540000
+*---------------------------------------------------------------------* 04550000
+CTGWA    DS    0D                                                       04560000
+CTGWAVL  DS    A                       PTR TO CTGVL (VOLUME LIST)       04570000
+CTGWALV  DS    H                       LENGTH OF THE VOLUME LIST        04580000
+CTGWAVCT DS    H                       # OF VOLSERS RETURNED IN VL      04590000
+CTGWAUCT DS    H                       MINIMUM # OF VOLS TO BE MOUNTED  04600000
+CTGWAGCT DS    H                       # OF GENERATIONS CATALOGED       04610000
+CTGWAGB  DS    A                       PTR TO APPARENT GEN(0)           04620000
+*---------------------------------------------------------------------* 04630000
+*        CATALOG VOLUME LIST                                            04640000
+*---------------------------------------------------------------------* 04650000
+CTGVL    DS    0D                                                       04660000
+CTGVLVOL DS    CL6                     VOLUME SERIAL                    04670000
+CTGVLDEV DS    XL4                     DEVICE TYPE                      04680000
+CTGVLSEQ DS    H                       FILE SEQNO                       04690000
+CTGVLX   DS    19XL12                  VOLUME LIST EXTENSION            04700000
+CTGVLLEN EQU   *-CTGVL                 LENGTH OF VOLUME LIST            04710000
+DYNAML   EQU   *-DYNAM                                                  04720000
+*---------------------------------------------------------------------  04730000
+*        GDG NAMES TABLE MAPPING (USING IEFZB902 AS A MODEL)            04740000
+*---------------------------------------------------------------------  04750000
+GDGNTABL DSECT                                                          04760000
+GDGNQSVA DS    XL3                     SVA OF NEXT GDGNT RECORD         04770000
+GDGNTID  DS    X'23'                   GDGNT ID X'23'                   04780000
+GDGNNEXT DS    A                       IN-CORE ADDRESS OF NEXT RECORD   04790000
+GDGNGDG  DS    CL35                    GDG BASE                         04800000
+GDGNGDGZ DS    C'1234'                 APPARENT (0) GENERATION          04810000
+GDGNGDG2 DS    CL35,C'1234'            2ND GDG NAME                     04820000
+         DS    CL35,C'1234'            3RD GDG NAME                     04830000
+         DS    CL35,C'1234'            4TH GDG NAME                     04840000
+GDGNNO   DS    FL1                     NUMBER OF ENTRIES                04850000
+         DS    XL15                    FILLER                           04860000
+GDGNLEN  EQU   GDGNTABL+176                                             04870000
+*---------------------------------------------------------------------  04880000
+*        MAPPING MACROS                                                 04890000
+*---------------------------------------------------------------------  04900000
+         PRINT NOGEN                                                    04910000
+PRINT    OPSYN ANOP                                                     04920000
+         YREGS                         REGISTER EQUATES                 04930000
+         IEFZB505 LOCEPAX=YES          EPA MAPPING FOR SWAREQ           04940000
+         IEFJESCT TYPE=DSECT           JES CONTROL TABLE                04950000
+         IKJTCB LIST=NO                TASK CONTROL BLOCK               04960000
+         IEZJSCB                       JOB STEP CONTROL BLOCK           04970000
+JCT      DSECT                                                          04980000
+         IEFAJCTB                      JOB CONTROL BLOCK                04990000
+SCT      DSECT                                                          05000000
+         IEFASCTB                      STEP CONTROL BLOCK               05010000
+SIOT     DSECT                                                          05020000
+         IEFASIOT                      STEP I/O TABLE                   05030000
+JFCB     DSECT                                                          05040000
+         IEFJFCBN LIST=YES             JOB FILE CONTROL BLOCK           05050000
+         CVT   LIST=NO,DSECT=YES       COMMUNICATION VECTOR TABLE       05060000
+         IHASDWA VRAMAP=NO             ESTAE                            05070002
+         STRING (GENERATE,NO_CSECT)    Generate Literals                05080006
+         STRING GENERATE               Generate CSECT (Full)            05090006
+         END   BEGIN                                                    05100001
+//SYSLIB   DD DSN=SYS1.MODGEN,DISP=SHR                                  05120005
+//         DD DSN=SYS1.MACLIB,DISP=SHR                                  05130005
+//         DD DSN=CBTTAPE.FILE183.PDS,DISP=SHR      STRING macro        05140005
+//SYSLIN   DD UNIT=VIO,SPACE=(TRK,1),DISP=(,PASS),DCB=BLKSIZE=3200      05150000
+//SYSUT1   DD UNIT=VIO,SPACE=(CYL,5)                                    05160000
+//SYSPRINT DD SYSOUT=*                                                  05170005
+//*                                                                     05180000
+//LKED    EXEC PGM=LINKLLA,PARM='RENT,AC=1'                             05190000
+//SYSPRINT DD SYSOUT=*                                                  05200000
+//SYSLIN   DD DSN=*.ASMH.SYSLIN,DISP=(OLD,DELETE)                       05210000
+//         DD *                                                         05220005
+ INCLUDE SYSLMOD(RECALL)                                                05230005
+//SYSLMOD  DD DSN=SYS2.AUTHLIB(DONTFAIL),DISP=SHR                       05240006
+//*                                                                     05250000
+//NULLFIL1 EXEC PGM=DONTFAIL                                            05260000
+//SYSUDUMP DD SYSOUT=*                                                  05270000
+//ABNLIGNR DD DUMMY                                                     05280005
+//*                                                                     05290000
+//REPRO1   EXEC PGM=IDCAMS                                              05300000
+//SYSPRINT DD SYSOUT=*                                                  05310000
+//INDD     DD DSN=GILBERT.UNCAT1,LRECL=80,DISP=SHR  ,RECFM=FB           05320000
+//         DD DSN=GILBERT.X80,DISP=SHR                                  05330000
+//         DD DSN=IBMUSER.UNCAT2,DISP=SHR                               05340000
+//OUTDD    DD DUMMY,BLKSIZE=800                                         05350000
+ REPRO IFILE(INDD) OFILE(OUTDD)                                         05360000
+//DISPMOD  DD UNIT=SYSDA,SPACE=(TRK,0),DSN=&&REFMOD,DISP=MOD            05370006
+//VOLREF1  DD VOL=REF=*.DISPMOD,DSN=*.DISPMOD,DISP=OLD                  05380001
+//DISPNEW  DD UNIT=SYSDA,SPACE=(TRK,0),DSN=&&REFNEW,DISP=NEW            05390006
+//VOLREF2  DD VOL=REF=*.DISPNEW,DSN=*.DISPNEW,DISP=OLD                  05400001
+//*                                                                     05410000
+//NULLFIL2 EXEC PGM=DONTFAIL                                            05420000
+//SYSUDUMP DD SYSOUT=*                                                  05430000
+//ABNLIGNR DD DUMMY                                                     05440005
+//*                                                                     05450000
+//SORT2   EXEC PGM=SORT                                                 05460000
+//SYSOUT   DD SYSOUT=*                                                  05470000
+//SORTIN   DD DSN=GILBERT.UNCAT1,LRECL=80,DISP=SHR  ,RECFM=FB           05480000
+//         DD DSN=GILBERT.X80,DISP=SHR                                  05490000
+//         DD DSN=GILBERT.UNCAT2,DISP=SHR                               05500000
+//SORTOUT  DD DUMMY,BLKSIZE=800                                         05510000
+ SORT FIELDS=(1,8,CH,A)                                                 05520000

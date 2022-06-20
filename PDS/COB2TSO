@@ -1,0 +1,100 @@
+//GILBERTJ JOB (ACCT#),COB2TSO,                                         00010000
+// NOTIFY=&SYSUID,                                                      00020000
+// CLASS=A,MSGCLASS=H,COND=(0,NE)                                       00030000
+//COB2 EXEC PGM=IGYCRCTL                                                00040000
+ CBL NOLIB,APOST,NODECK,OBJECT,NOSEQ,BUF(10000),DYNAM                   00050000
+ CBL NOMAP,NOLIST,NOOFFSET,NOXREF                                       00060000
+       Identification Division.                                         00070000
+         Program-ID. CB2TSOEV.                                          00080000
+         Author. Gilbert Saint-Flour <carlos@gsf-soft.com>              00090000
+      ******************************************************************00100000
+      *                                                                *00110000
+      *   MODULE NAME = COB2TSO                                        *00120000
+      *                                                                *00130000
+      *   DESCRIPTIVE NAME = Issue TSO commands from a COBOL program.  *00140000
+      *                                                                *00150000
+      *   FUNCTION = This sample program demonstrates how to invoke    *00160000
+      *              TSO commands from a COBOL program using           *00170000
+      *              standard TSO services as documented in the        *00180000
+      *              TSO/E Programming Services manual.                *00190000
+      *                                                                *00200000
+      *              Most TSO commands, including CLISTs and REXX      *00210000
+      *              execs can be executed using this technique.       *00220000
+      *              TSO commands which require authorization          *00230000
+      *              (such as OUTPUT, SEND, TRANSMIT and RECEIVE)      *00240000
+      *              will not work.                                    *00250000
+      *                                                                *00260000
+      *    Origin = http://gsf-soft.com/Freeware/                      *00270000
+      *                                                                *00280000
+      ******************************************************************00290000
+                                                                        00300000
+       Data Division.                                                   00310000
+        Working-Storage Section.                                        00320000
+         01 Filler.                                                     00330000
+           05 ws-dummy        Pic s9(8) Comp.                           00340000
+           05 ws-return-code  Pic s9(8) Comp.                           00350000
+           05 ws-reason-code  Pic s9(8) Comp.                           00360000
+           05 ws-info-code    Pic s9(8) Comp.                           00370000
+           05 ws-cppl-address Pic s9(8) Comp.                           00380000
+           05 ws-flags        Pic X(4) Value X'00010001'.               00390000
+           05 ws-buffer       Pic X(256).                               00400000
+           05 ws-length       Pic s9(8) Comp Value 256.                 00410000
+                                                                        00420000
+       Procedure Division.                                              00430000
+      *----------------------------------------------------------------*00440000
+      *          Call IKJTSOEV to create the TSO/E environment         *00450000
+      *----------------------------------------------------------------*00460000
+           CALL 'IKJTSOEV' Using ws-dummy                               00470000
+                                 ws-return-code                         00480000
+                                 ws-reason-code                         00490000
+                                 ws-info-code                           00500000
+                                 ws-cppl-address.                       00510000
+           IF ws-return-code > zero                                     00520000
+             DISPLAY 'IKJTSOEV Failed, Return-code=' ws-return-code     00530000
+                                     ' Reason-code=' ws-reason-code     00540000
+                                     'Info-code='    ws-info-code       00550000
+             MOVE ws-return-code to Return-code                         00560000
+             STOP RUN.                                                  00570000
+      *----------------------------------------------------------------*00580000
+      *          Build the TSO/E command in ws-buffer                  *00590000
+      *----------------------------------------------------------------*00600000
+                                                                        00610000
+           MOVE 'ALLOCATE DD(SYSPUNCH) SYSOUT HOLD' to ws-buffer.       00620000
+                                                                        00630000
+      *----------------------------------------------------------------*00640000
+      *   Call the TSO/E Service Routine to execute the TSO/E command  *00650000
+      *----------------------------------------------------------------*00660000
+           CALL 'IKJEFTSR' Using ws-flags                               00670000
+                                 ws-buffer                              00680000
+                                 ws-length                              00690000
+                                 ws-return-code                         00700000
+                                 ws-reason-code                         00710000
+                                 ws-dummy.                              00720000
+           IF ws-return-code > zero                                     00730000
+             DISPLAY 'IKJEFTSR Failed, Return-code=' ws-return-code     00740000
+                                     ' Reason-code=' ws-reason-code     00750000
+             MOVE ws-return-code to Return-code                         00760000
+             STOP RUN.                                                  00770000
+                                                                        00780000
+      *----------------------------------------------------------------*00790000
+      *          Check that the ALLOCATE command worked                *00800000
+      *----------------------------------------------------------------*00810000
+           DISPLAY 'ALLOCATE Worked ! ' Upon Syspunch.                  00820000
+                                                                        00830000
+           STOP RUN.                                                    00840000
+/*                                                                      00850000
+//SYSPRINT DD SYSOUT=*                                                  00860000
+//SYSUT1 DD UNIT=VIO,SPACE=(TRK,1)                                      00870000
+//SYSUT2 DD UNIT=VIO,SPACE=(TRK,1)                                      00880000
+//SYSUT3 DD UNIT=VIO,SPACE=(TRK,1)                                      00890000
+//SYSUT4 DD UNIT=VIO,SPACE=(TRK,1)                                      00900000
+//SYSUT5 DD UNIT=VIO,SPACE=(TRK,1)                                      00910000
+//SYSUT6 DD UNIT=VIO,SPACE=(TRK,1)                                      00920000
+//SYSUT7 DD UNIT=VIO,SPACE=(TRK,1)                                      00930000
+//SYSLIN DD UNIT=VIO,SPACE=(TRK,1),DISP=(,PASS),BLKSIZE=3200            00940000
+//*                                                                     00950000
+//GO    EXEC PGM=LOADER,PARM=NOPRINT                                    00960000
+//SYSLIN DD DSN=*.COB2.SYSLIN,DISP=(OLD,PASS)                           00970000
+//SYSLIB DD DSN=CEE.SCEELKED,DISP=SHR                                   00980000
+//SYSOUT DD SYSOUT=*                                                    00990000
+//SYSTSPRT DD SYSOUT=*                                                  01000000

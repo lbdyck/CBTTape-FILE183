@@ -1,0 +1,88 @@
+/*************************************************************** REXX */00010000
+/*                                                                    */00020000
+/* MODULE NAME = VALLOC                                               */00030000
+/*                                                                    */00040000
+/* DESCRIPTIVE NAME = Generate ALLOCATE commands from data set list   */00050000
+/*                                                                    */00060000
+/* STATUS = R101                                                      */00070001
+/*                                                                    */00080000
+/* Author: Gilbert Saint-Flour <carlos@gsf-soft.com>                  */00090000
+/*         http://gsf-soft.com/Freeware/                              */00100001
+/*                                                                    */00110000
+/* FUNCTION = This EDIT macro reads a list of data set names          */00120000
+/*  starting in pos 1 of each line and generates a set of             */00130000
+/*  corresponding ALLOCATE commands.  A data set name list can        */00140000
+/*  be created from the DSLIST panel using the VDL exec.              */00150000
+/*                                                                    */00160000
+/* DEPENDENCIES = TSO/E V2                                            */00170000
+/*                ISPF V2.3 or above                                  */00180000
+/*                STEMVIEW or STEMEDIT                                */00190000
+/*                                                                    */00200000
+/**********************************************************************/00210000
+ADDRESS ISPEXEC                                                         00220000
+"CONTROL ERRORS RETURN"                                                 00230000
+"ISREDIT MACRO (TRAIL)"                                                 00240000
+                                                                        00250000
+"ISREDIT (I) = LINENUM .ZFIRST"                                         00260000
+"ISREDIT (LASTLINE) = LINENUM .ZLAST"                                   00270000
+                                                                        00280000
+QUEUE "//VALLOCJ  JOB (ACCT#),LOCAL.VALLOC,"                            00290000
+QUEUE "// NOTIFY=&SYSUID,REGION=2M,"                                    00300000
+QUEUE "// CLASS=A,MSGCLASS=H,COND=(0,NE)"                               00310000
+QUEUE "//*"                                                             00320000
+QUEUE "//ALLOC   EXEC PGM=IKJEFT01,DYNAMNBR=200"                        00330000
+QUEUE "//SYSTSPRT DD SYSOUT=*"                                          00340000
+QUEUE "//SYSTSIN  DD *"                                                 00350000
+                                                                        00360000
+tracks=0; datasets=0; aliases=0                                         00370000
+                                                                        00380000
+DO i=1 to lastline                                                      00390000
+  "ISREDIT (line) = LINE" I             /* GET current data set name */ 00400000
+  dsn=TRANSLATE(WORD(line,1))           /* extract data set name */     00410000
+  rc=LISTDSI("'" || dsn || "'" 'DIR' 'NORECALL')                        00420000
+  say dsn rc sysdsname syscreate "'" || sysrecfm || "'" sysdsorg        00430000
+  IF rc>4 THEN ITERATE                  /* MIGRAT */                    00440000
+  IF sysdsorg='VS' THEN ITERATE         /* VSAM */                      00450000
+  IF sysalloc > sysprimary THEN                                         00460000
+    sysprimary=sysalloc                 /* num of trks used */          00470000
+  QUEUE " "                             /* blank line */                00480000
+  IF dsn=sysdsname THEN DO                                              00490000
+    QUEUE "ALLOCATE DSNAME('"sysdsname"') NEW CATALOG +"                00500000
+    QUEUE "           UNIT(SYSALLDA) VOLUME(WORK01) +"                  00510000
+    IF sysrecfm='U' THEN                                                00520000
+      dcb="RECFM(U) BLKSIZE("sysblksize")"                              00530000
+    ELSE DO                                                             00540000
+      recfm=LEFT(STRIP(sysrecfm),3)                                     00550000
+      recfm=SUBSTR(recfm,1,1) SUBSTR(recfm,2,1) SUBSTR(recfm,3,1)       00560000
+      dcb="RECFM("STRIP(recfm)") LRECL("syslrecl")"                     00570000
+      dcb=dcb "DSORG("sysdsorg")"                                       00580000
+      END                                                               00590000
+    IF sysunits='BLOCK' THEN                                            00600001
+      sysunits='BLOCK(' || sysblksize || ')'                            00610001
+    IF SYSDSSMS='DATA_LIBRARY' | SYSDSSMS='PROGRAM_LIBRARY' THEN        00620000
+      dcb=dcb 'DSNTYPE(LIBRARY)'                                        00630000
+    IF sysadirblk='' | sysadirblk='NO_LIM' THEN                         00640000
+      line="          SPACE("sysprimary','sysseconds")" sysunits dcb    00650000
+    ELSE                                                                00660000
+      line="          SPACE("sysprimary','sysseconds")" sysunits,       00670000
+                        "DIR("sysadirblk")" dcb                         00680000
+    IF LENGTH(line)>72 THEN                                             00690000
+      line=RIGHT(LINE,72)                                               00700000
+    QUEUE line                                                          00710000
+    tracks=tracks+sysprimary                                            00720000
+    datasets=datasets+1                                                 00730000
+    END                                                                 00740000
+  ELSE DO                              /* ALIAS */                      00750000
+    QUEUE "DEFINE ALIAS(NAME('"dsn"') -"                                00760000
+    QUEUE "           RELATE('"sysdsname"'))"                           00770000
+    aliases=aliases+1                                                   00780000
+    END                                                                 00790000
+END                                                                     00800000
+                                                                        00810000
+QUEUE " "                                                               00820000
+QUEUE " /* datasets="datasets "aliases="aliases "tracks="tracks "*/"    00830000
+QUEUE " "                                                               00840000
+                                                                        00850000
+CALL STEMVIEW 'VIEW',,,,'ALLOCATE Commands'                             00860000
+                                                                        00870000
+EXIT rc                                                                 00880000

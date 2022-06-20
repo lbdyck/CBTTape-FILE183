@@ -1,0 +1,432 @@
+//GILBERTH JOB (ACCT#),HANDBOOK,                                        00010045
+// NOTIFY=&SYSUID,REGION=5M,                                            00020044
+// CLASS=A,MSGCLASS=H,COND=(0,NE)                                       00030045
+//*                                                                     00040000
+//*    THIS JOB ASSEMBLES SOME MVS CONTROL BLOCKS AND STORES            00050023
+//*    THE OUTPUT INTO A PDS FOR ON-LINE VIEWING.                       00060023
+//*                                                                     00070023
+//*    TO SAVE DASD SPACE, THE ISPF/PDF'S LMCOPY SERVICE IS INVOKED     00080023
+//*    TO PACK EACH MEMBER.                                             00090023
+//*                                                                     00100023
+//UPDTE   EXEC PGM=IEBUPDTE,PARM=NEW                                    00110000
+//SYSPRINT DD SYSOUT=*                                                  00120000
+./  ADD NAME=SPFPACK      <=== MAIN MACRO                               00130000
+PROC 1 MBR                                                              00140000
+CONTROL LIST CONLIST NOFLUSH                                            00150000
+ISPEXEC SELECT PGM(IEV90) -                                             00160042
+    PARM(NOESD,NORLD,NOOBJECT,NODECK,LINECOUNT(120),TERM)               00170042
+IF &LASTCC > 0 THEN EXIT CODE(&LASTCC)                                  00180048
+ISPEXEC LMINIT DATAID(ID1) DDNAME(SYSPRINT) ENQ(SHR)                    00190000
+IF &LASTCC > 0 THEN GOTO ERROR                                          00200000
+ISPEXEC LMINIT DATAID(ID2) DDNAME(PERM) ENQ(SHRW)                       00210000
+IF &LASTCC > 0 THEN GOTO ERROR                                          00220000
+ISPEXEC LMCOPY FROMID(&ID1) TODATAID(&ID2) TOMEM(&MBR) -                00230000
+               REPLACE PACK TRUNC                                       00240000
+IF &LASTCC > 0 THEN GOTO ERROR                                          00250000
+ISPEXEC LMFREE DATAID(&ID1)                                             00260000
+IF &LASTCC > 0 THEN GOTO ERROR                                          00270000
+ISPEXEC LMFREE DATAID(&ID2)                                             00280000
+IF &LASTCC > 0 THEN GOTO ERROR                                          00290000
+EXIT CODE(0)                                                            00300000
+ERROR: +                                                                00310000
+  ISPEXEC GETMSG MSG(&ZERRMSG) LONGMSG(XX)                              00320000
+  WRITE &XX                                                             00330000
+  EXIT CODE(12)                                                         00340000
+//SYSUT2   DD UNIT=VIO,SPACE=(80,(1,,1)),DISP=(,PASS),                  00350043
+//            RECFM=FB,LRECL=80,BLKSIZE=800                             00360049
+//TEMPF    DD UNIT=VIO,SPACE=(CYL,10),BLKSIZE=12947,DISP=(,PASS)        00370049
+//*                                                                     00570045
+//ASMMAC PROC MBR=                                                      00580035
+//TMP     EXEC PGM=IKJEFT01,PARM='ISPSTART CMD(%SPFPACK &MBR)'          00590000
+//SYSPROC  DD DSN=*.UPDTE.SYSUT2,DISP=(OLD,PASS)                        00600035
+//SYSTSPRT DD SYSOUT=*                                                  00610035
+//SYSTSIN  DD DUMMY                                                     00620035
+//*                                                                     00630000
+//SYSLIB   DD DSN=SYS1.MACLIB,DISP=SHR                                  00640035
+//         DD DSN=SYS1.MODGEN,DISP=SHR                                  00650035
+//SYSUT1   DD UNIT=VIO,SPACE=(CYL,20)                                   00670043
+//SYSTERM  DD SYSOUT=*                                                  00680035
+//SYSPRINT DD DSN=*.UPDTE.TEMPF,DISP=(OLD,PASS)                         00690035
+//*                                                                     00700000
+//PERM     DD DSN=GILBERT.HANDBOOK,                                     00710045
+// DISP=(MOD,CATLG,DELETE),                                             00720049
+// UNIT=SYSALLDA,                                                       00730043
+// SPACE=(TRK,(100,5,6),RLSE),                                          00740048
+// RECFM=FBM,LRECL=121,DSORG=PO            SDB                          00750043
+//*                                                                     00760000
+//ISPPROF  DD UNIT=VIO,SPACE=(800,(1,,1)),                              00770045
+//            RECFM=FB,LRECL=80,BLKSIZE=800                             00780049
+//ISPPLIB  DD UNIT=VIO,SPACE=(800,(1,,1)),DCB=*.ISPPROF                 00790045
+//ISPMLIB  DD DSN=ISP.SISPMENU,DISP=SHR                                 00800046
+//ISPSLIB  DD UNIT=VIO,SPACE=(800,(1,,1)),DCB=*.ISPPROF                 00810045
+//ISPTLIB  DD DSN=ISP.SISPTENU,DISP=SHR                                 00820046
+//        PEND                                                          00840000
+//*                                                                     00850000
+//ACB    EXEC ASMMAC,MBR=ACB                                            00860010
+         IFGACB                                                         00870044
+         END                                                            00880010
+//ACEE   EXEC ASMMAC,MBR=ACEE                                           00890000
+         IHAACEE                                                        00900044
+         END                                                            00910000
+//AMVT   EXEC ASMMAC,MBR=ASMVT                                          00920048
+         ILRASMVT                                                       00930048
+         END                                                            00940048
+//ASCB   EXEC ASMMAC,MBR=ASCB                                           00950000
+         IHAASCB DSECT=YES,LIST=YES                                     00960000
+         END                                                            00970000
+//ASVT   EXEC ASMMAC,MBR=ASVT                                           00980000
+         IHAASVT DSECT=YES,LIST=YES                                     00990000
+         END                                                            01000000
+//ASSB   EXEC ASMMAC,MBR=ASSB                                           01010044
+         IHAASSB LIST=YES                                               01020044
+         END                                                            01030044
+//ASXB   EXEC ASMMAC,MBR=ASXB                                           01040000
+         IHAASXB DSECT=YES,LIST=YES                                     01050000
+         END                                                            01060000
+//ATTACH EXEC ASMMAC,MBR=ATTACH                                         01070043
+         IEZATTCH LIST=YES                                              01080043
+         END                                                            01090043
+//BASEA  EXEC ASMMAC,MBR=BASEA                                          01100043
+         IEEBASEA                                                       01110043
+         END                                                            01120043
+//CDE    EXEC ASMMAC,MBR=CDE                                            01130000
+         IHACDE                                                         01140044
+         END                                                            01150000
+//CSCB   EXEC ASMMAC,MBR=CSCB                                           01160012
+         IEECHAIN                                                       01170044
+         END                                                            01180012
+//CSD    EXEC ASMMAC,MBR=CSD                                            01190043
+         IHACSD DSECT=YES                                               01200043
+         END                                                            01210043
+//CTXT   EXEC ASMMAC,MBR=CTXT                                           01220045
+         IEZVX100 DSECT=YES                                             01230045
+         END                                                            01240045
+//CVT    EXEC ASMMAC,MBR=CVT                                            01250000
+         CVT DSECT=YES,LIST=YES,PREFIX=YES                              01260000
+         END                                                            01270000
+//DCB    EXEC ASMMAC,MBR=DCB                                            01280000
+         DCBD  DSORG=PS                                                 01290007
+         END                                                            01300000
+//DCBDA  EXEC ASMMAC,MBR=DCBDA                                          01310007
+         DCBD  DSORG=DA                                                 01320007
+         END                                                            01330007
+//DCBE   EXEC ASMMAC,MBR=DCBE                                           01340048
+         IHADCBE                                                        01350048
+         END                                                            01360048
+//DCE    EXEC ASMMAC,MBR=DCE                                            01370044
+         IECDDCE                                                        01380044
+         END                                                            01390044
+//DECB   EXEC ASMMAC,MBR=DECB                                           01400013
+         IHADECB DSECT=YES                                              01410013
+         END                                                            01420013
+//DES    EXEC ASMMAC,MBR=DES         DESERV                             01430049
+         IGWDES                                                         01440049
+         END                                                            01450049
+//DFA    EXEC ASMMAC,MBR=DFA                                            01460022
+         IHADFA DSECT=YES                                               01470022
+         END                                                            01480022
+//DSAB   EXEC ASMMAC,MBR=DSAB                                           01490008
+         IHADSAB                                                        01500008
+         END                                                            01510008
+//DSCB1  EXEC ASMMAC,MBR=DSCB1                                          01520002
+         IECSDSL1 1                                                     01530002
+         END                                                            01540002
+//DSCB4  EXEC ASMMAC,MBR=DSCB4                                          01550002
+         DS    44X'04'                                                  01560006
+         IECSDSL1 4                                                     01570002
+         END                                                            01580002
+//DYNALL EXEC ASMMAC,MBR=DYNALLOC                                       01590005
+*STATUS      OLD=01   MOD=02    NEW=04    SHR=08                        01600041
+*DISP    UNCATLG=01 CATLG=02 DELETE=04   KEEP=08                        01610041
+*SPACE                ALX=02   MXIG=04 CONTIG=08                        01620041
+*LABEL        NL=01    SL=02    NSL=04            SUL=0A                01630041
+*             BLP=10  LTM=21     AL=40    AUL=48                        01640041
+         IEFZB4D0                                                       01650005
+         IEFZB4D2                                                       01660005
+         END                                                            01670005
+//DEB    EXEC ASMMAC,MBR=DEB                                            01680000
+         IEZDEB LIST=YES                                                01690000
+         END                                                            01700000
+//DVA    EXEC ASMMAC,MBR=DVA                                            01710013
+         IHADVA DSECT=YES                                               01720013
+         END                                                            01730013
+//DVCT   EXEC ASMMAC,MBR=DVCT                                           01740044
+         IHADVCT DSECT=YES                                              01750044
+         END                                                            01760044
+//ECT    EXEC ASMMAC,MBR=ECT                                            01770000
+         IKJECT                                                         01780000
+         END                                                            01790000
+//ECVT   EXEC ASMMAC,MBR=ECVT                                           01800043
+         IHAECVT LIST=YES                                               01810043
+         END                                                            01820043
+//EPIE   EXEC ASMMAC,MBR=EPIE                                           01830015
+         IHAEPIE                                                        01840015
+         END                                                            01850015
+//GDA    EXEC ASMMAC,MBR=GDA                                            01860025
+         IHAGDA                                                         01870025
+         END                                                            01880025
+//IOB    EXEC ASMMAC,MBR=IOB                                            01890000
+         IEZIOB DSECT=YES                                               01900000
+         END                                                            01910000
+//IOCOM  EXEC ASMMAC,MBR=IOCOM                                          01920043
+         IECDIOCM                                                       01930043
+         END                                                            01940043
+//IPA    EXEC ASMMAC,MBR=IPA                                            01950045
+         IHAIPA                                                         01960045
+         END                                                            01970045
+//JCT    EXEC ASMMAC,MBR=JCT                                            01980001
+JCT      DSECT                                                          01990001
+         IEFAJCTB                                                       02000001
+         END                                                            02010001
+//JCTX   EXEC ASMMAC,MBR=JCTX                                           02020043
+JCTX     DSECT                                                          02030043
+         IEFJCTX                                                        02040043
+         END                                                            02050043
+//JESCT  EXEC ASMMAC,MBR=JESCT                                          02060019
+         IEFJESCT                                                       02070037
+         END                                                            02080019
+//JFCB   EXEC ASMMAC,MBR=JFCB                                           02090000
+JFCB     DSECT                                                          02100000
+         IEFJFCBN LIST=YES                                              02110000
+         END                                                            02120000
+//JMR    EXEC ASMMAC,MBR=JMR                                            02130044
+         IEFJMR                                                         02140044
+         END                                                            02150044
+//JSAB   EXEC ASMMAC,MBR=JSAB                                           02160044
+         IAZJSAB LIST=YES                                               02170047
+         END                                                            02180044
+//JSCB   EXEC ASMMAC,MBR=JSCB                                           02190000
+         IEZJSCB                                                        02200044
+         END                                                            02210000
+//JSCVT  EXEC ASMMAC,MBR=JSCVT                                          02220028
+         IEFJSCVT                                                       02230029
+         END                                                            02240028
+//LCCA   EXEC ASMMAC,MBR=LCCA                                           02250021
+         IHALCCA DSECT=YES                                              02260021
+         END                                                            02270021
+//LCT    EXEC ASMMAC,MBR=LCT                                            02280003
+         IEFALLCT                                                       02290003
+         END                                                            02300003
+//LDA    EXEC ASMMAC,MBR=LDA                                            02310043
+         IHALDA                                                         02320043
+         END                                                            02330043
+//LLE    EXEC ASMMAC,MBR=LLE                                            02340000
+         IHALLE                                                         02350000
+         END                                                            02360000
+//LPDE   EXEC ASMMAC,MBR=LPDE                                           02370011
+         IHALPDE                                                        02380011
+         END                                                            02390011
+//LWA    EXEC ASMMAC,MBR=LWA                                            02400044
+         IKJEFLWA                                                       02410044
+         END                                                            02420044
+//OCE    EXEC ASMMAC,MBR=OCE                                            02430018
+         IECDSECS                                                       02440018
+         IECDSECT                                                       02450018
+         END                                                            02460018
+//ORE    EXEC ASMMAC,MBR=ORE                                            02470045
+         IHAORE DSECT=YES                                               02480045
+         END                                                            02490045
+//OUCB   EXEC ASMMAC,MBR=OUCB                                           02500004
+         IRAOUCB DSECT=YES                                              02510004
+         END                                                            02520004
+//OUXB   EXEC ASMMAC,MBR=OUXB                                           02530044
+         IHAOUXB DSECT=YES                                              02540044
+         IEZBITS                                                        02550044
+         END                                                            02560044
+//PCCA   EXEC ASMMAC,MBR=PCCA                                           02570021
+         IHAPCCA DSECT=YES                                              02580021
+         END                                                            02590021
+//PDS2   EXEC ASMMAC,MBR=PDS2                                           02600014
+         IHAPDS DSECT=YES,PDSBLDL=YES                                   02610014
+         END                                                            02620014
+//PMAR   EXEC ASMMAC,MBR=PMAR                                           02630049
+         IEWPMAR                                                        02640049
+         END                                                            02650049
+//PSA    EXEC ASMMAC,MBR=PSA                                            02660000
+         IHAPSA DSECT=YES,LIST=YES                                      02670000
+         END                                                            02680000
+//PSCB   EXEC ASMMAC,MBR=PSCB                                           02690000
+         IKJPSCB                                                        02700000
+         END                                                            02710000
+//RAX    EXEC ASMMAC,MBR=RAX                                            02720044
+         IARRAX                 RSM ADDR SPC BLOCK EXTENSION            02730044
+         END                                                            02740044
+//RCE    EXEC ASMMAC,MBR=RCE                                            02750026
+         IARRCE                 RSM CONTROL AND ENUMERATION AREA        02760044
+         END                                                            02770026
+//RCVT   EXEC ASMMAC,MBR=RCVT                                           02780047
+         ICHPRCVT               RACF CVT                                02790047
+         END                                                            02800047
+//RD     EXEC ASMMAC,MBR=RD                                             02810027
+         IHARD                  REGION DESCRIPTOR                       02820044
+         END                                                            02830027
+//RMCT   EXEC ASMMAC,MBR=RMCT                                           02840044
+         IRARMCT DSECT=YES      RESOURCE MANAGET CONTROL TABLE          02850044
+         END                                                            02860044
+*/SAMB   EXEC ASMMAC,MBR=SAMB                                           02870004
+*        IGGSAMB DSECT=YES                                              02880004
+*        END                                                            02890004
+//RB     EXEC ASMMAC,MBR=RB                                             02900004
+         IKJRB DSECT=YES,LIST=YES                                       02910004
+         END                                                            02920004
+//REXX   EXEC ASMMAC,MBR=REXX                                           02930043
+         IRXARGTB                                                       02940043
+         IRXCMPTB ,            COMPILER TABLE TSO/E 2.3.1               02950043
+         IRXDSIB                                                        02960043
+         IRXEFPL                                                        02970043
+         IRXENVB               ENVIRONMENT BLOCK                        02980043
+         IRXENVT               ENVIRONMENT TABLE (IRXANCHR)             02990043
+         IRXEVALB                                                       03000043
+         IRXEXECB                                                       03010043
+         IRXEXTE                                                        03020043
+         IRXFPDIR                                                       03030043
+         IRXINSTB                                                       03040043
+         IRXMODNT                                                       03050043
+         IRXPACKT                                                       03060043
+         IRXPARMB                                                       03070043
+         IRXSHVB                                                        03080043
+         IRXSUBCT                                                       03090043
+         IRXWORKB                                                       03100043
+         END                                                            03110043
+//RIB    EXEC ASMMAC,MBR=RIB                                            03120033
+         ISGRIB                                                         03130033
+         END                                                            03140033
+//RPL    EXEC ASMMAC,MBR=RPL                                            03150010
+         IFGRPL                                                         03160044
+         IDARMRCD ,                RECORD MGMT ERROR CODES              03170017
+         END                                                            03180010
+//SCA    EXEC ASMMAC,MBR=SCA                                            03190044
+         IHASCA                                                         03200044
+         END                                                            03210044
+//SCB    EXEC ASMMAC,MBR=SCB                                            03220038
+         IHASCB DSECT=YES                                               03230038
+         END                                                            03240038
+//SCCB   EXEC ASMMAC,MBR=SCCB                                           03250047
+         IHASCCB                                                        03260047
+         END                                                            03270047
+//SCT    EXEC ASMMAC,MBR=SCT                                            03280001
+SCT      DSECT                                                          03290001
+         IEFASCTB                                                       03300001
+         END                                                            03310001
+//SCTX   EXEC ASMMAC,MBR=SCTX                                           03320024
+         IEFSCTX DSECT=YES                                              03330043
+         END                                                            03340024
+//SCVT   EXEC ASMMAC,MBR=SCVT                                           03350016
+         IHASCVT DSECT=YES,LIST=YES                                     03360016
+         END                                                            03370016
+//SDWA   EXEC ASMMAC,MBR=SDWA                                           03380032
+         IHASDWA DSECT=YES,VRAMAP=YES                                   03390032
+         END                                                            03400032
+//SIOT   EXEC ASMMAC,MBR=SIOT                                           03410001
+SIOT     DSECT                                                          03420001
+         IEFASIOT                                                       03430001
+         END                                                            03440001
+//SIOTX  EXEC ASMMAC,MBR=SIOTX                                          03450049
+         IEFSIOTX                                                       03460049
+         END                                                            03470049
+//SMCA   EXEC ASMMAC,MBR=SMCA                                           03480032
+         IEESMCA                                                        03490032
+         END                                                            03500032
+//SMDE   EXEC ASMMAC,MBR=SMDE        DESERV                             03510049
+         IGWSMDE                                                        03520049
+         END                                                            03530049
+//SNAP   EXEC ASMMAC,MBR=SNAP                                           03540020
+         IHASNAP DSECT=YES                                              03550020
+         END                                                            03560020
+//SPIE   EXEC ASMMAC,MBR=SPIE                                           03570043
+         IHASCA                 SPIE/ESPIE CONTROL AREA                 03580043
+         IHAEPIE                EXTENDED PROGRAM INTERRUPT ELEMENT      03590043
+         IHAPIE                 PROGRAM INTERRUPT ELEMENT               03600043
+         IHAPICA                PROGRAM INTERRUPTION CONTROL AREA       03610043
+         END                                                            03620043
+//SPQE   EXEC ASMMAC,MBR=SPQE                                           03630039
+         IHASPQE                SP Q ELEMENT                            03640040
+         IHAFBQE                FREE BLOCK                              03650040
+         IHASPQA                SP Q DESCRIPTOR                         03660040
+         IHADQE                 DESCRIPTOR Q ELEMENT                    03670040
+         IHAFQE                 FREE Q ELEMENT                          03680040
+         IHASPT                 CSA                                     03690040
+         END                                                            03700039
+//SRB    EXEC ASMMAC,MBR=SRB                                            03710048
+         IHASRB LIST=YES                                                03720048
+         END                                                            03730048
+//SSCT   EXEC ASMMAC,MBR=SSCT                                           03740049
+         IEFJSCVT                                                       03750049
+         END                                                            03760049
+//SSOB   EXEC ASMMAC,MBR=SSOB                                           03770031
+         IEFJSSOB (AL,SO)                                               03780031
+         END                                                            03790031
+//SSIB   EXEC ASMMAC,MBR=SSIB                                           03800009
+         IEFJSSIB                                                       03810009
+         END                                                            03820009
+//SSSA   EXEC ASMMAC,MBR=SSSA                                           03830042
+         IEFSSSA                                                        03840042
+         END                                                            03850042
+//SSVT   EXEC ASMMAC,MBR=SSVT                                           03860030
+         IEFJSSVT                                                       03870030
+         END                                                            03880030
+//STCB   EXEC ASMMAC,MBR=STCB                                           03890043
+         IHASTCB LIST=YES                                               03900043
+         END                                                            03910043
+//SVT    EXEC ASMMAC,MBR=SVT                                            03920044
+         IHASVT LIST=YES                                                03930044
+         END                                                            03940044
+//SWB    EXEC ASMMAC,MBR=SWB                                            03950044
+         IEFSWB                                                         03960044
+         END                                                            03970044
+//TAXE   EXEC ASMMAC,MBR=TAXE                                           03980044
+         IKJTAXE                                                        03990044
+         END                                                            04000044
+//TCAS   EXEC ASMMAC,MBR=TCAS                                           04010044
+         IKTTCAST DSECT=YES                                             04020044
+         END                                                            04030044
+//TCB    EXEC ASMMAC,MBR=TCB                                            04040000
+         IKJTCB DSECT=YES,LIST=YES                                      04050000
+         END                                                            04060000
+//TCT    EXEC ASMMAC,MBR=TCT                                            04070000
+         IEFTCT                                                         04080000
+         END                                                            04090000
+//TIOT   EXEC ASMMAC,MBR=TIOT                                           04100000
+TIOT     DSECT                                                          04110000
+         IEFTIOT1                                                       04120000
+         END                                                            04130000
+//TMPWA  EXEC ASMMAC,MBR=TMPWA                                          04140044
+         IKJTMPWA                                                       04150044
+         END                                                            04160044
+//TPC    EXEC ASMMAC,MBR=TPC                                            04170044
+         IEAVVTPC                                                       04180044
+         END                                                            04190044
+//TQE    EXEC ASMMAC,MBR=TQE                                            04200044
+         IHATQE                                                         04210044
+         END                                                            04220044
+//TSB    EXEC ASMMAC,MBR=TSB                                            04230036
+         IKJTSB LIST=YES,EXT=YES                                        04240036
+         END                                                            04250036
+//TSVT   EXEC ASMMAC,MBR=TSVT                                           04260000
+         IKJTSVT                                                        04270000
+         END                                                            04280000
+//UCB    EXEC ASMMAC,MBR=UCB                                            04290000
+**       IEFUCBOB LIST=YES,PREFIX=YES,SSMD=YES                          04300044
+         IEFUCBOB LIST=YES,PREFIX=YES                                   04310044
+         END                                                            04320000
+//UCM    EXEC ASMMAC,MBR=UCM                                            04330034
+         IEECUCM LIST=YES,DSECT=YES                                     04340034
+         END                                                            04350034
+//UPT    EXEC ASMMAC,MBR=UPT                                            04360000
+         IKJUPT                                                         04370000
+         END                                                            04380000
+//WQE    EXEC ASMMAC,MBR=WQE                                            04390048
+         IHAWQE                                                         04400048
+         END                                                            04410048
+//SGD    EXEC ASMMAC,MBR=IGDSGD                                         04420048
+         IGDSGD                                                         04430048
+         END                                                            04440048
+//VLD    EXEC ASMMAC,MBR=IGDVLD                                         04450044
+         IGDVLD                                                         04460044
+         END                                                            04470044
+//XCF    EXEC ASMMAC,MBR=XCF                                            04480045
+         IXCYQUAA DSECT=YES            XCF-ANSWER AREA                  04490045
+         END                                                            04500045
+//XL     EXEC ASMMAC,MBR=XL                                             04510000
+         IHAXTLST                                                       04520000
+         END                                                            04530000

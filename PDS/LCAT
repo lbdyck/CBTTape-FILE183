@@ -1,0 +1,322 @@
+//GILBERTL JOB (ACCT#),LCAT,                                            00010000
+// NOTIFY=&SYSUID,                                                      00020000
+// CLASS=A,MSGCLASS=H,COND=(0,NE)                                       00030000
+//*                                                                     00040000
+//HLASM EXEC PGM=ASMA90,PARM='OBJECT,NODECK,NOESD,NORLD,NOXREF,RENT'    00050001
+*********************************************************************** 00060000
+*                                                                     * 00070000
+* NAME = LCAT                                                         * 00080000
+*                                                                     * 00090000
+* DESCRIPTIVE NAME = ISPF/PDF INTERFACE TO THE "LISTCAT" COMMAND      * 00100000
+*                                                                     * 00110000
+* FUNCTION = THIS TSO/ISPF COMMAND INVOKES IDCAMS THEN                * 00120000
+*            USES BRIF TO DISPLAY THE OUTPUT.                         * 00130000
+*                                                                     * 00140000
+* STATUS = R101                                                       * 00150001
+*                                                                     * 00160000
+* AUTHOR = GILBERT SAINT-FLOUR <carlos@gsf-soft.com>                  * 00170000
+*                                                                     * 00180001
+* NOTES = SEE BELOW                                                   * 00190001
+*                                                                     * 00200001
+*    DEPENDENCIES = OS/390 V1R3 OR ABOVE, ISPF/PDF                    * 00210001
+*    AUTHORIZATION = NONE                                             * 00230001
+*    RESTRICTIONS = NONE                                              * 00250001
+*                                                                     * 00260000
+* SYNTAX = TO USE IT, JUST ENTER LCAT (OR LC) AS A LINE COMMAND       * 00270000
+*          ON THE DATA SET LIST UTILITY SCREEN.                       * 00280000
+*                                                                     * 00290000
+*             LCAT  DSNAME                                            * 00300000
+*                   CATALOG | LEVEL | ENTRIES                         * 00310000
+*                   NAME    | ALL                                     * 00320000
+*                                                                     * 00330000
+*          DEFAULT: ENTRIES, ALL                                      * 00340000
+*                                                                     * 00350000
+*101 LOAD LINK-LIST DCB ADDR FROM DLCB (OS/390 R3)                    * 00360001
+*********************************************************************** 00380000
+         PUNCH ' ALIAS LC'          <- "LC" IS AN ALIAS FOR "LCAT"      00390000
+LCAT     CSECT                                                          00400000
+LCAT     AMODE 31                                                       00410000
+         SAVE  (14,12),,'GSF UTILITIES - LCAT R101'                     00420001
+         LR    R11,R15                                                  00430001
+         USING LCAT,R11                                                 00440001
+         LR    R10,R1                  CPPL ADDRESS                     00450000
+         USING CPPL,R10                SET UP ADDRESSABILITY TO CPPL    00460000
+         LA    R2,020                  RC=20                            00470000
+         TM    CPPL,X'80'              INVOKED AS A PGM?                00480000
+         BO    GOBACK20                YES, QUIT WITH RC=20             00490000
+         GETMAIN R,LV=DYNAML           GET DYNAMIC STORAGE              00500000
+         ST    R13,4(,R1)                                               00510000
+         ST    R1,8(,R13)                                               00520000
+         LR    R13,R1                  NEW SAVE AREA                    00530000
+         USING DYNAM,R13                                                00540000
+         XC    DYNAM+72(256),DYNAM+72  JUST IN CASE . . .               00550000
+*********************************************************************** 00560000
+*                                                                     * 00570000
+*        BUILD PARSE PARM LIST, CALL IKJPARS                          * 00580000
+*                                                                     * 00590000
+*********************************************************************** 00600000
+         LA    R1,TENWORDS             POINT TO PPL                     00610000
+         USING PPL,R1                  SET UP ADDRESSABILITY TO PPL     00620000
+         L     R0,CPPLUPT              USER PROFILE TABLE               00630000
+         ST    R0,PPLUPT               STORE UPT ADDRESS IN PPL         00640000
+         L     R0,CPPLECT              ENVIRONMENT CONTROL TABLE        00650000
+         ST    R0,PPLECT               STORE ECT IN PPL                 00660000
+         LA    R0,ECB1                 EVENT CONTROL BLOCK              00670000
+         ST    R0,PPLECB               STORE ECB IN PPL                 00680000
+         MVC   PPLPCL,=A(PCLCSECT)     STORE PCL ADDR INTO PPL          00690000
+         LA    R0,DYNANSWR             ANSWER AREA                      00700000
+         ST    R0,PPLANS               STORE ANSWER ADDRESS IN PPL      00710000
+         L     R0,CPPLCBUF             COMMAND BUFFER                   00720000
+         ST    R0,PPLCBUF              STORE BUFFER ADDRESS IN PPL      00730000
+         LA    R14,=C'IKJPARS '        NAME OF PARSE ROUTINE            00740000
+         L     R15,16(,0)              CVTPTR                           00750001
+         L     R15,008(,R15)           CVTLINK                          00760000
+         STM   R14,R15,ATTACHL         BUILD LINK PARMLIST              00770000
+         LINK  SF=(E,ATTACHL)          CALL THE PARSE ROUTINE           00780000
+         LTR   R2,R15                  CHECK FOR ZERO PARSE RETURN      00790000
+         BNZ   GOBACK                  GO AWAY UPSET                    00800000
+         DROP  R1,R10                  PPL, CPPL                        00810000
+*********************************************************************** 00820000
+*                                                                     * 00830000
+*        PROCESS PARSED PARAMETERS                                    * 00840000
+*        BUILD 'LISTCAT' COMMAND                                      * 00850000
+*                                                                     * 00860000
+*********************************************************************** 00870000
+         L     R2,DYNANSWR             LOAD PDL ADDRESS                 00880000
+         USING IKJPARMD,R2             SET UP ADDRESSABILITY TO PDL     00890000
+         MVC   COMMAND+8(17),=C' LISTC NAME LVL('''                     00900000
+         CLI   ALLPCE+1,1              NAME?                            00910000
+         BE    BUILD3                  YES, JUMP                        00920000
+         MVC   COMMAND+15(4),=C'ALL '  CHANGE 'NAME' TO 'ALL '          00930000
+*                                                                       00940000
+BUILD3   CLI   CATPCE+1,1              LEVEL ?                          00950000
+         BE    BUILD4                  YES, JUMP                        00960000
+         MVC   COMMAND+20(3),=C'CAT'                                    00970000
+         CLI   CATPCE+1,2              CATALOG?                         00980000
+         BE    BUILD4                  YES, JUMP                        00990000
+         MVC   COMMAND+20(3),=C'ENT'   ENTRIES                          01000000
+*                                                                       01010000
+BUILD4   LA    R14,COMMAND+8+17        POINT PAST PREFIX                01020000
+         LH    R15,DSNPCE+4            ACTUAL LENGTH OF DSN             01030000
+         L     R0,DSNPCE               GET ADDRESS                      01040000
+         LR    R1,R15                  ACTUAL LENGTH OF DSN             01050000
+         MVCL  R14,R0                  MOVE DATA SET NAME               01060000
+         MVI   0(R14),C''''                                             01070000
+         MVI   1(R14),C')'                                              01080000
+         LA    R15,2(,R14)             POINT PAST COMMAND               01090000
+         LA    R14,COMMAND+8           START OF WORK AREA               01100000
+         SLR   R15,R14                 TOTAL LENGTH OF COMMAND          01110000
+         STM   R14,R15,COMMAND         ADDRESS, LENGTH                  01120000
+*                                                                       01130000
+         LA    R14,DSNAME              LENGTH                           01140000
+         LA    R15,L'DSNAME            LENGTH                           01150000
+         L     R0,DSNPCE               GET ADDRESS                      01160000
+         LH    R1,DSNPCE+4             ACTUAL LENGTH OF DSN             01170000
+         ICM   R1,B'1000',BLANKS       PADDING                          01180000
+         MVCL  R14,R0                  MOVE DATA SET NAME (TITLE)       01190000
+         DROP  R2                                                       01200000
+         IKJRLSA DYNANSWR              FREE PDL                         01210000
+*                                                                       01220000
+         LM    R0,R1,=A(X'F00000',500*121)      MAXIMUM/MINIMUM         01230000
+         GETMAIN VRU,LV=((0),(1)),LOC=ANY       GET DYNAMIC STORAGE     01240000
+         LR    R15,R1                  FIRST LINE                       01250000
+         STM   R15,R1,BUFFER           ADDRESS/LENGTH/ADDRESS           01260000
+*********************************************************************** 01270000
+*                                                                     * 01280000
+*        INVOKE IDCAMS                                                * 01290000
+*                                                                     * 01300000
+*********************************************************************** 01310000
+         LA    R14,002                 NUMBER OF DD NAMES               01320000
+         LA    R15,DDSYSIN             1ST DDNAME                       01330000
+         LA    R0,SYSIN00              I/O RTNE FOR SYSIN RTNE          01340000
+         LA    R1,DYNAM                USER DATA FOR SYSIN              01350000
+         STM   R14,R1,IOLIST           BUILD IDCAMS'S I/O LIST          01360000
+         LA    R15,DDPRINT             2ND DDNAME                       01370000
+         LA    R0,PRINT00              I/O RTNE FOR SYSPRINT            01380000
+         LA    R1,DYNAM                USER DATA FOR SYSPRINT RTNE      01390000
+         STM   R15,R1,IOLIST+4+12      BUILD IDCAMS'S I/O LIST          01400000
+*                                                                       01410001
+         L     R1,X'224'(,0)           PSAAOLD                          01420001
+         L     R1,ASCBASSB-ASCB(,R1)   A(ASSB)                          01430001
+         L     R1,ASSBDLCB-ASSB(,R1)   A(DLCB)                          01440001
+         L     R2,DLCBDCB@-DLCB(,R1)   A(DCB)                           01450001
+*                                                                       01460001
+         ATTACH EP=IDCAMS,TASKLIB=(R2),ECB=ECB1,SF=(E,ATTACHL),        X01470000
+               PARAM=(H0,H0,H0,IOLIST),VL=1,MF=(E,TENWORDS)             01480000
+         ST    R1,ECB1+4               KEEP TCB ADDR FOR DETACH         01490000
+         WAIT  1,ECB=ECB1              WAIT A WHILE                     01500000
+         DETACH ECB1+4                 DETACH SUBTASK                   01510000
+*********************************************************************** 01520000
+*                                                                     * 01530000
+*        FREE UNUSED STORAGE                                          * 01540000
+*                                                                     * 01550000
+*********************************************************************** 01560000
+         LM    R3,R5,BUFFER            CURRENT/LENGTH/START             01570000
+         LA    R1,7(,R3)               ROUND UP ADDRESS                 01580000
+         N     R1,=F'-8'               ROUND UP ADDRESS                 01590000
+         LR    R3,R1                   PASS ADDRESS FOR CALCULATIONS    01600000
+         SR    R3,R5                   LENGTH USED                      01610000
+         ST    R3,BUFFER+4             LENGTH USED                      01620000
+         SLR   R4,R3                   LENGTH UNUSED                    01630000
+         FREEMAIN RU,LV=(R4),A=(R1)    FREE UNUSED STORAGE              01640000
+*********************************************************************** 01650000
+*                                                                     * 01660000
+*        COMPUTE NUMBER OF LINES TO DISPLAY                           * 01670000
+*                                                                     * 01680000
+*********************************************************************** 01690000
+         SLR   R2,R2                                                    01700000
+         D     R2,MAXLRECL             NUMBER OF ENTRIES                01710000
+         LTR   R3,R3                   ANYTHING TO BROWSE?              01720000
+         BZ    GOBACK                  NO, QUIT                         01730000
+         ST    R3,MAXRECNO             MAX RECORD NUMBER                01740000
+*********************************************************************** 01750000
+*                                                                     * 01760000
+*        INVOKE "BRIF" SERVICE                                        * 01770000
+*                                                                     * 01780000
+*********************************************************************** 01790000
+         LOAD  EP=ISPLINK                                               01800000
+         LR    R15,R0                                                   01810000
+         CALL  (15),(BRIF,DSNAME,RECFM,MAXLRECL,RADDR,0,IOLIST+12),VL, +01820000
+               MF=(E,ATTACHL)                                           01830000
+         LR    R2,R15                  PASS RETURN CODE                 01840000
+*                                                                       01850000
+*        FREE STORAGE, GOBACK                                           01860000
+*                                                                       01870000
+GOBACK   LM    R0,R1,BUFFER+4          LENGTH/ADDRESS                   01880000
+         FREEMAIN RU,LV=(0),A=(1)                                       01890000
+         LR    R1,R13                                                   01900000
+         L     R13,4(,R13)                                              01910000
+         FREEMAIN RU,LV=DYNAML,A=(1)                                    01920000
+GOBACK20 LR    R15,R2                  RETURN CODE                      01930000
+         RETURN (14,12),RC=(15)                                         01940000
+         DROP                                                           01950000
+*********************************************************************** 01960000
+*                                                                     * 01970000
+*        DEFINE INPUT PARAMETERS FOR IKJPARS                          * 01980000
+*                                                                     * 01990000
+*********************************************************************** 02000000
+PCLCSECT IKJPARM                                                        02010000
+DSNPCE   IKJPOSIT  DSNAME,USID,PROMPT='DATA SET NAME',                 X02020001
+               HELP='NAME OF THE DATA SET TO BE LISTED'                 02030000
+CATPCE   IKJKEYWD                                                       02040000
+         IKJNAME 'LEVEL',ALIAS='LVL'   1                                02050000
+         IKJNAME 'CATALOG'             2                                02060000
+         IKJNAME 'ENTRIES'             3                                02070000
+ALLPCE   IKJKEYWD                                                       02080000
+         IKJNAME 'NAME'                1                                02090000
+         IKJNAME 'ALL'                 2                                02100000
+         IKJENDP                                                        02110000
+* ------------------------------------------------------------------- * 02120000
+*        INPUT ROUTINE (SYSIN)                                        * 02130000
+* ------------------------------------------------------------------- * 02140000
+DDSYSIN  DC    C'DDSYSIN   '           SYSIN DD                         02150000
+SYSIN00  SAVE  (14,12),,'SYSIN ROUTINE'                                 02160000
+         LR    R11,R15                                                  02170001
+         USING SYSIN00,R11                                              02180001
+         LM    R4,R6,0(R1)             USER DATA, IOFLAGS, IOINFO       02190000
+         USING DYNAM,R4                                                 02200000
+         CLI   0(R5),X'08'             GET REQUEST?                     02210000
+         BNE   SYSIN90                 NO, QUIT                         02220000
+         TS    SYSIN_RC                FIRST TIME?                      02230000
+         BNZ   SYSIN94                 NO, SIGNAL EOF                   02240000
+         LM    R1,R2,COMMAND           ADDRESS, LENGTH                  02250000
+         STM   R1,R2,0(R6)             PASS ADDRESS AND LEN TO IDCAMS   02260000
+SYSIN90  RETURN (14,12),RC=00                                           02270000
+SYSIN94  RETURN (14,12),RC=04          EOF                              02280000
+         DROP                                                           02290000
+* ------------------------------------------------------------------- * 02300000
+*        OUTPUT ROUTINE (SYSPRINT)                                    * 02310000
+* ------------------------------------------------------------------- * 02320000
+DDPRINT  DC    C'DDSYSPRINT'           SYSPRINT DD                      02330000
+PRINT00  SAVE  (14,12),,'SYSPRINT ROUTINE'                              02340000
+         LR    R11,R15                                                  02350001
+         USING PRINT00,R11                                              02360001
+         LM    R4,R6,0(R1)             USER DATA, IOFLAGS, IOINFO       02370000
+         USING DYNAM,R4                                                 02380000
+         CLI   0(R5),X'0C'             PUT REQUEST?                     02390000
+         BNE   PRINT99                 NO, QUIT                         02400000
+*LM R1,R2,0(R5)                                                         02410000
+*TPUT (R1),(R2)                                                         02420000
+         L     R15,=A(PRINT31+VL)      AMODE31                          02430000
+         BSM   0,R15                   AMODE31                          02440000
+PRINT31  L     R14,BUFFER              BUFFER PTR                       02450000
+         L     R15,MAXLRECL            LENGTH                           02460000
+         LM    R2,R3,0(R6)             ADDR, LEN                        02470000
+         CLI   0(R2),C'1'              PAGE HEADER?                     02480000
+         BE    PRINT99                 YES, IGNORE IT                   02490000
+         CLI   0(R2),C' '              CONTROL CHARACTER?               02500000
+         BE    PRINT71                 NO, JUMP                         02510000
+         MVI   0(R2),C' '              YES, GET RID OF IT               02520000
+         SLR   R1,R1                                                    02530000
+         ICM   R1,B'1000',BLANKS       PADDING                          02540000
+         MVCL  R14,R0                  BLANK LINE                       02550000
+         L     R15,MAXLRECL            RELOAD LENGTH                    02560000
+PRINT71  ICM   R3,B'1000',BLANKS       PADDING                          02570000
+         MVCL  R14,R2                  MOVE CURRENT LINE                02580000
+         ST    R14,BUFFER              UPDATE BUFFER PTR                02590000
+PRINT99  RETURN (14,12),RC=00                                           02600000
+         ORG   *-2                                                      02610000
+         BSM   0,R14                                                    02620000
+         DROP                                                           02630000
+*********************************************************************** 02640000
+*                                                                     * 02650000
+*        READ ROUTINE (BRIF)                                          * 02660000
+*                                                                     * 02670000
+*********************************************************************** 02680000
+READRTN  SAVE  (14,12),,'READRTN'                                       02690000
+         LR    R11,R15                                                  02700001
+         USING READRTN,R11                                              02710001
+         LM    R4,R7,0(R1)             INPUT PARMS                      02720000
+         L     R12,0(,R7)              =A(DYNAM)                        02730000
+         USING DYNAM,R12                                                02740000
+*                                                                       02750000
+         L     R3,0(,R6)               RECORD NUMBER (FROM BROWSE)      02760000
+         C     R3,MAXRECNO             BEYOND END OF FILE?              02770000
+         BH    GOBACK8                 YES, EXIT                        02780000
+         BCTR  R3,0                    CALCULATE OFFSET                 02790000
+         M     R2,MAXLRECL             CALCULATE OFFSET                 02800000
+         AL    R3,BUFFER+8             CHANGE OFFSET TO ADDRESS         02810000
+         ST    R3,0(,R4)               PASS RECORD ADDRESS TO BRIF      02820000
+**       MVC   0(4,R5),MAXLRECL        PASS RECORD LENGTH TO BRIF       02830000
+         RETURN (14,12),RC=00                                           02840000
+*                                                                       02850000
+GOBACK8  MVC   0(4,R6),MAXRECNO        RETURN MAX RECORD NUMBER         02860000
+         RETURN (14,12),RC=8                                            02870000
+*                                                                       02880000
+RADDR    DC    A(READRTN)              READ ROUTINE (BRIF)              02890000
+MAXLRECL DC    F'121'                                                   02900000
+BRIF     DC    C'BRIF    '             FUNCTION                         02910000
+RECFM    DC    C'F '                                                    02920000
+H0       DC    2X'00'                  NULL PARM                        02930000
+BLANKS   DC    CL8' '                                                   02940000
+*                                                                       02950000
+DYNAM    DSECT                                                          02960000
+         DS    18F                                                      02970000
+IOLIST   DS    A(2,DDSYSIN,SYSIN00,DYNAM,DDPRINT,PRINT00,DYNAM)         02980000
+ATTACHL  ATTACH SF=L                                                    02990000
+TENWORDS DS    10F                     WORK AREA                        03000000
+SYSIN_RC DS    X'00'                                                    03010000
+MAXRECNO DS    F                                                        03020000
+ECB1     DS   2F'0'                                                     03030000
+DYNANSWR DS    A                                                        03040000
+COMMAND  DS    A,F,CL80                INITIAL COMMAND                  03050000
+DSNAME   DS    CL46                    DSNAME FOR TITLE LINE            03060000
+BUFFER   DS    A(15,0,1)               ADDRESS/LENGTH/ADDRESS           03070000
+DYNAML   EQU   *-DYNAM                                                  03080000
+         YREGS                                                          03090000
+         IKJCPPL                                                        03100000
+         IKJPPL                                                         03110000
+VL       EQU   X'80000000'                                              03120000
+         IHAASCB                                                        03130001
+         IHAASSB                                                        03140001
+         CSVDLCB                                                        03150001
+         END                                                            03160000
+//SYSLIB   DD DSN=SYS1.MACLIB,DISP=SHR                                  03170000
+//SYSUT1   DD UNIT=VIO,SPACE=(CYL,1)                                    03180000
+//SYSLIN   DD UNIT=VIO,SPACE=(TRK,1),DISP=(,PASS),BLKSIZE=3200          03190001
+//SYSPRINT DD SYSOUT=*                                                  03200000
+//*                                                                     03210000
+//LKED    EXEC PGM=HEWL,PARM=(LIST,MAP,RENT,REFR)                       03220001
+//SYSLIN   DD DSN=*.HLASM.SYSLIN,DISP=(OLD,PASS)                        03230001
+//SYSLMOD  DD DSN=CBTTAPE.FILE183.LOAD(LCAT),DISP=SHR                   03240001
+//SYSPRINT DD SYSOUT=*                                                  03250000

@@ -1,0 +1,234 @@
+//GILBERTD JOB (ACCT#),DSNLIST,                                         00010000
+// NOTIFY=&SYSUID,                                                      00020000
+//*RESTART=GO,                                                          00030000
+// CLASS=A,MSGCLASS=H,COND=(0,NE)                                       00040000
+//HLASM EXEC PGM=ASMA90,PARM=(OBJECT,NODECK,NOESD,NORLD,NOXREF)         00050000
+*********************************************************************** 00060000
+*                                                                     * 00070000
+*    DSNLIST   TSO COMMAND                                            * 00080000
+*                                                                     * 00090000
+*              RETURNS IN &VAR THE DSNAMES ALLOCATED TO &DDN          * 00100000
+*                                                                     * 00110000
+*              EXAMPLE:                                               * 00120000
+*                                                                     * 00130000
+*                ALLOC DD(SYSPROC) SHR -                              * 00140000
+*                      DS('IPO1.CMDPROC' 'GILBERT.CLIST')             * 00150000
+*                DSNLIST DDNAME(SYSPROC) SETVAR(VAR2)                 * 00160000
+*                                                                     * 00170000
+*                IS EQUIVALENT TO:                                    * 00180000
+*                                                                     * 00190000
+*                SET VAR2 = 'IPO1.CMDPROC' 'GILBERT.CLIST'            * 00200000
+*                                                                     * 00210000
+*********************************************************************** 00220000
+DSNLIST  CSECT                                                          00230000
+DSNLIST  RMODE ANY                                                      00240000
+         SAVE  (14,12),,'GSF UTILITIES - DSNLIST'                       00250000
+         LR    R12,R15                 BASE REG                         00260000
+         USING DSNLIST,R12                                              00270000
+         LR    R11,R1                  CPPL ADDRESS                     00280000
+         USING CPPL,R11                                                 00290000
+         GETMAIN R,LV=DYNL             GET DYNAMIC AREA (LOC=BELOW)     00300000
+         ST    R13,4(,R1)                                               00310000
+         LR    R13,R1                                                   00320000
+         USING DYN,R13                                                  00330000
+         XC    DYN+72(256),DYN+72      CLEAR DYNAMIC STORAGE AREA       00340000
+*********************************************************************** 00350000
+*        BUILD PARSE PARM LIST, CALL IKJPARS                          * 00360000
+*********************************************************************** 00370000
+PARSE000 LA    R1,DYNPPL               POINT TO PPL                     00380000
+         USING PPL,R1                  SET UP ADDRESSABILITY TO PPL     00390000
+         MVC   PPLCBUF,CPPLCBUF        MOVE BUFFER ADDRESS TO PPL       00400000
+         MVC   PPLUPT,CPPLUPT          MOVE UPT ADDRESS TO PPL          00410000
+         MVC   PPLECT,CPPLECT          MOVE ECT ADDRESS TO PPL          00420000
+         LA    R0,DYNECB               EVENT CONTROL BLOCK              00430000
+         ST    R0,PPLECB               STORE ECB IN PPL                 00440000
+         MVC   PPLPCL,=A(PCLCSECT)     STORE PCL ADDR INTO PPL          00450000
+         LA    R0,DYNANSWR             ANSWER AREA                      00460000
+         ST    R0,PPLANS               STORE ANSWER ADDRESS IN PPL      00470000
+         LINK  EP=IKJPARS              CALL THE PARSE ROUTINE           00480000
+         LTR   R15,R15                 CHECK FOR ZERO PARSE RETURN      00490000
+         BNZ   RETURN                  GO AWAY UPSET                    00500000
+         DROP  R1                      WAS PPL                          00510000
+*********************************************************************** 00520000
+*        PROCESS PARSED PARAMETERS                                    * 00530000
+*********************************************************************** 00540000
+         L     R8,DYNANSWR             LOAD PDL ADDRESS                 00550000
+         USING IKJPARMD,R8             SET UP ADDRESSABILITY TO PDL     00560000
+PARSE100 L     R14,DDNPCE2             GET ADDRESS OF DDNAME            00570000
+         LH    R15,DDNPCE2+4           ACTUAL LENGTH OF DDNAME          00580000
+         ICM   R15,B'1000',=C' '       PADDING                          00590000
+         LA    R0,DCBDDNAM-IHADCB+DYNDCB1 DDNAME                        00600000
+         LA    R1,L'DCBDDNAM           LENGTH OF DDNAME                 00610000
+         MVCL  R0,R14                  MOVE DDNAME, PAD WITH BLANKS     00620000
+*                                                                       00630000
+PARSE300 L     R0,VARPCE2              ADDRESS OF NAME                  00640000
+         LH    R1,VARPCE2+4            LENGTH OF NAME                   00650000
+         STM   R0,R1,VARVDESC          VARIABLE DESCRIPTOR              00660000
+*                                                                       00670000
+PARSE999 IKJRLSA DYNANSWR              RELEASE PDL                      00680000
+         DROP  R8                      WAS IKJPARMD                     00690000
+*---------------------------------------------------------------------  00700000
+*        BUILD DCB, ARL, GET DSNAMES                                    00710000
+*---------------------------------------------------------------------  00720000
+         LA    R1,DYNDCB1              STORE DCB ADDRESS                00730000
+         USING IHADCB,R1                                                00740000
+         MVI   DCBDSORG,X'02'          DSORG=PO                         00750000
+         MVI   DCBOFLGS,X'02'          .                                00760000
+         MVI   DCBMACR1,X'D0'          EXCP, FOUND. EXT, COMMON INTFCE  00770000
+         MVI   DCBMACR2,X'08'          5-WORD DEVICE INTERFACE          00780000
+         ST    R1,OPENLIST             STORE DCB ADDRESS                00790000
+         MVI   OPENLIST,X'80'          OPEN INPUT IS THE DEFAULT        00800000
+         LA    R0,EXLST1               DCB EXIT LIST                    00810000
+         ST    R0,DCBEXLST             STORE INTO DCB                   00820000
+         LA    R0,ARL                  ALLOC RETRIEVAL LIST             00830000
+         ST    R0,EXLST1               STORE INTO EXIT LIST             00840000
+         MVI   EXLST1,X'93'            ARL ADDRESS                      00850000
+         DROP  R1                      WAS IHADCB                       00860000
+         MVC   ARLLEN,=Y(ARLEND-ARLLEN)  LENGTH OF ARL                  00870000
+         MVC   ARLIDENT,=C'AR'         BLOCK ID                         00880000
+         RDJFCB MF=(E,OPENLIST)        BUILD AN ARL                     00890000
+         LTR   R15,R15                                                  00900000
+         BNZ   RETURN                  RDJFCB ERROR                     00910000
+*---------------------------------------------------------------------  00920000
+*        BUILD THE VARIABLE VALUE FROM JFCB'S                           00930000
+*---------------------------------------------------------------------  00940000
+         L     R2,ARLAREA              GET ADDR OF AREA                 00950000
+         LH    R3,ARLRTRVD             DATA SET COUNT                   00960000
+         LA    R4,WORK5                WORK AREA                        00970000
+*LOOP                                                                   00980000
+LOOPJFCB MVI   0(R4),C''''             LEADING QUOTE                    00990000
+         MVC   1(44,R4),4(R2)          MOVE DSNAME                      01000000
+         MVI   1+44(R4),C' '           DELIMITER                        01010000
+         LA    R4,1(,R4)               BUMP UP TO NEXT BYTE             01020000
+         CLI   0(R4),C' '              CHECK FOR A SPACE                01030000
+         BNE   *-8                     LOOP UNTIL END OF DSN FOUND      01040000
+         MVI   0(R4),C''''             TRAILING QUOTE                   01050000
+         MVI   1(R4),C' '              SEPARATOR                        01060000
+         LA    R4,2(,R4)               BUMP UP PAST SPACE               01070000
+         AH    R2,0(,R2)               ADD ENTRY LENGTH (180)           01080000
+         BCT   R3,LOOPJFCB             PROCESS NEXT JFCB                01090000
+*ENDLOOP                                                                01100000
+         LA    R0,WORK5                WORK AREA                        01110000
+         ST    R0,VALUEPTR             POINTER TO VARIABLE VALUE        01120000
+         SR    R4,R0                   COMPUTE LENGTH                   01130000
+         ST    R4,VALUELEN             LENGTH OF VALUE FIELD            01140000
+         L     R1,ARLAREA              GET ADDR OF AREA                 01150000
+         L     R0,ARLPOOL              GET SP, LENGTH                   01160000
+         FREEMAIN R,LV=(0),A=(1)       FREE AREA                        01170000
+*---------------------------------------------------------------------* 01180000
+*        UPDATE CLIST VARIABLE                                        * 01190000
+*---------------------------------------------------------------------* 01200000
+         LA    R14,=A(TSVEUPDT)        CT441 FUNCTION                   01210000
+         LA    R15,VARVDESC+0          POINTER TO VARIABLE NAME         01220000
+         LA    R0,VARVDESC+4           LENGTH OF VARIABLE NAME          01230000
+         LA    R1,VALUEPTR             POINTER TO VARIABLE VALUE        01240000
+         LA    R2,VALUELEN             LENGTH OF VARIABLE VALUE         01250000
+         LA    R3,TOKEN                NULL TOKEN                       01260000
+         STM   R14,R3,SIXWORDS         STORE PARAMETER LIST             01270000
+         OI    SIXWORDS+20,X'80'       MARK END OF LIST                 01280000
+         LA    R1,SIXWORDS             PARM LIST ADDRESS                01290000
+         LINK  EP=IKJCT441             CALL THE VARIABLE ACCESS RTNE    01300000
+*---------------------------------------------------------------------* 01310000
+*        RETURN TO CALLER                                             * 01320000
+*---------------------------------------------------------------------* 01330000
+RETURN   LR    R1,R13                  DYNAMIC STORAGE AREA ADDRESS     01340000
+         L     R13,4(,R13)                                              01350000
+         ST    R15,16(,R13)            PASS RETURN CODE                 01360000
+**       FREEMAIN R,LV=DYNL,A=(1)      FREE DYNAMIC AREA                01370000
+         RETURN (14,12)                GOBACK                           01380000
+*********************************************************************** 01390000
+*        DEFINE INPUT PARAMETERS FOR IKJPARS                          * 01400000
+*********************************************************************** 01410000
+PCLCSECT IKJPARM                                                        01420000
+PCLCSECT RMODE ANY                                                      01430000
+DDNVPCE  IKJKEYWD                                                       01440000
+         IKJNAME 'DDNAME',SUBFLD=DDNSUBF,ALIAS=('FILE')                 01450000
+VARVPCE  IKJKEYWD                                                       01460000
+         IKJNAME 'SETVAR',SUBFLD=VARSUBF                                01470000
+DDNSUBF  IKJSUBF                                                        01480000
+DDNPCE2  IKJIDENT 'DDNAME',MAXLNTH=8,FIRST=ALPHA,OTHER=ALPHANUM,       X01490000
+               PROMPT='DDNAME'                                          01500000
+VARSUBF  IKJSUBF                                                        01510000
+VARPCE2  IKJIDENT 'VARIABLE NAME',MAXLNTH=8,FIRST=ALPHA,OTHER=ALPHANUM,X01520000
+               PROMPT='VARIABLE NAME'                                   01530000
+         IKJENDP                                                        01540000
+*********************************************************************** 01550000
+*        DYNAMIC STORAGE AREA                                         * 01560000
+*********************************************************************** 01570000
+DYN      DSECT                                                          01580000
+         DS    18F                     SAVE AREA                        01590000
+DYNANSWR DS    F                       ANSWER AREA FOR PARSE            01600000
+DYNUWA   DS    4F                      USER WORK AREA FOR PARSE         01610000
+DYNPPL   DS    8F                      PPL FOR USE WITH PARSE           01620000
+DYNECB   DS    F                       PPL FOR USE WITH PARSE           01630000
+VARVDESC DS    A,F                     ADDR/LEN OF VARIABLE NAME        01640000
+VALUEPTR DS    F                       PTR TO DSNAME                    01650000
+VARPTR   DS    F                       PTR TO .G0001V00                 01660000
+VALUELEN DS    F                       LENGTH OF VARIABLE VALUE         01670000
+TOKEN    DS    F                       TOKEN FOR IKJCT441               01680000
+SIXWORDS DS    6F                      PARMLIST                         01690000
+OPENLIST RDJFCB DYNDCB1,MF=L                                            01700000
+DYNDCB1  DCB   DSORG=PS,MACRF=E,EXLST=EXLST1,DDNAME=DUMMY               01710000
+EXLST1   DC    A(ARL+X'93000000')      DCB EXIT LIST                    01720000
+         IHAARL DSECT=NO               ALLOC RETRIEVAL LIST             01730000
+WORK5    DS    255CL46                 WORK AREA                        01740000
+DYNL     EQU   *-DYN                   LENGTH OF WORK AREA              01750000
+*                                                                       01760000
+         IKJPPL                        PARSE PARAMETER LIST             01770000
+         IKJCPPL                       COMMAND PROCESSOR PARM LIST      01780000
+TSVEUPDT EQU   2                       UPDATE VARIABLE                  01790000
+         YREGS                         SYS1.MACLIB                      01800000
+         DCBD  DSORG=XE                DCB DSECT                        01810000
+         END                                                            01820000
+//SYSLIB   DD DSN=SYS1.MACLIB,DISP=SHR                                  01830000
+//SYSUT1   DD UNIT=VIO,SPACE=(CYL,2)                                    01840000
+//SYSPRINT DD SYSOUT=*                                                  01850000
+//SYSLIN   DD UNIT=VIO,SPACE=(TRK,1),DISP=(,PASS),DCB=BLKSIZE=3200      01860000
+//*                                                                     01870000
+//*       LINK-EDIT THE DSNLIST PROGRAM                                 01880000
+//*                                                                     01890000
+//LKED    EXEC PGM=HEWL,PARM='MAP,RENT'                                 01900000
+//SYSPRINT DD SYSOUT=*                                                  01910000
+//SYSLIN   DD DSN=*.HLASM.SYSLIN,DISP=(OLD,DELETE)                      01920000
+//SYSLMOD  DD DSN=CBTTAPE.FILE183.LOAD(DSNLIST),DISP=SHR                01930000
+//*                                                                     01940000
+//**********************************************************************01950000
+//*                                                                    *01960000
+//*   Execute an in-line CLIST which runs "DSNLIST".                   *01970000
+//*                                                                    *01980000
+//*   The following DSNLIST command is issued:                         *01990000
+//*                                                                    *02000000
+//*     DSNLIST DDNAME(SYSPROC) SETVAR(VAR2)                           *02010000
+//*                                                                    *02020000
+//*   It produces the following output:                                *02030000
+//*                                                                    *02040000
+//*     DSNLIST LASTCC=0 VAR2=('CBTTAPE.FILE183.PDS' 'SYS1.MACLIB')    *02050000
+//*                                                                    *02060000
+//*   The following LISTDSI command is also issued:                    *02070000
+//*                                                                    *02080000
+//*     LISTDSI SYSPROC FILE PREALLOC                                  *02090000
+//*                                                                    *02100000
+//*   It produces the following output:                                *02110000
+//*                                                                    *02120000
+//*     LISTDSI LASTCC=0 DSN=(CBTTAPE.FILE183.PDS) REASON=0000         *02130000
+//*                                                                    *02140000
+//**********************************************************************02150000
+//*                                                                     02160000
+//GO      EXEC PGM=IKJEFT01,PARM='%EXECUTE CLIST'                       02170000
+//STEPLIB  DD DSN=CBTTAPE.FILE183.LOAD,DISP=SHR                 DSNLIST 02180000
+//SYSPROC  DD DSN=CBTTAPE.FILE183.PDS,DISP=SHR                 %EXECUTE 02190000
+//         DD DSN=SYS1.MACLIB,DISP=SHR                                  02200000
+//SYSTSPRT DD SYSOUT=*                                                  02210000
+//SYSUDUMP DD SYSOUT=*                                                  02220000
+//SYSTSIN  DD *                                                         02230000
+ /* CONTROL LIST CONLIST                                                02240000
+DSNLIST DDNAME(SYSPROC) SETVAR(VAR2)                                    02250000
+WRITE DSNLIST LASTCC=&LASTCC VAR2=(&VAR2)                               02260000
+LISTDSI SYSPROC FILE PREALLOC             /* RC=16 IF VIO */            02270000
+SET RC=&LASTCC                                                          02280000
+WRITE LISTDSI LASTCC=&RC DSN=(&SYSDSNAME) REASON=&SYSREASON             02290000
+IF &RC > 0 THEN DO                                                      02300000
+  WRITE &SYSMSGLVL1                                                     02310000
+  WRITE &SYSMSGLVL2                                                     02320000
+  END                                                                   02330000
+EXIT CODE(&MAXCC)                                                       02340000

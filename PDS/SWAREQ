@@ -1,0 +1,48 @@
+/*----REXX------------------------------------------------------------*\00010001
+|*                                                                    *|00020000
+|* MODULE NAME = SWAREQ                                               *|00030000
+|*                                                                    *|00040000
+|* DESCRIPTIVE NAME = Convert an SVA to a 31-bit address              *|00050000
+|*                                                                    *|00060000
+|* STATUS = R200                                                      *|00070000
+|*                                                                    *|00080000
+|* FUNCTION = The SWAREQ function simulates the SWAREQ macro to       *|00090000
+|*            convert an SWA Virtual Address (SVA) to a full 31-bit   *|00100000
+|*            address which can be used to access SWA control blocks  *|00110000
+|*            in the SWA=ABOVE environment.  The input is a 3-byte    *|00120000
+|*            SVA; the output value is a 10-digit decimal number.     *|00130000
+|*                                                                    *|00140000
+|* AUTHOR   =  Gilbert Saint-Flour <carlos@gsf-soft.com>              *|00150000
+|*                                                                    *|00160000
+|* DEPENDENCIES = TSO/E V2                                            *|00170000
+|*                                                                    *|00180000
+|* SYNTAX   =  SWAREQ(sva)                                            *|00190000
+|*                                                                    *|00200000
+|*             sva must contain a 3-byte SVA.                         *|00210000
+|*                                                                    *|00220000
+|* Sample Invocation:                                                 *|00230000
+|*                                                                    *|00240000
+|*    NUMERIC DIGITS 10                                               *|00250000
+|*    tcb = C2D(STORAGE(21C,4))         /* TCB          PSATOLD  */   *|00260000
+|*    tiot= C2D(STORAGE(D2X(tcb+12),4)) /* TIOT         TCBTIO   */   *|00270000
+|*    sva = STORAGE(D2X(tiot+36),3)     /* First JFCB   TIOEJFCB */   *|00280000
+|*    jfcb=SWAREQ(sva)             /* convert SVA to 31-bit addr */   *|00290000
+|*    dsn=STORAGE(D2X(jfcb),44)         /* dsname       JFCBDSNM */   *|00300000
+|*    vol=STORAGE(D2X(jfcb+118),6)      /* volser       JFCBVOLS */   *|00310000
+|*    SAY 'sva='C2X(sva) 'jfcb='D2X(jfcb) 'dsn='dsn 'vol='vol         *|00320000
+|*                                                                    *|00330000
+\*--------------------------------------------------------------------*/00340000
+/*SWAREQ: PROCEDURE */                                                  00350000
+  IF RIGHT(C2X(ARG(1)),1) \= 'F' THEN       /* SWA=BELOW ?          */  00360000
+    RETURN C2D(ARG(1))+16                   /* yes, return sva+16   */  00370000
+  NUMERIC DIGITS 10                         /* allow up to 7FFFFFFF */  00380000
+  sva=C2D(ARG(1))                           /* convert to decimal   */  00390000
+  tcb = C2D(STORAGE(21C,4))                 /* TCB         PSATOLD  */  00400000
+  jscb = C2D(STORAGE(D2X(tcb+180),4))       /* JSCB        TCBJSCB  */  00410000
+  qmpl = C2D(STORAGE(D2X(jscb+244),4))      /* QMPL        JSCBQMPI */  00420000
+  qmat = C2D(STORAGE(D2X(qmpl+24),4))       /* QMAT        QMADD    */  00430000
+    DO WHILE sva>65536                                                  00440000
+      qmat = C2D(STORAGE(D2X(qmat+12),4)) /* next QMAT     QMAT+12  */  00450000
+      sva=sva-65536                         /* 010006F -> 000006F   */  00460000
+    END                                                                 00470000
+  RETURN C2D(STORAGE(D2X(qmat+sva+1),4))+16                             00480000

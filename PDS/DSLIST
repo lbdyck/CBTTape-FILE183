@@ -1,0 +1,306 @@
+/*************************************************************** REXX */00010010
+/*                                                                    */00020000
+/* Module Name: DSLIST                                                */00030000
+/*                                                                    */00040000
+/* Descriptive Name: Cursor-driven entry into PDF 3.4 panel           */00050010
+/*                                                                    */00060000
+/* Status: R213                                                       */00070013
+/*                                                                    */00080000
+/* Function: This REXX program allows you to invoke the data-set      */00090000
+/*           list function of ISPF/PDF (option 3.4) with the          */00100000
+/*           DSNAME LEVEL field set to the dsname under which         */00110000
+/*           the cursor is placed when you enter the command.         */00120000
+/*           When running in ISPF 4.2, the Work Place (opt 11)        */00130009
+/*           is invoked instead of the Data Set List Utility.         */00140009
+/*                                                                    */00150000
+/* Author: Gilbert Saint-Flour <carlos@gsf-soft.com>                  */00160013
+/*                                                                    */00170000
+/* Environment: TSO/E V2                                              */00180000
+/*              ISPF/PDF V3 or V4                                     */00190000
+/*                                                                    */00200000
+/* Operation:                                                         */00210010
+/*                                                                    */00220010
+/*     DSLIST may be invoked as a command or as an EDIT macro.        */00230010
+/*                                                                    */00240000
+/*     o  To invoke DSLIST as a command, enter TSO %DSLIST in the     */00250010
+/*        command field, move the cursor under a data set name        */00260010
+/*        currently appearing on your screen and press ENTER.         */00270010
+/*        DSLIST extracts the data set name from the screen,          */00280010
+/*        invokes the Data Set List utility (opt 3.4) and places      */00290010
+/*        the data set name in the DSNAME LEVEL field.  In the        */00300010
+/*        ISPF 4.2 environment, DSLIST invokes the ISPF Workplace     */00310010
+/*        (opt 11) instead of the Data Set List utility.              */00320010
+/*                                                                    */00330010
+/*     o  To invoke DSLIST as an EDIT macro, type %DSLIST in the      */00340010
+/*        command field, move the cursor under a data set name        */00350010
+/*        currently appearing on your screen and press ENTER.         */00360010
+/*                                                                    */00370000
+/* Notes:                                                             */00380008
+/*                                                                    */00390010
+/*     o  DSLIST extracts data set names in upper-case only.          */00400010
+/*                                                                    */00410010
+/*     o  A data set name in a message can not be extracted.          */00420010
+/*                                                                    */00430010
+/*     o  When invoked as a command, the data set name must be        */00440010
+/*        entirely visible on the screen.                             */00450010
+/*                                                                    */00460010
+/*     o  When invoked as an EDIT macro, the data set name only       */00470010
+/*        needs to be partially visible but it must be on a           */00480010
+/*        DATA line.                                                  */00490010
+/*                                                                    */00500000
+/*     o  When invoked as an EDIT macro, DSLIST uses standard ISREDIT */00510010
+/*        functions to retrieve the text at the cursor position.      */00520000
+/*                                                                    */00530000
+/*     o  When invoked as a command, DSLIST accesses control          */00540010
+/*        blocks that are not part of the standard ISPF               */00550000
+/*        programming interface to retrieve the screen image and      */00560000
+/*        cursor position.  This method works with ISPF/PDF V2R3      */00570000
+/*        thru V4R5 but may not work in future releases.              */00580013
+/*        This technique is borrowed from ISPCDSN, a program written  */00590010
+/*        by Gordon J. Schillinger, to whom I'm for ever grateful.    */00600010
+/*                                                                    */00610000
+/*     o  Assign TSO %DSLIST to a PFK in those ISPF applications      */00620010
+/*        that allow you to view job output: SDSF, SAR, IOF, etc.     */00630000
+/*        In some applications (such as SYSVIEW), you MUST invoke     */00640010
+/*        DSLIST using a PFK.                                         */00650007
+/*                                                                    */00660008
+/*     o  When DSLIST is invoked outside of PDF (i.e ZAPPLID is NOT   */00670010
+/*        equal to ISR), DSLIST re-invokes itself with NEWAPPL(ISR)   */00680008
+/*        to ensure the same PFK setting as when option 3.4 is        */00690008
+/*        invoked from the PDF main menu.                             */00700008
+/*                                                                    */00710000
+/*     o  To enable their cursor-driven capability, commercial        */00720010
+/*        products like MVS/QuickRef require you to modify the        */00730008
+/*        main panel of every application in which you intend to      */00740008
+/*        use it.  DSLIST does not require any panel modification.    */00750008
+/*                                                                    */00760008
+/* Change Activity:                                                   */00770000
+/*                                                                    */00780000
+/*  @206 Fix DEBUG option, add "_" as dsname delimiter                */00790006
+/*  @207 Rewrite DSN extraction algorithm to support dynamic areas    */00800007
+/*       and windows; dsname must be in upper-case.                   */00810007
+/*  @208 If the cursor is placed under a DSN= or DSNAME= string,      */00820008
+/*       extract the dsname to the right of the = sign.               */00830008
+/*  @209 Invoke ISPF Workplace in the ISPF 4.2 environment            */00840009
+/*  @210 Minor technical changes and documentation improvements       */00850010
+/*  @211 Prevent error when csrw=0                                    */00860011
+/*  @212 Add PROFILE option on VPUT commands                          */00870012
+/*  @213 Rewrite dsname extraction algorithm                          */00880013
+/**********************************************************************/00890000
+ADDRESS ISPEXEC                                                         00900010
+"CONTROL ERRORS RETURN"                                                 00910010
+Zerrmsg=''                                                              00920010
+Dsname=''                                                               00930010
+"ISREDIT MACRO (DEBUG)"                                                 00940000
+If rc = 0 THEN DO                     /*   if we've been invoked as   */00950000
+  UPPER debug                         /*   an edit macro, use ISREDIT */00960000
+  "ISREDIT (LINE,CSRP) = CURSOR"      /*   to retrieve the line and   */00970000
+  "ISREDIT (LINE) = LINE .ZCSR"       /*   cursor position            */00980000
+  IF csrp>0 THEN                      /*   then                       */00990010
+    CALL extract_dsname               /*   extract the dsname         */01000000
+  END                                                                   01010000
+ELSE DO                               /*  DSLIST invoked as a command */01020000
+  ARG debug                                                             01030006
+  "VGET ZAPPLID"                      /*   Get current application ID */01040005
+  IF zapplid \= 'ISR' THEN DO         /*   If ZAPPLID\=ISR, re-invoke */01050013
+    "SELECT CMD(%"SYSVAR(SYSICMD) debug ") NEWAPPL(ISR)"                01060000
+    EXIT rc                           /*   DSLIST with NEWAPPL(ISR)   */01070007
+    END                                                                 01080000
+  CALL find_cursor_position           /*   find the cursor position,  */01090000
+  CALL extract_dsname                 /*   extract the dsname         */01100000
+  END                                                                   01110000
+"VGET ZENVIR"                         /* Retrieve ISPF Version        */01120009
+ /* Zenvir='ISPF 4.1' */              /* Force usage of DSLIST        */01130013
+IF LEFT(Zenvir,8) < 'ISPF 4.2' THEN                                     01140009
+  CALL Invoke_ISRUDL                  /* Data Set List Utility (3.4)  */01150009
+ELSE                                                                    01160009
+  CALL Invoke_Work_Place              /* Work Place Utility (opt 11)  */01170009
+IF zerrmsg\='' THEN "SETMSG MSG("zerrmsg")"                             01180010
+EXIT                                                                    01190010
+/*-------------------------------------------------------- sub-routine*/01200000
+/*                                                                    */01210000
+/*            RETRIEVE LINE ADDRESS AND CURSOR POSITION               */01220000
+/*                                                                    */01230000
+/*--------------------------------------------------------------------*/01240000
+find_cursor_position:                                                   01250000
+  tcb    = PTR(540)               /* TCB (EXEC command)    PSATOLD  */  01260002
+  tcb    = PTR(tcb+132)           /* TCB (ISPTASK)         TCBOTC   */  01270002
+  fsa    = PTR(tcb+112)           /* first save area       TCBFSA   */  01280002
+  r1     = PTR(fsa+24)            /* ISPTASK's R1                   */  01290002
+  tld    = PTR(r1)                /* TLD address                    */  01300002
+  tls    = PTR(tld+096)           /* screen buffer         TLDTLSP  */  01310007
+  csr    = PTR(tld+164)           /* relative cursor pos.  TLDCSR   */  01320002
+  scrw   = PTR(tld+192)           /* screen width          TLDCLSWD */  01330002
+  IF scrw>0 then                                                        01340011
+    csrp = csr//scrw+1            /* cursor position in curr. line  */  01350011
+  ELSE                                                                  01360011
+    csrp = 1                      /* ISPSTRT                        */  01370011
+  linead = D2X(tls+csr-csrp+1)    /* address of current line        */  01380010
+  line   = STORAGE(linead,scrw)   /* text of current line           */  01390000
+  IF debug='DEBUG' THEN SAY 'tcb='D2X(tcb) 'fsa='D2X(fsa) 'r1='D2X(r1), 01400010
+          'tld='D2X(tld) STORAGE(D2X(tld),4) 'tls='D2X(tls),            01410010
+          'csr='csr 'scrw='scrw 'linead='linead                         01420000
+  RETURN                                                                01430000
+PTR: RETURN C2D(BITAND(STORAGE(D2X(ARG(1)),4),'7FFFFFFF'X))             01440010
+/*-------------------------------------------------------- sub-routine*/01450000
+/*                                                                    */01460000
+/*           Scan current line to extract the dsname                  */01470012
+/*                                                                    */01480000
+/*           line -> TEXT OF LINE AT CURSOR POSITION                  */01490000
+/*           csrp -> CURSOR POSITION IN LINE                          */01500000
+/*                                                                    */01510000
+/*--------------------------------------------------------------------*/01520000
+extract_dsname:                                                         01530000
+  valid=COPIES(' ',64)||XRANGE('40'x,'FF'x)                             01540013
+  IF debug='DEBUG' THEN                            /*     debug     */  01550010
+    DO                                             /*     debug     */  01560000
+      PARSE SOURCE . . cmd ddn dsn . . . . .       /*     debug     */  01570000
+      SAY 'cmd='cmd 'ddn='ddn 'dsn='dsn            /*     debug     */  01580000
+      DO I=1 BY 16 TO LENGTH(Line)                 /*     debug     */  01590007
+        HEX=''; CHAR='*'                           /*     debug     */  01600007
+        DO J=I BY 4 UNTIL J>I+16                   /*     debug     */  01610007
+          L=LENGTH(Line)-J+1                       /*     debug     */  01620007
+          IF L<1 THEN LEAVE                        /*     debug     */  01630007
+          S=SUBSTR(Line,J,L)                       /*     debug     */  01640007
+          HEX=HEX || ' ' || LEFT(C2X(S),8)         /*     debug     */  01650007
+          CHAR=CHAR||LEFT(S,4)                     /*     debug     */  01660007
+        END                                        /*     debug     */  01670007
+        char=TRANSLATE(char,valid)                 /*     debug     */  01680013
+        SAY '  +'RIGHT(I-1,4,'0') ' ' LEFT(HEX,36) ' ' LEFT(CHAR,17)'*' 01690007
+      END                                          /*     debug     */  01700007
+      SAY 'CURSOR POSITION='csrp                   /*     debug     */  01710000
+    END                                            /*     debug     */  01720000
+  If SUBSTR(line,csrp,1)=' ' THEN RETURN                                01730010
+                                                                        01740008
+  /* If the cursor is positionned under a DSN= or DSNAME= string,   */  01750008
+  /* move the cursor pointer to the right of the = sign.            */  01760008
+                                                                        01770008
+  p=SUBSTR(line,MAX(csrp-3,1),MIN(csrp+3,LENGTH(line))+1)               01780008
+  IF POS('DSN=',p) > 0 THEN csrp=csrp+4                                 01790008
+                                                                        01800008
+  p=SUBSTR(line,MAX(csrp-6,1),MIN(csrp+6,LENGTH(line))+1)               01810008
+  IF POS('DSNAME=',p) > 0 THEN csrp=csrp+7                              01820008
+                                                                        01830013
+  /*  Pad the line at both ends with spaces; convert to upper-case  */  01840013
+                                                                        01850013
+  line=COPIES(' ',10) || TRANSLATE(line,valid) || COPIES(' ',10)        01860013
+  csrp=csrp+10                                                          01870013
+  UPPER line                              /* convert to upper case  */  01880013
+                                                                        01890013
+  /* If the cursor is positionned under a parenthesis, ignore it    */  01900013
+                                                                        01910013
+  DO WHILE SUBSTR(line,csrp,1)='('; csrp=csrp+1; END                    01920013
+  DO WHILE SUBSTR(line,csrp,1)=')'; csrp=csrp-1; END                    01930013
+                                                                        01940008
+  valid='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#$-{.'                    01950013
+  ld=0;lp=0                                                             01960013
+                                                                        01970013
+  /*     Check that the cursor is under a valid dsname character.   */  01980013
+  /*     If it's under an apostrophe, determine if it's the start   */  01990013
+  /*     or the end of the dsname.                                  */  02000013
+                                                                        02010013
+  c=SUBSTR(line,csrp,1)                                                 02020013
+  IF VERIFY(c,valid)=1 THEN DO            /* invalid dsname char    */  02030013
+    IF c\="'" THEN RETURN                 /* invalid, not a quote   */  02040013
+    IF VERIFY(SUBSTR(line,csrp+1,1),valid)=0 THEN                       02050013
+      ld=csrp                             /* left delimiter found   */  02060013
+    ELSE DO                               /* apost marks start dsn  */  02070013
+      p=csrp-1                            /* move csr before apost  */  02080013
+      IF SUBSTR(line,p,1)=')' | VERIFY(SUBSTR(line,p,1),valid)=0 THEN   02090013
+        csrp=csrp-2                       /* move csr before )      */  02100013
+      ELSE                                /* apost surounded by     */  02110013
+        RETURN                            /* invalid characters     */  02120013
+      END                                                               02130013
+    END                                                                 02140013
+  IF debug='DEBUG' THEN SAY 'ld='ld                                     02150013
+                                                                        02160013
+  /*                Find start of dsname                            */  02170013
+                                                                        02180013
+  IF ld=0 THEN DO                                                       02190013
+    DO csrp=csrp to 1 by -1                                             02200013
+      c=SUBSTR(line,csrp,1)                                             02210013
+      IF VERIFY(c,valid)>0 THEN           /* invalid dsname char    */  02220013
+        IF c='(' THEN DO                  /* left paren             */  02230013
+          IF lp>0 THEN LEAVE              /* not first left paren   */  02240013
+          DO I=1 to 9                     /* search for a period    */  02250013
+            IF SUBSTR(line,csrp+i,1) ='.' THEN LEAVE                    02260013
+          END                                                           02270013
+          IF i>8 THEN                     /* no period found after  */  02280013
+            lp=csrp                       /* start of member        */  02290013
+          ELSE                                                          02300013
+            LEAVE                         /* start of member        */  02310013
+          END                                                           02320013
+        ELSE                              /* invalid char, not "("  */  02330013
+          LEAVE                                                         02340013
+      END                                                               02350013
+    ld=csrp                               /* left delimiter         */  02360013
+    IF lp=ld+1 THEN DO                                                  02370013
+      lp=0                                /* no member              */  02380013
+      ld=ld+1                                                           02390013
+      END                                                               02400013
+    END                                                                 02410013
+  IF debug='DEBUG' THEN SAY 'ld='ld 'lp='lp 'csrp='csrp                 02420013
+                                                                        02430013
+  /*              Find start of member name                         */  02440013
+                                                                        02450013
+  IF lp=0 THEN DO                         /* "(" not seen yet       */  02460013
+    csrp=ld+1                             /* 1st byte of dsname     */  02470013
+    p=VERIFY(line,valid,,csrp)            /* Find delimiter         */  02480013
+    IF debug='DEBUG' THEN SAY 'csrp='csrp 'p='p SUBSTR(line,p,1)        02490013
+    IF SUBSTR(line,p,1)='(' THEN DO                                     02500013
+      lp=p                                /* "(" found              */  02510013
+      csrp=p+1                            /* 1st byte of mbr name   */  02520013
+      END                                                               02530013
+    END                                                                 02540013
+  ELSE                                                                  02550013
+    csrp=lp+1                             /* 1st byte of member     */  02560013
+  IF debug='DEBUG' THEN SAY 'ld='ld 'lp='lp 'csrp='csrp                 02570013
+                                                                        02580013
+  /*                 Find end of dsname                             */  02590013
+                                                                        02600013
+  rd=VERIFY(line,valid,,csrp)             /* Find delimiter aft dsn */  02610013
+  IF debug='DEBUG' THEN SAY 'csrp='csrp 'rd='rd SUBSTR(line,rd,1)       02620013
+  IF lp>0 & SUBSTR(line,rd,1)=')' THEN rd=rd+1                          02630013
+                                                                        02640013
+  IF SUBSTR(line,ld,1)="'" & SUBSTR(line,rd,1)\="'" THEN RETURN         02650013
+                                                                        02660013
+  Dsname = SUBSTR(Line,ld+1,rd-ld-1)                                    02670013
+  IF LEFT(Dsname,9) = 'CLUSTER--',        /* IDCAMS LISTCAT         */  02680013
+   | LEFT(Dsname,9) = 'DATA-----',        /* IDCAMS LISTCAT         */  02690013
+   | LEFT(Dsname,9) = 'INDEX----',        /* IDCAMS LISTCAT         */  02700013
+   | LEFT(Dsname,9) = 'NONVSAM--' THEN    /* IDCAMS LISTCAT         */  02710013
+    dsname=RIGHT(dsname,LENGTH(dsname)-9) /* IDCAMS LISTCAT         */  02720013
+  IF debug='DEBUG' THEN SAY 'Dsname="'Dsname'"'                         02730009
+  IF LENGTH(Dsname) < 5 | LENGTH(Dsname) > 44 THEN Dsname=''            02740009
+  RETURN                                                                02750000
+/*-------------------------------------------------------- sub-routine*/02760000
+/*                                                                    */02770000
+/*     Invoke the Data Set List Utility (ISPF 2.3 through 4.1)        */02780012
+/*                                                                    */02790000
+/*--------------------------------------------------------------------*/02800000
+Invoke_ISRUDL:                                                          02810000
+  IF Dsname\='' THEN DO                                                 02820009
+    i=INDEX(Dsname,'(')                   /* check for member name    */02830013
+    IF i>0 THEN                           /* If abcd.edfgh(ijkl)      */02840013
+      Zdldsnlv=LEFT(Dsname,i-1)           /* remove (ijkl)            */02850013
+    ELSE                                                                02860013
+      Zdldsnlv=Dsname                     /* pass data set name       */02870013
+    zdlpvl=''                             /* blank out volume serial  */02880007
+    "VPUT (Zdldsnlv Zdlpvl) PROFILE"      /* update ISRUDLP variables */02890012
+    END                                                                 02900007
+  "SELECT PGM(ISRUDL) PARM(ISRUDLP)"                                    02910000
+  RETURN                                                                02920010
+/*-------------------------------------------------------- sub-routine*/02930000
+/*                                                                    */02940000
+/*     Invoke the Work Place Utility (ISPF 4.2 and above)             */02950013
+/*                                                                    */02960000
+/*--------------------------------------------------------------------*/02970000
+Invoke_Work_Place:                                                      02980000
+  IF Dsname\='' THEN DO                                                 02990009
+    Zwrkdsn="'"Dsname"'"                  /* enclose dsname in quotes */03000009
+    Zwrkvol=''                            /* blank out volume serial  */03010009
+    Zreftype='D'                          /* Data set view            */03020009
+    "VPUT (Zwrkdsn Zwrkvol Zreftype) PROFILE" /* update ISRWORK vars */ 03030012
+    END                                                                 03040009
+  "SELECT PGM(ISRUDA) PARM(ISRWORK) SCRNAME(WORK)"                      03050009
+  RETURN                                                                03060010

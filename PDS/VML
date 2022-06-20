@@ -1,0 +1,199 @@
+/*************************************************************** REXX */00010000
+/*                                                                    */00020000
+/* Module Name: VML                                                   */00030000
+/*                                                                    */00040000
+/* Descriptive Name:  Read PDS directory and VIEW/BROWSE Member List  */00050007
+/*                                                                    */00060000
+/* Status: R107                                                       */00070007
+/*                                                                    */00080000
+/* Function: This REXX exec reads the directory of the specified      */00090007
+/*           PDS and invokes STEMVIEW to allow the user to VIEW       */00100007
+/*           or BROWSE the resulting member list with each member     */00110007
+/*           name in pos 1 of a record.                               */00120007
+/*                                                                    */00130000
+/* Author: Gilbert Saint-Flour <carlos@gsf-soft.com>                  */00140005
+/*         http://gsf-soft.com/Freeware/                              */00150006
+/*                                                                    */00160000
+/* Environment: ISPF/PDF V3                                           */00170000
+/*              STEMVIEW R105                                         */00180000
+/*                                                                    */00190000
+/* Operation: see below                                               */00200000
+/*                                                                    */00210000
+/*        VML can be invoked as:                                      */00220000
+/*                                                                    */00230000
+/*        1. a line command on the DSLIST panel                       */00240000
+/*                                                                    */00250000
+/*        2. a TSO command:    TSO %VML 'SYS1.PROCLIB'                */00260000
+/*                                                                    */00270000
+/*        3. an EDIT macro:    VML <my.data.set>                      */00280001
+/*                                                                    */00290000
+/*        By default, the member list is displayed with VIEW.         */00300007
+/*        To display the member list with BROWSE instead of VIEW,     */00310007
+/*        add BROWSE as 2nd positional parameter, as follows:         */00320007
+/*                                                                    */00330000
+/*        1. On the DSLIST panel, enter a line cmd:  VML / B          */00340007
+/*                                                                    */00350000
+/*        2. As a TSO command:    TSO %VML 'SYS1.PROCLIB' B           */00360007
+/*                                                                    */00370000
+/*        3. As an EDIT macro:    %VML 'SYS1.PROCLIB' B               */00380007
+/*                          or    %VML / B                            */00390007
+/*                                                                    */00400000
+/* Change Activity:                                                   */00410000
+/*                                                                    */00420000
+/*  101   Can be invoked as an EDIT macro                             */00430001
+/*  102   Display SPF stats                                           */00440002
+/*  103   Can be invoked outside ISPF                                 */00450003
+/*  104   Exit main loop after 8X'FF' member                          */00460004
+/*  105   Remove member name from dsname                              */00470005
+/*  106   Change YYYY/MM/DD to YYYY-MM-DD                             */00480006
+/*  107   VIEW/BROWSE                                                 */00490007
+/*                                                                    */00500000
+/**********************************************************************/00510000
+ispf=SYSVAR(SYSISPF)='ACTIVE'                                           00520003
+  /*-----------------------------------------------------------------*/ 00530000
+  /*             Retrieve Data Set Name and Volume Serial            */ 00540000
+  /*-----------------------------------------------------------------*/ 00550000
+ARG dsn vibr ; vol=''                                                   00560007
+IF dsn='' THEN DO                                                       00570000
+  IF ispf THEN                                                          00580003
+    "ISREDIT MACRO (DSN VIBR)"                                          00590007
+  IF ispf & rc=0 THEN DO                          /* EDIT macro */      00600003
+    IF dsn='' | dsn='*' | dsn='/' THEN DO                               00610007
+      "ISREDIT (DSN) = DATASET"                                         00620001
+      IF dsn='' THEN DO                                                 00630001
+        ZEDSMSG = 'Invalid Environment'                                 00640001
+        ZEDLMSG = "This command does not work in the EDIF environment"  00650001
+        "ISPEXEC SETMSG MSG(ISRZ001)"                                   00660003
+        EXIT 12                                                         00670001
+        END                                                             00680001
+      ELSE                                                              00690001
+        dsn = "'" || dsn || "'"                                         00700001
+      END                                                               00710001
+    END                                                                 00720001
+  ELSE DO WHILE dsn=''                            /* TSO %VML   */      00730003
+    SAY Enter dsname                                                    00740000
+    PULL dsn                                                            00750000
+    END                                                                 00760000
+  END                                                                   00770000
+ELSE                                                                    00780003
+  IF ispf THEN DO                                                       00790003
+    "ISPEXEC VGET (ZDLDSN ZDLVOL ZDLCAT)"         /* DSLIST     */      00800003
+    IF rc=0 THEN DO                                                     00810003
+      IF ZDLDSN=STRIP(dsn,,"'") THEN DO                                 00820003
+        IF ZDLCAT\=0 THEN                                               00830003
+          vol='VOL('zdlvol')'                                           00840003
+        END                                                             00850003
+      END                                                               00860003
+    END                                                                 00870003
+  /*-----------------------------------------------------------------*/ 00880000
+  /*           Allocate target PDS and read its Directory            */ 00890000
+  /*-----------------------------------------------------------------*/ 00900000
+IF INDEX(dsn,'(') > 0 THEN                   /* remove member name */   00910005
+  dsn=LEFT(dsn,INDEX(dsn,'(')-1) || "'"                                 00920005
+"ALLOCATE DD(VMLPDS) SHR DS("dsn") REUSE" vol,                          00930005
+  "RECF(F B) LRECL(256) BLKSIZE(256) DSORG(PS)"                         00940000
+IF rc>0 THEN EXIT(rc)                                                   00950000
+x=LISTDSI(VMLPDS FILE)                                                  00960000
+IF sysdsorg\='PO' THEN DO                                               00970000
+  ZEDSMSG = 'Not a PDS'                                                 00980000
+  ZEDLMSG = sysdsname "is not a PDS or a PDSE"                          00990000
+  IF vol\='' THEN                                                       01000000
+    ZEDLMSG = sysdsname "on" vol "is not a PDS or a PDSE"               01010000
+  IF ispf THEN                                                          01020003
+    "ISPEXEC SETMSG MSG(ISRZ001)"                                       01030003
+  ELSE                                                                  01040003
+    SAY zedlmsg                                                         01050003
+  EXIT 12                                                               01060000
+  END                                                                   01070000
+"EXECIO * DISKR VMLPDS (STEM DIR. FINIS" /* read PDS directory */       01080003
+"FREE DD(VMLPDS)"                                                       01090003
+  /*-----------------------------------------------------------------*/ 01100000
+  /*                 Process Directory Blocks                        */ 01110000
+  /*-----------------------------------------------------------------*/ 01120000
+n=0                                                                     01130003
+  DO blk = 1 to dir.0                                                   01140000
+    usedbytes = C2D(LEFT(dir.blk,2))                                    01150000
+    index = 3                            /* skip past used bytes */     01160000
+    DO WHILE index < usedbytes                                          01170000
+      pds2name = SUBSTR(dir.blk,index,8) /* member name */              01180000
+      IF pds2name = 'FFFFFFFFFFFFFFFF'x THEN LEAVE blk                  01190004
+      pds2indc = SUBSTR(dir.blk,index+11,1)                             01200000
+      len = BITAND(pds2indc,'1F'x)       /* isolate user data length */ 01210000
+      userdata = C2D(len) * 2            /* halfwords to bytes */       01220000
+      n=n+1                              /* next n                   */ 01230003
+      IF userdata=30 & sysrecfm\='U' THEN DO /* SPF stats present    */ 01240002
+        sde=SUBSTR(dir.blk,index+12,30)  /* extract SPF Dir Entry    */ 01250002
+        ver=C2D(SUBSTR(sde,1,1))                                        01260002
+        mod=C2D(SUBSTR(sde,2,1))                                        01270002
+        idate=C2X(SUBSTR(sde,5,4))       /* 0092123F    */              01280002
+        idate=LEFT(idate,7)+1900000      /* 1992123     */              01290002
+        cdate=C2X(SUBSTR(sde,9,4))       /* 0092123F    */              01300002
+        cdate=LEFT(cdate,7)+1900000      /* 1992123     */              01310002
+        hh=C2X(SUBSTR(sde,13,1))                                        01320002
+        mm=C2X(SUBSTR(sde,14,1))                                        01330002
+        ss=C2X(SUBSTR(sde,4,1))                                         01340002
+        iline=C2D(SUBSTR(sde,15,2))                                     01350002
+        cline=C2D(SUBSTR(sde,17,2))                                     01360002
+        mline=C2D(SUBSTR(sde,19,2))                                     01370002
+        sclm=BITAND(SUBSTR(sde,3,1),'80'x) /* isolate SCLM flag      */ 01380002
+        IF sclm='80'x THEN                                              01390002
+          sclm='SCLM'                                                   01400002
+        ELSE                                                            01410002
+          sclm=''                                                       01420002
+        mbr.n=pds2name,                  /* member name              */ 01430002
+              RIGHT(ver,2,'0') || '.' || RIGHT(mod,2,'0'),              01440002
+              GREGORIAN(idate),          /* creation date            */ 01450002
+              GREGORIAN(cdate),          /* last-modified date       */ 01460002
+              hh || ':' || mm || ':' || ss, /* HH:MM:SS              */ 01470006
+              RIGHT(iline,5),            /* initial lines            */ 01480002
+              RIGHT(cline,5),            /* current lines            */ 01490002
+              RIGHT(mline,5),            /* modified lines           */ 01500002
+              RIGHT(sde,10),             /* userID                   */ 01510002
+              SCLM                       /* SCLM indicator           */ 01520002
+        END                                                             01530002
+      ELSE                               /* no ISPF stats            */ 01540003
+        mbr.n=pds2name                   /* store member name        */ 01550000
+      index = index + 12 + userdata      /* skip past user data */      01560000
+    END                                                                 01570000
+  END                                                                   01580000
+  /*-----------------------------------------------------------------*/ 01590000
+  /*                    Display the Member List                      */ 01600000
+  /*-----------------------------------------------------------------*/ 01610000
+IF n=0 THEN DO                                                          01620003
+  SAY sysdsname is empty                                                01630003
+  EXIT 4                                                                01640003
+  END                                                                   01650003
+IF ispf THEN DO                                                         01660003
+  SIGNAL ON SYNTAX                /*    STEMVIEW not available     */   01670003
+  IF ABBREV('BROWSE',TRANSLATE(STRIP(vibr)),1) THEN                     01680007
+    CALL STEMVIEW 'BROWSE','mbr.',1,n,sysdsname 'Member List',,72       01690007
+  ELSE                                                                  01700007
+    CALL STEMVIEW 'VIEW','mbr.',1,n,sysdsname 'Member List',,72         01710007
+  EXIT rc                                                               01720003
+  END                                                                   01730003
+ELSE                                                                    01740003
+  SIGNAL DISPLAY                                                        01750003
+                                                                        01760000
+SYNTAX:                           /* STEMVIEW function not available */ 01770000
+  error=rc                                                              01780000
+  IF ispf THEN                                                          01790003
+    'ISPEXEC CONTROL DISPLAY LINE START(1)'                             01800003
+  SAY 'REXX error' error 'in line' sigl':' errortext(error)             01810000
+  SAY sourceline(sigl)                                                  01820000
+  SAY ''                                                                01830000
+DISPLAY:                                                                01840003
+  DO i=1 TO n; SAY mbr.i ; END                                          01850003
+  EXIT                                                                  01860000
+/**********************************************************************/01870002
+/*             JULIAN-TO-GREGORIAN CONVERSION ROUTINE                 */01880002
+/*                   GDATE=GREGORIAN(1992134)                         */01890002
+/*                      RETURNS "YYYY-MM-DD"                          */01900006
+/**********************************************************************/01910002
+GREGORIAN: PROCEDURE                                                    01920002
+  YYYY=LEFT(ARG(1),LENGTH(ARG(1))-3)                                    01930002
+  DDD=RIGHT(ARG(1),3)                                                   01940002
+  T=(YYYY//4=0)                                                         01950002
+  DD=DDD; IF DD>(59+T) THEN DD=DD+2-T                                   01960002
+  MM=((DD+91)*100)%3055                                                 01970002
+  DD=DD+91-(MM*3055)%100                                                01980002
+  RETURN YYYY'-'RIGHT(MM-2,2,'0')'-'RIGHT(DD,2,'0')                     01990006

@@ -1,0 +1,52 @@
+/*************************************************************** REXX */00010000
+/*                                                                    */00020000
+/* MODULE NAME = ADDTRK                                               */00030000
+/*                                                                    */00040000
+/*        Invoke PDS86 to add tracks to the current data set          */00050000
+/*                                                                    */00060000
+/*        http://www.cbttape.org/ftp/updates/CBT035.zip               */00070000
+/*                                                                    */00080000
+/* STATUS = R200                                                      */00090000
+/*                                                                    */00100000
+/* FUNCTION = ADDTRK is an ISPF EDIT macro which invokes PDS86        */00110000
+/*            to allocate a new extent for the PDS being edited.      */00120000
+/*            The size of the new extent is specified in tracks.      */00130000
+/*                                                                    */00140000
+/* AUTHOR   =  Gilbert Saint-Flour <carlos@gsf-soft.com>              */00150000
+/*             http://gsf-soft.com/Freeware/                          */00160000
+/*                                                                    */00170000
+/* DEPENDENCIES = ISPF V2R3                                           */00180000
+/*                PDS 8.6                                             */00190000
+/*                                                                    */00200000
+/* SYNTAX   =  ADDTRK               ISPF MACRO                        */00210000
+/*                nnnn              number of tracks added            */00220000
+/*                                                                    */00230000
+/*             ADDTRK               TSO Command                       */00240000
+/*                dsn               data set name                     */00250000
+/*                nnnn              number of tracks added            */00260000
+/*                                                                    */00270000
+/* INSTALLATION = ADDTRK must be installed in a REXX library          */00280000
+/*                which is accessible in ISPF/PDF.                    */00290000
+/*                                                                    */00300000
+/**********************************************************************/00310000
+ADDRESS ISPEXEC                                                         00320000
+ARG dsn numtrk                                                          00330000
+vol=''                                                                  00340000
+IF dsn='' THEN DO                                                       00350000
+  'ISREDIT MACRO (NUMTRK)'                                              00360000
+  IF rc>0 THEN DO; SAY 'ISREDIT_RC='rc; EXIT(rc);END                    00370000
+  'ISREDIT (dsn) = DATASET'                                             00380000
+  IF rc=0 THEN DO                                                       00390000
+    'ISREDIT (vol) = VOLUME'                                            00400000
+    VOL = 'VOLUME('vol')'                                               00410000
+    END                                                                 00420000
+  END                                                                   00430000
+ELSE DO                                                                 00440000
+  'VGET (ZDLDSN ZDLVOL)'                                                00450000
+  IF rc=0 THEN                                                          00460000
+    VOL = 'VOLUME('zdlvol')'                                            00470000
+  END                                                                   00480000
+ /* say zdlvol dsn vol rc */                                            00490000
+IF LEFT(dsn,1) <> "'" THEN dsn="'" || dsn || "'"                        00500000
+IF numtrk='' THEN DO; SAY 'NUMTRK Missing'; EXIT(12);END                00510000
+"SELECT CMD(PDS86" dsn vol "FIX ADDTRK("numtrk")) MODE(FSCR)"           00520000

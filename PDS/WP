@@ -1,0 +1,38 @@
+/*************************************************************** REXX */00010000
+/*                                                                    */00020000
+/* Module Name: WP                                                    */00030000
+/*                                                                    */00040000
+/* Descriptive Name: Invoke ISPF Workplace                            */00050000
+/*                                                                    */00060000
+/* Status: R100                                                       */00070000
+/*                                                                    */00080000
+/* Function: This REXX program allows you to invoke the               */00090000
+/*           Workplace from the Data Set List panel.                  */00100000
+/*                                                                    */00110000
+/* Author: Gilbert Saint-Flour <carlos@gsf-soft.com>                  */00120000
+/*                                                                    */00130000
+/* Environment: ISPF/PDF V4.2                                         */00140000
+/*                                                                    */00150000
+/* Operation: see below                                               */00160000
+/*                                                                    */00170000
+/*         Enter WP as a line command on the DSLIST panel             */00180000
+/*         to enter the ISPF Workplace and process                    */00190000
+/*         the corresponding data set.                                */00200000
+/*                                                                    */00210000
+/* Change Activity:                                                   */00220000
+/*                                                                    */00230000
+/**********************************************************************/00240000
+ADDRESS 'ISPEXEC'                                                       00250000
+"CONTROL ERRORS RETURN"                                                 00260000
+"ISREDIT MACRO (zwrkdsn)"             /* invoked from EDIT/VIEW?      */00270000
+IF rc>0 THEN ARG zwrkdsn              /* no, 1st arg must be dsn      */00280000
+IF zwrkdsn='' THEN EXIT 4             /* no dsn, quit                 */00290000
+Zwrkvol=''                            /* blank out volume serial      */00300000
+Zreftype='D'                          /* Data Set View                */00310000
+"VGET (ZDLDSN ZDLVOL ZDLCAT)"         /* get catalog status, volser   */00320000
+IF rc=0 THEN                                                            00330000
+  IF zdlcat>0 THEN                    /* uncatalogued data set?       */00340000
+    Zwrkvol=zdlvol                    /* pass actual volume serial    */00350000
+"VPUT (Zwrkdsn Zwrkvol Zreftype) PROFILE"  /* update ISRWORK vars     */00360000
+"SELECT PGM(ISRUDA) PARM(ISRWORK) SCRNAME(WORK)"                        00370000
+IF zerrmsg\='' THEN "SETMSG MSG("zerrmsg")"                             00380000

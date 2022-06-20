@@ -1,0 +1,171 @@
+/*************************************************************** REXX */00010000
+/*                                                                    */00020000
+/* Module Name: LISTDSI                                               */00030000
+/*                                                                    */00040000
+/* Descriptive Name:  Display output of LISTDSI REXX function         */00050000
+/*                                                                    */00060000
+/* Status: R201                                                       */00070001
+/*                                                                    */00080000
+/* Function: This EXEC helps REXX programmers implement the           */00090000
+/*           LISTDSI function by displaying the value of all of       */00100000
+/*           the variables returned by LISTDSI for the specified      */00110000
+/*           data set, as well as providing the syntax, return        */00120000
+/*           codes and reason codes in the form of comments at        */00130000
+/*           the end of the source.                                   */00140000
+/*                                                                    */00150000
+/* Author: Gilbert Saint-Flour <carlos@gsf-soft.com>                  */00160000
+/*                                                                    */00170000
+/* Syntax   =  LISTDSI                                                */00180000
+/*                 dsname|*              data set name                */00190000
+/*                 VOL(volume)           volume serial                */00200000
+/*                 DIRECTORY             get directory info           */00210000
+/*                 RECALL                HRECALL                      */00220000
+/*                 SMSINFO               get SMS info                 */00230000
+/*                                                                    */00240000
+/* Environment: TSO/E V2                                              */00250000
+/*              ISPF/PDF 2.3  (optional)                              */00260000
+/*              STEMVIEW R105 (optional)                              */00270000
+/*                                                                    */00280000
+/*201 SYSSEQDSNTYPE z/OS 1.8                                          */00290001
+/**********************************************************************/00300000
+IF SYSVAR(SYSISPF)='ACTIVE' THEN DO                                     00310000
+  ADDRESS ISPEXEC                                                       00320000
+  'ISREDIT MACRO (dsname opt)'                                          00330000
+  IF rc=0 THEN DO                                                       00340000
+    IF dsname='' | dsname='*' THEN DO    /* Current Data Set          */00350000
+      "ISREDIT (dsname) = DATASET"       /* Retrieve dsname           */00360000
+      dsname="'" || dsname || "'"        /* Enclose dsname in quotes  */00370000
+      END                                                               00380000
+    END                                                                 00390000
+  ELSE                                                                  00400000
+    ARG dsname opt                       /* Invoked as TSO %LISTDSI   */00410000
+  END                                                                   00420000
+ELSE                                                                    00430000
+  ARG dsname opt                         /* Invoked outside ISPF      */00440000
+                                                                        00450000
+UPPER dsname opt                         /* Convert to upper-case     */00460000
+                                                                        00470000
+ADDRESS TSO                                                             00480000
+"MAKEBUF"                                                               00490000
+QUEUE 'command=LISTDSI('dsname opt')'                                   00500000
+rc=LISTDSI(dsname opt)                                                  00510000
+QUEUE 'RC='rc                                                           00520000
+QUEUE 'SYSADIRBLK='sysadirblk                         /* DIRECTORY */   00530000
+QUEUE 'SYSALLOC='sysalloc                                               00540000
+QUEUE 'SYSBLKSIZE='sysblksize                                           00550000
+QUEUE 'SYSBLKSTRK='sysblkstrk                                           00560000
+QUEUE 'SYSCREATE='syscreate                                             00570000
+QUEUE 'SYSDATACLASS='sysdataclass                     /* SMSINFO */     00580000
+QUEUE 'SYSDSNAME='sysdsname                                             00590000
+QUEUE 'SYSDSORG='sysdsorg                                               00600000
+QUEUE 'SYSDSSMS='sysdssms                             /* SMSINFO */     00610000
+QUEUE 'SYSEXDATE='sysexdate                                             00620000
+QUEUE 'SYSEXTENTS='sysextents                                           00630000
+QUEUE 'SYSKEYLEN='syskeylen                                             00640000
+QUEUE 'SYSLRECL='syslrecl                                               00650000
+QUEUE 'SYSMEMBERS='sysmembers                         /* DIRECTORY */   00660000
+QUEUE 'SYSMGMTCLASS='sysmgmtclass                     /* SMSINFO */     00670000
+QUEUE 'SYSMSGLVL1='sysmsglvl1                                           00680000
+QUEUE 'SYSMSGLVL2='sysmsglvl2                                           00690000
+QUEUE 'SYSPASSWORD='syspassword                                         00700000
+QUEUE 'SYSPRIMARY='sysprimary                                           00710000
+QUEUE 'SYSRACFA='sysracfa                                               00720000
+QUEUE 'SYSREASON='sysreason                                             00730000
+QUEUE 'SYSRECFM='sysrecfm                                               00740000
+QUEUE 'SYSREFDATE='sysrefdate                                           00750000
+QUEUE 'SYSSECONDS='sysseconds                                           00760000
+QUEUE 'SYSSEQDSNTYPE='sysseqdsntype                   /* z/OS 1.8 */    00770001
+QUEUE 'SYSSTORCLASS='sysstorclass                     /* SMSINFO */     00780000
+QUEUE 'SYSTRKSCYL='systrkscyl                                           00790000
+QUEUE 'SYSUDIRBLK='sysudirblk                         /* DIRECTORY */   00800000
+QUEUE 'SYSUNIT='sysunit                                                 00810000
+QUEUE 'SYSUNITS='sysunits                                               00820000
+QUEUE 'SYSUPDATED='sysupdated                                           00830000
+QUEUE 'SYSUSED='sysused                                                 00840000
+QUEUE 'SYSUSEDPAGES='sysusedpages                    /* SMSINFO   */    00850000
+QUEUE 'SYSVOLUME='sysvolume                                             00860000
+                                                                        00870000
+IF SYSVAR(SYSISPF)='ACTIVE' THEN DO                                     00880000
+  SIGNAL ON SYNTAX                  /*    STEMVIEW not available     */ 00890000
+  CALL STEMVIEW 'VIEW',,,,'LISTDSI' dsname opt                          00900000
+  END                                                                   00910000
+ELSE                                                                    00920000
+  CALL DISPLAY                      /*    not running in ISPF        */ 00930000
+                                                                        00940000
+"DROPBUF"                                                               00950000
+EXIT                                                                    00960000
+                                                                        00970000
+SYNTAX:                            /* STEMVIEW function not available */00980000
+  error=rc                                                              00990000
+  'ISPEXEC CONTROL DISPLAY LINE START(1)'                               01000000
+  SAY 'REXX error' error 'in line' sigl':' errortext(error)             01010000
+  SAY sourceline(sigl)                                                  01020000
+  SAY ''                                                                01030000
+                                                                        01040000
+DISPLAY:  DO WHILE QUEUED()>0; PULL line; SAY line; END                 01050000
+  "DROPBUF"                                                             01060000
+  EXIT                                                                  01070000
+                                                                        01080000
+/**********************************************************************/01090000
+/*                                                                    */01100000
+/* LISTDSI Syntax                                                     */01110000
+/*                                                                    */01120000
+/*   LISTDSI(dsname VOL(volume) DIRECTORY RECALL SMSINFO)             */01130000
+/*   LISTDSI(dsname PREALLOC    DIRECTORY        SMSINFO)             */01140000
+/*   LISTDSI(ddname FILE        DIRECTORY        SMSINFO)             */01150000
+/*                                                                    */01160000
+/* LISTDSI Return Codes                                               */01170000
+/*                                                                    */01180000
+/*   0   LISTDSI processing was successful.                           */01190000
+/*       Data set information was retrieved.                          */01200000
+/*   4   LISTDSI processing was successful.  However, some data set   */01210000
+/*       information is unavailable.  All data set information,       */01220000
+/*       other than directory information, can be considered valid.   */01230000
+/*   16  LISTDSI processing was not successful.  An error occurred.   */01240000
+/*       None of the variables containing information about the data  */01250000
+/*       set can be considered valid, except for SYSREASON.           */01260000
+/*       The SYSREASON variable contains the LISTDSI reason code.     */01270000
+/*                                                                    */01280000
+/* LISTDSI Reason Codes                                               */01290000
+/*                                                                    */01300000
+/*   0   Normal completion.                                           */01310000
+/*   1   Error parsing the function.                                  */01320000
+/*   2   Dynamic allocation processing error.                         */01330000
+/*   3   The data set is a type that cannot be processed.             */01340000
+/*   4   Error determining UNIT name.                                 */01350000
+/*   5   Data set not cataloged.                                      */01360000
+/*   6   Error obtaining the data set name.                           */01370000
+/*   7   Error finding device type.                                   */01380000
+/*   8   The data set does not reside on DASD.                        */01390000
+/*   9   DFHSM migrated the data set.                                 */01400000
+/*       NORECALL prevents retrieval.                                 */01410000
+/*   11  Directory information was requested, but you lack            */01420000
+/*       authority to access the data set.                            */01430000
+/*   12  VSAM data sets are not supported.                            */01440000
+/*   13  The data set could not be opened.                            */01450000
+/*   14  Device type not found in unit control block (UCB) tables.    */01460000
+/*   17  System or user abend occurred.                               */01470000
+/*   18  Partial data set information was obtained.                   */01480000
+/*   19  Data set resides on multiple volumes.                        */01490000
+/*   20  Device type not found in eligible device table (EDT).        */01500000
+/*   21  Catalog error trying to locate the data set.                 */01510000
+/*   22  Volume not mounted.                                          */01520000
+/*   23  Permanent I/O error on volume.                               */01530000
+/*   24  Data set not found.                                          */01540000
+/*   25  Data set migrated to non-DASD device.                        */01550000
+/*   27  No volume serial is allocated to the data set.               */01560000
+/*   28  The ddname must be one to eight characters.                  */01570000
+/*   29  Data set name or ddname must be specified.                   */01580000
+/*   30  Data set is not SMS-managed.                                 */01590000
+/*   31  ISITMGD macro returned with bad return code and reason code. */01600000
+/*       Return code and reason code can be found in message          */01610000
+/*       IKJ58431I, which is returned in variable &SYSMSGLVL2.        */01620000
+/*   32  Unable to retrieve SMS information.                          */01630000
+/*       DFSMS/MVS has incorrect level.                               */01640000
+/*   33  Unable to retrieve SMS information.                          */01650000
+/*       DFSMS/MVS is not active.                                     */01660000
+/*   34  Unable to retrieve SMS information.  OPEN error.             */01670000
+/*   35  Unexpected error from DFSMS/MVS internal service IGWFAMS.    */01680000
+/*   36  Unexpected error from the SMS service module.                */01690000
+/*                                                                    */01700000
+/**********************************************************************/01710000

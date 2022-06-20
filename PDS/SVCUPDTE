@@ -1,0 +1,702 @@
+//GILBERTU JOB (ACCT#),SVCUPDTE,                                        00010000
+// CLASS=A,MSGCLASS=H,COND=(0,NE),                                      00020000
+//*RESTART=ESR,                                                         00030006
+// NOTIFY=&SYSUID                                                       00040000
+//ASMH EXEC PGM=ASMA90,PARM=(OBJECT,NODECK,NOESD,NORLD,NOXREF,NORENT)   00050008
+*PROCESS BATCH,USING(NOMAP,WARN(8))                                     00060008
+*********************************************************************** 00070000
+*                                                                     * 00080009
+*            COPYRIGHT (C) 1985-2003 GILBERT SAINT-FLOUR              * 00090009
+*                       ALL RIGHTS RESERVED                           * 00100009
+*                                                                     * 00110000
+* MODULE NAME = SVCUPDTE                                              * 00120002
+*                                                                     * 00130000
+* DESCRIPTIVE NAME = INSTALL A TYPE-3 SVC ROUTINE.                    * 00140002
+*                                                                     * 00150000
+* FUNCTION = This program defines an SVC routine to the system as a   * 00160002
+*            type-3 SVC.  The module is loaded into the CSA unless    * 00170009
+*            it is already in PLPA or MLPA.  The installation of      * 00180002
+*            SVC routine can be permanent or temporary.               * 00190002
+*            Access to the new SVC routine may be restricted to       * 00200003
+*            jobs submitted by a particular user.                     * 00210005
+*            An IGX00nnn module may be installed as a type-3 ESR.     * 00220006
+*                                                                     * 00230000
+* STATUS = R309                                                       * 00240009
+*                                                                     * 00250000
+* AUTHOR = Gilbert Saint-Flour <carlos@gsf-soft.com>                  * 00260009
+*                                                                     * 00270000
+* NOTES = SEE BELOW                                                   * 00280002
+*                                                                     * 00290000
+*    DEPENDENCIES = MVS/ESA 4.2.2 or above                            * 00300006
+*                                                                     * 00310000
+*    AUTHORIZATION = APF                                              * 00320002
+*                                                                     * 00330000
+*    RESTRICTIONS = Invoker must have UPDATE authority to             * 00340009
+*                   SYS1.PARMLIB.                                     * 00350002
+*                                                                     * 00360000
+* MODULE TYPE = PROCEDURE, (BATCH PROGRAM)                            * 00370002
+*                                                                     * 00380000
+*    PROCESSOR = IBM OS/ASSEMBLER H VERSION 2 OR                      * 00390002
+*                IBM HIGH LEVEL ASSEMBLER/MVS                         * 00400002
+*                                                                     * 00410000
+*    MODULE SIZE = 2K                                                 * 00420002
+*                                                                     * 00430000
+*    ATTRIBUTES = REENTERABLE, RMODE 24, AMODE 31,                    * 00440002
+*                 PROBLEM STATE, KEY 8                                * 00450002
+*                                                                     * 00460000
+* OPERATION = See Below                                               * 00470002
+*                                                                     * 00480000
+*        This program defines an SVC routine to the system as a       * 00490001
+*        type-3 SVC or ESR.  The module is loaded into the CSA        * 00500006
+*        unless it is already in PLPA or MLPA.                        * 00510006
+*                                                                     * 00520000
+*        The installation can be permanent or temporary.  It is       * 00530001
+*        permanent when the following two conditions are met:         * 00540001
+*                                                                     * 00550000
+*          1. the SVC routine is loaded from PLPA or MLPA             * 00560008
+*                                                                     * 00570000
+*          2. the good-night time is NOT specified in the parm        * 00580001
+*                                                                     * 00590000
+*        If either condition isn't true, the installation is          * 00600001
+*        temporary and SVCUPDTE remains in memory until a STOP or     * 00610005
+*        CANCEL command is issued, then re-installs the old SVC       * 00620005
+*        and terminates.                                              * 00630001
+*                                                                     * 00640000
+*        If the good-night time is specified in the PARM, SVCUPDTE    * 00650001
+*        shut itself off automatically at the specified time.         * 00660001
+*                                                                     * 00670000
+*        ENQ is used to prevent simultaneous installation of          * 00680002
+*        the same SVC by different jobs.                              * 00690002
+*                                                                     * 00700008
+*        If the specified SVC routine is in the LPA and a module      * 00710008
+*        with the same name is also in the JOBLIB or STEPLIB, then    * 00720008
+*        SVCUPDTE temporarily installs the module in JOBLIB or        * 00730008
+*        STEPLIB and stays active until it is STOP'd or CANCEL'd.     * 00740008
+*        The installation can only be permanent if the specified SVC  * 00750008
+*        routine is NOT in the JOBLIB or STEPLIB.  One way to work    * 00760008
+*        around this is to use an MVS facility called FETCHLIB,       * 00770008
+*        as shown in JCL example no 5 below.                          * 00780008
+*                                                                     * 00790000
+* INVOCATION = SVCUPDTE IS INVOKED VIA JCL, AS FOLLOWS:               * 00800002
+*                                                                     * 00810000
+*          PARM=(nnn,mmmmmmm,lock,hhmm,userid)                        * 00820007
+*                                                                     * 00830000
+*            nnn  is the SVC number you want to install;              * 00840000
+*                 it must be specified as a 3-digit number.           * 00850000
+*                                                                     * 00860000
+*            mmmmmmmm is the name of a load module (or alias)         * 00870000
+*                 that you want to install as SVC nnn; it MUST        * 00880000
+*                 come from an authorized library (STEPLIB or         * 00890000
+*                 link-list).  If the SVC number is 109, the          * 00900006
+*                 load-module name must be IGX00nnn, where            * 00910006
+*                 nnn is the number of the ESR entry.                 * 00920006
+*                                                                     * 00930007
+*            lock is the optional lock bit string which must be       * 00940007
+*                 specified as follows:                               * 00950007
+*                 .  8000 indicates the local lock                    * 00960007
+*                 .  C000 indicates the CMS and local locks           * 00970007
+*                                                                     * 00980000
+*            hhmm is the optional "good-night" time, in 24-hour       * 00990000
+*                 clock format.  When the specified time is           * 01000000
+*                 reached, SVCUPDTE automatically un-installs         * 01010000
+*                 the SVC and stops.                                  * 01020000
+*                                                                     * 01030000
+*            userid is the user-ID that will be compared to that      * 01040005
+*                 of each invoker of the new SVC routine.             * 01050005
+*                 If they're equal, the new SVC is invoked.           * 01060005
+*                 If they're not equal, the old SVC is invoked.       * 01070005
+*                                                                     * 01080000
+* RETURN CODES = See Below                                            * 01090002
+*                                                                     * 01100000
+*        0  Successful completion: SVC has been installed             * 01110000
+*                                                                     * 01120000
+*        8  User not authorized to update SYS1.PARMLIB                * 01130000
+*                                                                     * 01140000
+*       12  ENQ failed: Another copy of SVCUPDTE is currently         * 01150003
+*           installing the same SVC                                   * 01160000
+*                                                                     * 01170000
+*       24  Current SVC entry is not Type 2,3,4                       * 01180003
+*                                                                     * 01190000
+* ABENDS = See below                                                  * 01200002
+*                                                                     * 01210000
+*      U1001    Invalid PARM                                          * 01220000
+*                                                                     * 01230000
+*      S047     SVCUPDTE MODULE NOT AUTHORIZED                        * 01240000
+*                                                                     * 01250000
+*      S306-08  SVC routine not re-entrant                            * 01260001
+*                                                                     * 01270000
+*      S306-0C  SVC routine not from an authorized library            * 01280001
+*                                                                     * 01290006
+* EXAMPLES = See below                                                * 01300006
+*                                                                     * 01310006
+*      1. install IGC0022B as SVC 222                                 * 01320006
+*                                                                     * 01330006
+*         //SVC222  EXEC PGM=SVCUPDTE,PARM=(222,IGC0022B)             * 01340006
+*                                                                     * 01350006
+*      2. install IGX00066 as type-3 ESR 66                           * 01360006
+*                                                                     * 01370006
+*         //ESR66   EXEC PGM=SVCUPDTE,PARM=(109,IGX00066)             * 01380006
+*                                                                     * 01390006
+*      3. install TESTSVC2 as SVC 244 until 20:00                     * 01400006
+*                                                                     * 01410006
+*         //TEMPSVC EXEC PGM=SVCUPDTE,PARM=(244,TESTSVC2,,2000)       * 01420007
+*                                                                     * 01430006
+*      4. install SVC11Y2K as SVC 11 until 18:00 for user(IBMUSER)    * 01440006
+*                                                                     * 01450006
+*         //SVC11TMP EXEC PGM=SVCUPDTE,                               * 01460006
+*         //              PARM=(011,SVC11Y2K,,1800,IBMUSER)           * 01470007
+*                                                                     * 01480008
+*      5. permanently install an SVC routine from the same private    * 01490008
+*         library from which SVCUPDTE is executed.                    * 01500008
+*                                                                     * 01510008
+*        //LOADMLPA EXEC PGM=LOADMLPA,PARM=(LOAD,SVC11Y2K)            * 01520008
+*        //STEPLIB  DD DSN=SYS1.P390.LINKLIB,DISP=SHR                 * 01530008
+*        //*                                                          * 01540008
+*        //FETCHLIB EXEC PGM=IEFBR14                                  * 01550008
+*        //SVCUPDTE DD DSN=SYS1.P390.LINKLIB(SVCUPDTE),DISP=SHR       * 01560008
+*        //*                                                          * 01570008
+*        //INSTALL  EXEC PGM=*.FETCHLIB.SVCUPDTE,PARM=(011,SVC11Y2K)  * 01580008
+*                                                                     * 01590000
+* CHANGE ACTIVITY                                                     * 01600000
+*                                                                     * 01610000
+*228 Leave SVC installed and exit if module was loaded from LPA       * 01620001
+*229 Issue ENQ on SYSZSVC/TABLE to prevent simultaneous updates       * 01630002
+*230 Restore address of OLD SVC after temporary installation          * 01640003
+*231 Fix "good-night" routine which hasn't been working for a while   * 01650004
+*232 Restrict access to new SVC to userid specified in parm           * 01660005
+*306 Install IGX00nnn module as a type-3 ESR.                         * 01670006
+*307 Parm option for LOCAL and CMS locks                              * 01680007
+*308 More doc, minor technical changes                                * 01690008
+*309 Wait for one second before final FREEMAIN                        * 01700009
+*********************************************************************** 01710000
+SVCUPDTE CSECT                                                          01720000
+SVCUPDTE AMODE 31                                                       01730003
+         SAVE  (14,12),,'GSF Utilities - SVCUPDTE R309'                 01740009
+         LR    R12,R15                                                  01750008
+         USING SVCUPDTE,R12                                             01760008
+         L     R4,0(,R1)               PARM ADDRESS                     01770005
+*                                                                       01780000
+*        ALLOCATE DYNAMIC STORAGE                                       01790000
+*                                                                       01800000
+         GETMAIN R,LV=DYNAML           DYNAMIC STORAGE                  01810000
+         ST    R13,4(,R1)                                               01820000
+         ST    R1,8(,R13)                                               01830000
+         LR    R13,R1                                                   01840000
+         USING DYNAM,R13                                                01850000
+         LA    R14,DYNAM+72            CLEAR WORK AREA                  01860000
+         LA    R15,DYNAML-72           CLEAR WORK AREA                  01870000
+         SLR   R1,R1                   CLEAR WORK AREA                  01880000
+         MVCL  R14,R0                  CLEAR WORK AREA                  01890000
+*                                                                       01900000
+*        CHECK JCL PARM                                                 01910000
+*                                                                       01920000
+SCANPARM L     R15,=A(PARSE)           parse rtne addr                  01930005
+         BALR  R14,R15                 parse parm into function,opt     01940005
+         DC    S(L'SVCNO,SVCNO)        first operand                    01950005
+         DC    S(L'EPNAME,EPNAME)      second operand                   01960005
+         DC    S(L'LOCKS,LOCKS)        third operand                    01970007
+         DC    S(L'ENDOFDAY,ENDOFDAY)  fourth operand                   01980007
+         DC    S(L'USERID,USERID)      fifth operand                    01990007
+         CLI   LOCKS,C' '              any lock?                        02000007
+         BE    LOCK6                   no, jump                         02010007
+         CLC   =C'C000 ',LOCKS         CMS+local?                       02020007
+         BE    LOCK4                   yes, jump                        02030007
+         CLC   =C'8000 ',LOCKS         Local lock?                      02040007
+         BNE   PARMERR                 no, abend                        02050007
+         MVI   LOCK#,X'80'             local lock                       02060007
+         B     LOCK6                   continue                         02070007
+LOCK4    MVI   LOCK#,X'C0'             CMS+local                        02080007
+LOCK6    EQU   *                                                        02090007
+         UNPK  DWD,=X'0F'              DWD=F0F0F0F0F0F0F0F0             02100005
+         MVN   DWD(L'SVCNO),SVCNO      move nnn                         02110005
+         CLC   DWD(L'SVCNO),SVCNO      nnn numeric?                     02120005
+         BNE   PARMERR                 NO, ABEND                        02130005
+         CLI   ENDOFDAY,C' '           ENDOFDAY specified?              02140005
+         BE    INIT34                  no, quit                         02150005
+         MVN   DWD(4),ENDOFDAY         move HHMM                        02160005
+         CLC   DWD(4),ENDOFDAY         hhmm numeric?                    02170005
+         BNE   PARMERR                 NO, ABEND                        02180005
+         MVC   ENDOFDAY,DWD            HHMM -> HHMM0000                 02190005
+*                                                                       02200006
+*        Retrieve old SVC entry                                         02210006
+*                                                                       02220006
+INIT34   EQU   *                                                        02230006
+         PACK  DWD,SVCNO               SVC NUMBER (NNN)                 02240006
+         CVB   R5,DWD                  SVC NUMBER (NNN)                 02250006
+         STC   R5,SVC#                 SVC NUMBER (NNN)                 02260006
+*                                                                       02270006
+         L     R3,CVTPTR               CVT                              02280006
+         USING CVTMAP,R3                                                02290006
+         L     R4,CVTABEND             SECONDARY CVT                    02300006
+         USING SCVTSECT,R4                                              02310006
+         SLL   R5,3                    mult by 8                        02320006
+         AL    R5,SCVTSVCT             add origin of SVC table          02330006
+         USING SVCENTRY,R5                                              02340006
+         ST    R5,SVCENTRY_PTR         save entry address               02350006
+         TM    SVCTP,SVCTP2            TYPE 2/3/4 ?                     02360006
+         BNO   RC24                    NO, QUIT                         02370006
+*                                                                       02380006
+*        ESR   PARM='109,IGX00nnn'                                      02390006
+*                                                                       02400006
+         CLI   SVC#,109                T3-ESR?                          02410006
+         BNE   INIT39                  no, jump                         02420006
+         UNPK  DWD,=X'0F'              DWD=F0F0F0F0F0F0F0F0             02430006
+         MVN   DWD(5),EPNAME+3         move 00nnn from IGX00nnn         02440006
+         CLC   DWD(5),EPNAME+3         00nnn numeric?                   02450006
+         BNE   PARMERR                 NO, ABEND                        02460006
+         PACK  DWD,EPNAME+3(5)         ESR NUMBER (NNN)                 02470006
+         CVB   R1,DWD                  ESR NUMBER (NNN)                 02480006
+         STC   R5,ESR#                 ESR NUMBER (NNN)                 02490006
+         SLL   R1,3                    mult by 8                        02500006
+         L     R5,SVCEP                point to ESR table               02510006
+         LA    R5,SVCENTRY+8(R1)       point to ESR entry               02520006
+         ST    R5,SVCENTRY_PTR         save entry address               02530006
+*                                                                       02540006
+INIT39   EQU   *                                                        02550006
+         MVC   OLDENTRY,SVCENTRY       save old SVC entry               02560006
+         MODESET MODE=SUP              check that I'm APF-authorized    02570006
+*********************************************************************** 02580000
+*                                                                     * 02590000
+*        CHECK THAT THE USER HAS "UPDATE" AUTHORITY TO SYS1.PARMLIB.  * 02600000
+*                                                                     * 02610000
+*        IF HE DOESN'T, EXIT WITH RC=8                                * 02620000
+*                                                                     * 02630000
+*********************************************************************** 02640000
+         L     R14,RACF_CML            CAMLST 1ST WORD                  02650000
+         LA    R15,RACF_DSN            DATA SET NAME                    02660000
+         SLR   R0,R0                                                    02670000
+         LA    R1,RACFWORK             WORK AREA                        02680000
+         STM   R14,R1,SIXWORDS         STORE RELOCATED CAMLST           02690000
+         LOCATE SIXWORDS               GET VOLSER AND DEVICE TYPE       02700000
+         LTR   R15,R15                 CHECK FOR SUCCESSFUL COMPLETION  02710000
+         BNZ   RACF_BAD                LOCATE FAILED, EXIT              02720000
+         MVC   RACF_VOL,RACFWORK+6     VOLSER                           02730000
+*                                                                       02740000
+         MVC   RACF_DYN(RACF_LEN),RACF_MOD                              02750000
+         RACROUTE REQUEST=AUTH,                                        X02760000
+               WORKA=RACFWORK,                                         X02770000
+               VOLSER=RACF_VOL,        VOLUME                          X02780000
+               MF=(E,RACF_DYN)                                          02790000
+         LTR   R15,R15                 USER AUTHORIZED?                 02800000
+         BZ    INSTALL                 YES, CONTINUE                    02810000
+*                                                                       02820000
+*        Allow selected users to bypass RACF protection                 02830001
+*                                                                       02840000
+         L     R2,PSAAOLD-PSA          POINT TO MY ASCB.                02850001
+         L     R2,ASCBASXB-ASCB(,R2)   POINT TO MY ASXB.                02860001
+         L     R2,ASXBSENV-ASXB(,R2)   POINT TO MY ACEE.                02870001
+         USING ACEE,R2                                                  02880001
+         CLC   =CL8'IBMUSER',ACEEUSRI  AUTHORIZED USER?                 02890001
+         BE    INSTALL                 YES, CONTINUE                    02900001
+         DROP  R2                      ACEE                             02910001
+*                                                                       02920000
+RACF_BAD L     R13,4(,R13)                                              02930000
+         RETURN (14,12),RC=8           User is not authorized, RC=8     02940000
+****     ABEND  1002,DUMP                                               02950000
+*                                                                       02960000
+RACF_MOD RACROUTE REQUEST=AUTH,        CHECK AUTHORIZATION             X02970000
+               LOG=NONE,               DO NOT LOG FAILURES             X02980000
+               CLASS='DATASET',        CHECK FOR DATASET AUTHORITY     X02990000
+               ENTITY=RACF_DSN,        DATA SET NAME                   X03000000
+               ATTR=UPDATE,            MUST BE ALLOWED TO UPDATE       X03010000
+               MF=L                                                     03020000
+RACF_DSN DC    CL44'SYS1.PARMLIB'                                       03030000
+RACF_CML CAMLST NAME,*-*,,*-*          CAMLST FOR LOCATE                03040000
+*                                                                       03050006
+PARMERR  WTO    'SVCUPDTE: INVALID PARM <====',ROUTCDE=11               03060006
+         ABEND  1001,DUMP                                               03070006
+*                                                                       03080006
+RC24     L     R13,4(,R13)                                              03090006
+         RETURN (14,12),RC=24          entry is not Type 2,3,4          03100006
+*                                                                       03110000
+*********************************************************************** 03120000
+*                                                                     * 03130000
+*        FUNCTION=INSTALL                                             * 03140000
+*                                                                     * 03150000
+*********************************************************************** 03160000
+*                                                                       03170000
+INSTALL  MVC   SVCULIST(MODELS_L),MODELS   MF=L MACROS                  03180003
+         MVC   SVCULOCK,LOCK#          move lock indicators             03190007
+*                                                                       03200000
+         ENQ   (,SVCNO),MF=(E,ENQL)    serialize update                 03210000
+         LTR   R15,R15                 ENQ OK?                          03220000
+         BZ    INSTALL4                yes, jump                        03230000
+         L     R13,4(,R13)                                              03240000
+         RETURN (14,12),RC=12          no, exit with RC=12              03250003
+*                                                                       03260000
+INSTALL4 LOAD  EPLOC=EPNAME,           name of SVC routine             X03270000
+               GLOBAL=YES,             load into SP 241                X03280000
+               SF=(E,LOAD4L)                                            03290000
+         LR    R6,R0                   ENTRY POINT                      03300000
+*                                                                       03310000
+         LA    R10,DWD                 address work area                03320008
+         SYNCH UPDATE,STATE=SUPV,RESTORE=YES Update SVC table entry     03330006
+*                                                                       03340005
+         CLI   ENDOFDAY,C' '           good night time specified?       03350005
+         BNE   CHKUSER                 yes, jump                        03360005
+         CLI   USERID,C' '             userid screening requested?      03370005
+         BNE   CHKUSER                 yes, jump                        03380005
+*                                                                       03390000
+*        Check if the module just loaded was in LPA.                    03400001
+*        If it was, exit immediately.                                   03410001
+*                                                                       03420000
+CHECKLPA L     R2,PSATOLD-PSA          MY TCB                           03430005
+         USING TCB,R2                                                   03440001
+         L     R2,TCBLLS               last LLE                         03450001
+         USING LLE,R2                                                   03460001
+         L     R2,LLECDPT              Corresponding CDE or LPDE        03470001
+         USING CDENTRY,R2                                               03480001
+         TM    CDATTR,CDNIP            An LPA module?                   03490001
+         BNO   CHKUSER                 No, jump                         03500005
+         CLC   EPNAME,CDNAME           Right module?                    03510001
+         BNE   CHKUSER                 No, jump                         03520005
+         CL    R6,CDENTPT              Right entry point address?       03530001
+         BE    EXIT                    YES, EXIT                        03540005
+*                                                                       03550000
+*********************************************************************** 03560000
+*                                                                     * 03570000
+*        FUNCTION=CHKUSER                                             * 03580005
+*                                                                     * 03590000
+*        Allocate storage in SQA, move the user-ID screening code     * 03600005
+*        into it and set its address into the SVC table.              * 03610005
+*                                                                     * 03620000
+*********************************************************************** 03630000
+*                                                                       03640000
+CHKUSER  CLI   USERID,C' '             userid screening requested?      03650005
+         BE    WAIT                    yes, jump                        03660005
+*                                                                       03670000
+         GETMAIN RU,SP=245,LV=CHKU500L,LOC=ANY   SQA space              03680005
+         ST    R1,SQA_ADDR             work-area in SQA                 03690005
+*                                                                       03700006
+         MODESET EXTKEY=ZERO                                            03710006
+         MVC   0(CHKU500L,R1),CHKU500  move screening code to SQA       03720005
+         USING CHKU500,R1                                               03730005
+         ST    R6,CHKU500N             addr of new SVC                  03740005
+         MVC   CHKU500O,OLDENTRY       addr of old SVC                  03750005
+         MVC   CHKU500U,USERID         user-ID                          03760005
+         MVC   CHKU500#,SVCNO          SVC number                       03770005
+         DROP  R1                      CHKU500 in SQA                   03780005
+         LR    R6,R1                   SVC screening code               03790005
+         BSM   R6,0                    set AMODE bit                    03800005
+         MODESET EXTKEY=ZERO                                            03810006
+*                                                                       03820000
+         LA    R10,DWD                 address work area                03830008
+         SYNCH UPDATE,STATE=SUPV,RESTORE=YES Restore old SVC entry      03840006
+*                                                                       03850000
+*********************************************************************** 03860000
+*                                                                     * 03870000
+*        FUNCTION=WAIT                                                * 03880000
+*                                                                     * 03890000
+*        This routine sets-up a timer for automatic shut-down         * 03900005
+*        (if user specified a "good-night" time).  It then waits      * 03910005
+*        on the communication ECB which is posted by a STOP           * 03920005
+*        command or when the timer interval expires.                  * 03930005
+*                                                                     * 03940000
+*********************************************************************** 03950000
+*                                                                       03960000
+WAIT     MODESET EXTKEY=ZERO                                            03970006
+*                                                                       03980000
+         L     R2,PSAAOLD-PSA          MY ASCB                          03990001
+         OI    ASCBRCTF-ASCB(R2),ASCBTOFF   PREVENT S522                04000001
+*                                                                       04010000
+         MODESET KEY=NZERO                                              04020006
+*                                                                       04030000
+         EXTRACT COMMADDR,FIELDS=COMM,MF=(E,EXTRACTL)                   04040000
+         L     R2,COMMADDR             ECB/CIB POINTERS                 04050000
+*                                                                       04060000
+         CLI   ENDOFDAY,C'0'           good night time specified?       04070000
+         BL    SET_RCVY                no, do not set a timer           04080000
+         STIMERM SET,                                                  X04090000
+               ID=TIMER_ID,            token                           X04100000
+               EXIT=GOODNITE,          exit rtne                       X04110000
+               LT=ENDOFDAY,            hhmmss                          X04120000
+               PARM=(R2),              ECB/CIB POINTERS                X04130004
+               MF=(E,STIMER_L)                                          04140000
+*                                                                       04150000
+SET_RCVY ESTAE CANCEL,CT,                                              X04160000
+               PARAM=SAVE2,            parameter                       X04170000
+               TERM=YES,               trap CANCEL commands            X04180000
+               MF=(E,ESTAEL)                                            04190000
+*                                                                       04200000
+         L     R1,0(,R2)               PICK UP ADDRESS OF COMM ECB      04210004
+         WAIT  1,ECB=(R1),LONG=YES     WAIT FOR A STOP COMMAND          04220004
+*                                                                       04230000
+         ESTAE 0                       DO NOT TRAP CANCEL COMMANDS      04240000
+*                                                                       04250000
+*********************************************************************** 04260000
+*                                                                     * 04270000
+*        FUNCTION=REMOVE                                              * 04280000
+*                                                                     * 04290000
+*        This routine re-instates the initial SVC entry saved in the  * 04300005
+*        OLDENTRY area, frees-up storage and exits to the system.     * 04310005
+*                                                                     * 04320000
+*********************************************************************** 04330000
+*                                                                       04340000
+         L     R6,OLDENTRY             Addr of old SVC entry            04350003
+         LA    R10,DWD                 address work area                04360008
+         SYNCH UPDATE,STATE=SUPV,RESTORE=YES Restore old SVC entry      04370006
+         STH   R15,RETCODE             return code                      04380003
+*                                                                       04390000
+         ICM   R1,B'1111',SQA_ADDR     work-area in SQA                 04400005
+         BZ    EXIT                    no, exit                         04410005
+         FREEMAIN RU,SP=245,A=(R1),LV=CHKU500L SQA space                04420005
+*                                                                       04430000
+EXIT     LH    R15,RETCODE             return code                      04440005
+         L     R13,4(,R13)                                              04450000
+         RETURN (14,12),RC=(15)                                         04460005
+         DROP                                                           04470000
+*                                                                       04480000
+*---------------------------------------------------------------------* 04490005
+*                                                                     * 04500000
+*        USER-ID SCREENING ROUTINE                                    * 04510005
+*                                                                     * 04520000
+*        This code is moved to SQA and executes from there each       * 04530005
+*        time a program issues an SVC instruction for the new SVC.    * 04540005
+*        If the user-id of the invoker is equal to the user-id        * 04550005
+*        specified in the parm, then the new SVC is invoked,          * 04560005
+*        otherwise the old code is called.                            * 04570005
+*                                                                     * 04580000
+*---------------------------------------------------------------------* 04590005
+*                                                                       04600000
+         USING TCB,R4                                                   04610005
+         USING CHKU500,R6                                               04620005
+         USING ASCB,R7                                                  04630005
+CHKU500  B     CHKU510                 branch around eye-catcher        04640005
+         DC    C'SVCUPDTE UTILITY - USER-ID SCREENING',0H'0'            04650005
+CHKU510  L     R2,PSAAOLD-PSA          POINT TO MY ASCB.                04660005
+         L     R2,ASCBASXB-ASCB(,R2)   POINT TO MY ASXB.                04670005
+         ICM   R2,B'1111',ASXBSENV-ASXB(R2) POINT TO MY ACEE.           04680005
+         BZ    CHKU530                 no ACEE, use old code            04690005
+         USING ACEE,R2                                                  04700005
+         CLC   ACEEUSRI,CHKU500U       AUTHORIZED USER?                 04710005
+         BE    CHKU540                 yes, use new code                04720005
+CHKU530  L     R6,CHKU500O             OLD SVC                          04730005
+         BSM   0,R6                                                     04740005
+CHKU540  L     R6,CHKU500N             NEW SVC                          04750005
+         BSM   0,R6                                                     04760005
+CHKU500O DS    V                       OLD ENTRY                        04770005
+CHKU500N DS    V                       NEW ENTRY                        04780005
+CHKU500U DS    CL8                     USER-ID                          04790005
+CHKU500# DS    C'222'                  SVC number                       04800005
+CHKU500L EQU   *-CHKU500                                                04810005
+         DROP                                                           04820005
+*                                                                       04830000
+*---------------------------------------------------------------------* 04840000
+*                                                                     * 04850000
+*        END-OF-DAY ROUTINE                                           * 04860000
+*                                                                     * 04870000
+*        This routine executes at the end of the timer interval       * 04880005
+*        when the user specified a "good-night" time in the parm.     * 04890005
+*        It posts the communication ECB to simulate a STOP command    * 04900005
+*        and allow the main-line to shutdown.                         * 04910005
+*                                                                     * 04920000
+*---------------------------------------------------------------------* 04930000
+*                                                                       04940000
+GOODNITE BALR  R10,0                   LOCAL BASE                       04950006
+         USING *,R10                                                    04960006
+         L     R2,4(,R1)               COMM ECB ADDR                    04970004
+*@SNAP ((R1),8),((R2),4)                                                04980004
+         MODESET KEY=ZERO              Switch to key=zero               04990000
+         POST  (R2),0                  SIMULATE STOP COMMAND            05000000
+         SVC   3                       EXIT                             05010000
+         DROP                                                           05020000
+*                                                                       05030000
+*---------------------------------------------------------------------* 05040000
+*                                                                     * 05050000
+*        ESTAE EXIT USED TO TRAP CANCEL COMMANDS                      * 05060000
+*                                                                     * 05070000
+*---------------------------------------------------------------------* 05080000
+*                                                                       05090000
+CANCEL   SAVE  (14,12),,*                                               05100000
+         LR    R10,R15                                                  05110009
+         USING CANCEL,R10                                               05120009
+         LR    R8,R1                   SDWA                             05130000
+         USING SDWA,R8                                                  05140000
+         LR    R0,R13                                                   05150000
+         L     R13,SDWAPARM            A(SAVE2)                         05160000
+         ST    R0,4(,R13)                                               05170000
+         USING SAVE2,R13                                                05180000
+*                                                                       05190000
+         L     R6,OLDENTRY             Addr of old SVC entry            05200003
+         LA    R10,DWD                 address work area                05210008
+         SYNCH UPDATE,STATE=SUPV,RESTORE=YES Update SVC table entry     05220006
+*                                                                       05230000
+         ICM   R1,B'1111',SQA_ADDR     work-area in SQA                 05240005
+         BZ    CANCEL99                no, exit                         05250005
+         STIMER WAIT,BINTVL=ONESEC     wait for one second              05260009
+         FREEMAIN RU,SP=245,A=(R1),LV=CHKU500L SQA space                05270005
+*                                                                       05280000
+CANCEL99 L     R13,4(,R13)                                              05290005
+         SETRP WKAREA=(R8),REGS=(14,12),RC=00                           05300000
+         DROP                                                           05310005
+*                                                                       05320006
+*---------------------------------------------------------------------* 05330006
+*                                                                     * 05340006
+*        Update SVC Table Entry                                       * 05350006
+*                                                                     * 05360006
+*---------------------------------------------------------------------* 05370006
+*                                                                       05380006
+UPDATE   BALR  R11,0                                                    05390006
+         USING *,R11                                                    05400006
+         USING DWD,R10                                                  05410008
+*                                                                       05420006
+         ENQ   MF=(E,ENQ_TABLE)        SYSZSVC/TABLE/SYSTEM             05430006
+         MODESET EXTKEY=ZERO                                            05440006
+         L     R5,SVCENTRY_PTR         point at SVC table entry         05450006
+         USING SVCENTRY,R5                                              05460006
+*                                                                       05470006
+         CLI   SVC#,109                ESR?                             05480006
+         BE    UPDATE6                 yes, jump                        05490006
+*                                                                       05500006
+         SLR   R2,R2                                                    05510006
+         IC    R2,SVC#                 pick up SVC number               05520006
+         SVCUPDTE (R2),EP=(R6),MF=(E,SVCULIST)                          05530006
+         LR    R3,R15                  return code                      05540006
+         B     UPDATE7                                                  05550006
+*                                                                       05560006
+UPDATE6  EQU   *                       ESR                              05570006
+         PGSER R,UNPROTECT,A=SVCENTRY,EA=SVCENTRY+1                     05580006
+         ST    R6,SVCEP                ESRTABLE                         05590006
+         SLR   R3,R3                   rc=0                             05600006
+         PGSER R,PROTECT,A=SVCENTRY,EA=SVCENTRY+1                       05610006
+*                                                                       05620006
+UPDATE7  EQU   *                                                        05630006
+         DEQ   MF=(E,ENQ_TABLE)        SYSZSVC/TABLE/SYSTEM             05640006
+         LR    R15,R3                  pass return code                 05650006
+         SVC   3                       goback to synch                  05660006
+*********************************************************************** 05670000
+*                                                                     * 05680000
+*        Model storage, moved to dynamic                              * 05690002
+*                                                                     * 05700000
+*********************************************************************** 05710000
+MODELS   SVCUPDTE 0,REPLACE,TYPE=4,EP=0,MF=L                            05720000
+         ENQ   (QNAME1,*-*,E,L'SVCNO,SYSTEM),RET=USE,MF=L               05730002
+         ENQ   (SYSZSVCQ,SYSZSVCR,E,,SYSTEM),MF=L                       05740002
+MODELS_L EQU   *-MODELS                                                 05750000
+*                                                                       05760000
+QNAME1   DC    C'SVCUPDTE'             QNAME for ENQ                    05770000
+SYSZSVCQ DC    C'SYSZSVC '             QNAME for ENQ                    05780002
+SYSZSVCR DC    C'TABLE'                RNAME for ENQ                    05790002
+ONESEC   DC    FL4'100'                One Second (STIMER)              05800009
+*********************************************************************** 05810000
+*                                                                     * 05820000
+*        PARSE A COMMA-DELIMITED JCL PARM                             * 05830005
+*                                                                     * 05840000
+*        L     R15,=A(PARSE)                                          * 05850005
+*        BALR  R14,R15                                                * 05860005
+*        DC    S(L'PARM1,PARM1)        LENGTH,ADDR                    * 05870005
+*        DC    S(L'PARM2,PARM2)        LENGTH,ADDR                    * 05880005
+*                                                                     * 05890000
+*********************************************************************** 05900000
+PARSE    CSECT                                                          05910005
+         SAVE  (14,12),,PARSE                                           05920005
+         BALR  R11,0                                                    05930005
+         USING *,R11                                                    05940005
+         LH    R5,0(,R4)               LENGTH OF PARM                   05950005
+         LA    R4,1(,R4)               START OF PARM - 1                05960005
+         ALR   R5,R4                   LAST BYTE OF PARM                05970005
+*LOOP                                                                   05980005
+PARS1    SLR   R0,R0                   R0 = 00000000                    05990005
+         ICM   R0,B'0011',2(R14)       R0 = 0000BDDD                    06000005
+         SRDL  R0,12(0)                R0 = 0000000B, R1= BBB.....      06010005
+         SRL   R1,20(0)                R1 = 00000DDD DISPLACEMENT       06020005
+         ALR   R1,R13                  ADD CALLER'S SAVE AREA ADDR      06030005
+         LR    R6,R1                   ADDR OF TARGET FIELD             06040005
+         LH    R7,0(,R14)              LENGTH OF TARGET FIELD           06050005
+*                                                                       06060000
+         LA    R2,1(,R4)               FIRST BYTE OF CURRENT PARAMETER  06070005
+*--LOOP                                                                 06080005
+PARS2    LA    R4,1(,R4)               BUMP POINTER                     06090005
+         CLR   R4,R5                   END OF PARM REACHED?             06100005
+         BH    PARS41                  YES, EXIT LOOP                   06110005
+         CLI   0(R4),C','              DELIMITER?                       06120005
+         BNE   PARS2                   NO, KEEP LOOPIN'                 06130005
+*--ENDLOOP                                                              06140005
+PARS41   LR    R3,R4                   POSITION OF ','                  06150005
+         SR    R3,R2                   LENGTH OF SOURCE PARAM           06160005
+         ICM   R3,B'1000',PARSEPAD     PADDING                          06170005
+         MVCL  R6,R2                   MOVE SOURCE TO TARGET            06180005
+PARS44   LA    R14,2+2(,R14)           NEXT TARGET                      06190005
+         CLI   0(R14),0                IS THIS A FIELD DESCRIPTOR?      06200005
+         BE    PARS1                   YES, PROCESS IT                  06210005
+*ENDLOOP                                                                06220005
+         RETURN (0,12),T                                                06230005
+PARSEPAD DC    C' '                    padding                          06240005
+*********************************************************************** 06250000
+*                                                                     * 06260000
+*        DYNAMIC STORAGE                                              * 06270000
+*                                                                     * 06280000
+*********************************************************************** 06290000
+DYNAM    DSECT                                                          06300000
+         DS    18F                    save area                         06310000
+SAVE2    DS    18F                    save area for ESTAE routine       06320000
+DWD      DS    D                                                        06330000
+SVCENTRY_PTR DS A(SVCENTRY)           SVC or ESR entry                  06340006
+TIMER_ID DS    F                                                        06350000
+SIXWORDS DS    6F                     WORK AREA                         06360000
+*                                                                       06370000
+LOAD4L   LOAD  SF=L                                                     06380000
+EXTRACTL EXTRACT *-*,FIELDS=COMM,MF=L                                   06390000
+COMMADDR DS    A                                                        06400000
+ESTAEL   ESTAE MF=L                                                     06410000
+STIMER_L STIMERM SET,MF=L                                               06420000
+RETCODE  DS    H                      return-code                       06430003
+SQA_ADDR DS    A(CHKU500)             work-area in SQA                  06440005
+OLDENTRY DS    D                      old SVC entry                     06450003
+SVCNO    DS    Z'222'                 SVC number                        06460005
+EPNAME   DS    C'IGC0022B'            name of SVC routine               06470005
+LOCKS    DS    C'8000 '               lock indtcators: 8000 or C000     06480007
+ENDOFDAY DC    Z'19000000'            CUTOFF TIME: HHMMSSHH             06490005
+USERID   DS    CL8                    user-ID                           06500005
+SVC#     DS    X                      SVC number                        06510006
+ESR#     DS    X                      ESR number                        06520006
+LOCK#    DS    X'80'                  locks in binary: 80 or C0         06530007
+*                                                                       06540000
+RACF_DYN RACROUTE REQUEST=AUTH,MF=L                                     06550000
+RACF_LEN EQU   *-RACF_DYN                                               06560000
+RACFWORK DS    64D                    RACROUTE WORK AREA (512 BYTES)    06570000
+RACF_VOL DS    C'SYSRES'              VOLSER                            06580000
+*                                                                       06590000
+*        Parameter lists initialized from "models"                      06600003
+*                                                                       06610000
+SVCULIST SVCUPDTE 0,REPLACE,TYPE=4,EP=0,MF=L                            06620003
+SVCULOCK EQU   SVCULIST+10,1,C'X'                                       06630007
+ENQL     ENQ   (QNAME1,*-*,E,L'SVCNO,SYSTEMS),RET=USE,MF=L              06640000
+ENQ_TABLE ENQ  (SYSZSVCQ,SYSZSVCR,E,,SYSTEM),MF=L                       06650002
+DYNAML   EQU   *-DYNAM                                                  06660000
+*********************************************************************** 06670000
+         PRINT NOGEN                                                    06680000
+         IHAPSA DSECT=YES                                               06690000
+         CVT   DSECT=YES,LIST=NO                                        06700000
+         IHASCVT DSECT=YES,LIST=NO     SECONDARY CVT                    06710003
+         IHASVC                        SVC TABLE ENTRY                  06720003
+         IHAASCB DSECT=YES,LIST=NO                                      06730000
+         IHAASXB                                                        06740001
+         IHAACEE                                                        06750001
+         IKJTCB DSECT=YES,LIST=NO                                       06760001
+         IHALLE                                                         06770001
+         IHACDE                                                         06780001
+         IHASDWA DSECT=YES,VRAMAP=NO                                    06790000
+         YREGS                                                          06800000
+         END   SVCUPDTE                                                 06810000
+//SYSLIB   DD DSN=SYS1.MACLIB,DISP=SHR                                  06820000
+//         DD DSN=SYS1.MODGEN,DISP=SHR                                  06830001
+//SYSUT1   DD UNIT=VIO,SPACE=(CYL,3)                                    06840008
+//SYSLIN   DD UNIT=VIO,SPACE=(TRK,1),DISP=(,PASS),BLKSIZE=3200          06850008
+//SYSPRINT DD SYSOUT=*                                                  06860000
+//*                                                                     06870000
+//LKED    EXEC PGM=LINKLLA,PARM='MAP,RENT,AC=1'                         06880006
+//SYSLIN   DD DSN=*.ASMH.SYSLIN,DISP=(OLD,DELETE)                       06890000
+//SYSLMOD  DD DSN=SYS1.P390.LINKLIB(SVCUPDTE),DISP=SHR                  06900007
+//SYSPRINT DD SYSOUT=*                                                  06910000
+//*                                                                     06920000
+//INSTALL EXEC PGM=SVCUPDTE,PARM=(244,IEFBR14,8000)                     06930007
+//SYSUDUMP DD SYSOUT=*                                                  06940000
+//                                                                      06950006
+//*                                                                     06960006
+//ESR     EXEC PGM=SVCUPDTE,PARM=(109,IGX00000)                         06970006
+//SYSUDUMP DD SYSOUT=*                                                  06980006
+//*                                                                     06990000
+//TEMP    EXEC PGM=SVCUPDTE,                                            07000005
+// PARM='222,IGC0022B,1100,&SYSUID'                                     07010006
+//SYSUDUMP DD SYSOUT=*                                                  07020003

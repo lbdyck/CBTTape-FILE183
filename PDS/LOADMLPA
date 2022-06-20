@@ -1,0 +1,663 @@
+//GILBERTL JOB (ACCT#),LOADMLPA,                                        00010001
+// NOTIFY=&SYSUID,                                                      00020001
+// CLASS=A,MSGCLASS=H,COND=(0,NE)                                       00030001
+//ASMH EXEC PGM=ASMA90,PARM=(OBJECT,NODECK,NOESD,NORLD,NOXREF,RENT)     00040002
+*PROCESS BATCH,USING(NOMAP,WARN(8))                                     00050002
+*********************************************************************** 00060000
+*                                                                     * 00070000
+* MODULE NAME = LOADMLPA                                              * 00080001
+*                                                                     * 00090000
+* DESCRIPTIVE NAME = INSTALL A REENTRANT MODULE INTO THE MLPA.        * 00100001
+*                                                                     * 00110000
+* FUNCTION = THIS PROGRAM LOADS A REENTRANT MODULE INTO THE           * 00120001
+*            CSA AND ADDS AN ENTRY TO THE ACTIVE LPA QUEUE.           * 00130001
+*                                                                     * 00140000
+* STATUS = R302                                                       * 00150002
+*                                                                     * 00160000
+* AUTHOR = GILBERT SAINT-FLOUR <carlos@gsf-soft.com>                  * 00170002
+*          http://gsf-soft.com/Freeware/                              * 00171002
+*                                                                     * 00180000
+* NOTES = SEE BELOW                                                   * 00190001
+*                                                                     * 00200000
+*    DEPENDENCIES = MVS/XA, MVS/ESA                                   * 00210001
+*                                                                     * 00220000
+*    AUTHORIZATION = APF                                              * 00230001
+*                                                                     * 00240000
+*    RESTRICTIONS = INVOKER MUST HAVE UPDATE AUTHORITY TO             * 00250001
+*                   SYS1.PARMLIB.                                     * 00260001
+*                                                                     * 00270000
+* MODULE TYPE = PROCEDURE, (BATCH PROGRAM)                            * 00280001
+*                                                                     * 00290000
+*    PROCESSOR = IBM OS/ASSEMBLER H VERSION 2 OR                      * 00300001
+*                IBM HIGH LEVEL ASSEMBLER/MVS                         * 00310001
+*                                                                     * 00320000
+*    MODULE SIZE = 4K                                                 * 00330001
+*                                                                     * 00340000
+*    ATTRIBUTES = REENTERABLE, RMODE ANY, AMODE 31,                   * 00350001
+*                 SUPERVISOR STATE, KEY 0                             * 00360001
+*                                                                     * 00370000
+* OPERATION = LOADMLPA BUILDS A CDE AND EXTENT-LIST TO REPRESENT      * 00380001
+*             THE MODULE, THEN CHAINS THE CDE TO THE BOTTOM OF THE    * 00390001
+*             ACTIVE LPA QUEUE (ALPAQ). IF THE MODULE IS AN ALIAS,    * 00400001
+*             THEN TWO CDE'S ARE CREATED AND ADDED TO THE ALPAQ.      * 00410001
+*                                                                     * 00420000
+*             LOADMLPA CHECKS FOR EXISTING ENTRIES IN THE LPAQ.       * 00430001
+*             IF THE ENTRY-POINT (OR THE CORRESPONDING MAJOR NAME)    * 00440001
+*             IS (OR ARE) ALREADY IN THE LPAQ, THEN THE PROGRAM       * 00450001
+*             TERMINATES WITH RC=12.                                  * 00460001
+*                                                                     * 00470000
+*             IF AN OLD VERSION OF THE MODULE IS ALREADY IN PLPA,     * 00480001
+*             THE NEW COPY MUST BE LOADED FROM A STEPLIB.             * 00490001
+*                                                                     * 00500000
+* INVOCATION = LOADMLPA IS INVOKED VIA JCL, AS FOLLOWS:               * 00510001
+*                                                                     * 00520000
+*        //LOADMLPA EXEC PGM=LOADMLPA,PARM='LOAD,MMMMMMMM'            * 00530000
+*                                                                     * 00540000
+*            MMMMMMMM IS THE NAME OF A LOAD MODULE (OR ALIAS)         * 00550000
+*                 THAT YOU WANT TO INSTALL IN MLPA.  IT MUST          * 00560000
+*                 COME FROM AN AUTHORIZED LIBRARY (JOBLIB,            * 00570000
+*                 STEPLIB OR LINK-LIST)                               * 00580000
+*                                                                     * 00590000
+*        //REMOVE EXEC PGM=LOADMLPA,PARM='DELETE,MMMMMMMM'            * 00600000
+*                                                                     * 00610000
+*            MMMMMMMM IS THE NAME OF THE LOAD MODULE (OR ALIAS)       * 00620000
+*                 THAT YOU WANT TO REMOVE FROM MLPA.                  * 00630000
+*                                                                     * 00640000
+* RETURN CODES = LOADMLPA PRODUCES RETURN-CODES AND ABENDS,           * 00650001
+*                AS FOLLOWS:                                          * 00660001
+*                                                                     * 00670000
+*    RETURN-CODES:                                                    * 00680001
+*                                                                     * 00690000
+*        0  SUCCESSFUL COMPLETION: MODULE HAS BEEN LOADED INTO MLPA   * 00700001
+*                                                                     * 00710000
+*        4  MODULE NOT IN MLPA (DELETE FUNCTION)                      * 00720001
+*                                                                     * 00730000
+*        8  USER NOT AUTHORIZED TO UPDATE SYS1.PARMLIB                * 00740001
+*                                                                     * 00750000
+*       12  MODULE ALREADY PRESENT IN MLPA                            * 00760001
+*                                                                     * 00770000
+*       16  PARM IS INVALID                                           * 00780001
+*                                                                     * 00790000
+*       20  MODULE FOUND IN PLPA; LOAD IT FROM A STEPLIB              * 00800001
+*                                                                     * 00810000
+*    ABENDS:                                                          * 00820001
+*                                                                     * 00830000
+*      S047     LOADMLPA MODULE NOT AUTHORIZED                        * 00840001
+*                                                                     * 00850000
+*      S306-08  TARGET MODULE NOT RE-ENTRANT                          * 00860001
+*                                                                     * 00870000
+*      S306-0C  TARGET MODULE NOT FROM AN AUTHORIZED LIBRARY          * 00880001
+*                                                                     * 00890000
+* CHANGE ACTIVITY                                                     * 00900001
+*                                                                     * 00910000
+* 301 NEW PACKAGING FOR CBT TAPE                                      * 00920001
+* 302 FIX BAD BRANCH TO EXIT20 LABEL                                  * 00930002
+*                                                                     * 00940000
+*********************************************************************** 00950000
+LOADMLPA CSECT                                                          00960000
+LOADMLPA RMODE ANY                                                      00970000
+         SAVE  (14,12),,'GSF UTILITIES - LOADMLPA R302'                 00980002
+         LR    R12,R15                                                  00990002
+         USING LOADMLPA,R12                                             01000002
+         L     R11,0(,R1)              PARM ADDRESS                     01010000
+         USING PARM,R11                                                 01020000
+*                                                                       01030000
+*        GET ABENDS047 IF THE PROGRAM IS NOT APF-AUTHORIZED             01040001
+*                                                                       01050000
+         MODESET MODE=PROB             CHECK APF AUTHORIZATION          01060000
+*                                                                       01070000
+*        ALLOCATE DYNAMIC STORAGE                                       01080000
+*                                                                       01090000
+         GETMAIN R,LV=DYNAML           DYNAMIC STORAGE                  01100000
+         ST    R13,4(,R1)                                               01110000
+         ST    R1,8(,R13)                                               01120000
+         LR    R13,R1                                                   01130000
+         USING DYNAM,R13                                                01140000
+         LA    R14,DYNAM+72            CLEAR WORK AREA                  01150000
+         LA    R15,DYNAML-72           CLEAR WORK AREA                  01160000
+         SLR   R1,R1                   CLEAR WORK AREA                  01170000
+         MVCL  R14,R0                  CLEAR WORK AREA                  01180000
+*                                                                       01190000
+*        PROCESS JCL PARM                                               01200000
+*                                                                       01210000
+PARM00   LA    R0,PARMFUNC+5           1ST BYTE AFTER FUNCTION          01220000
+         CLC   =C'LOAD,',PARMFUNC      FUNCTION=LOAD?                   01230000
+         BE    PARM10                  YES, JUMP                        01240000
+         LA    R0,PARMFUNC+7           1ST BYTE AFTER FUNCTION          01250000
+         CLC   =C'DELETE,',PARMFUNC    FUNCTION=DELETE?                 01260000
+         BNE   EXIT16                  NO, QUIT                         01270000
+*                                                                       01280000
+PARM10   LA    R14,MODULE              MODULE NAME                      01290000
+         LA    R15,L'MODULE            MAX LENGTH                       01300000
+         MVC   FUNCTION,PARMFUNC       L=LOAD, D=DELETE                 01310000
+*                                                                       01320000
+*        MOVE MODULE NAME TO WORK AREA                                  01330000
+*                                                                       01340000
+*                                                                       01350000
+PARM20   LH    R1,PARMLEN              PARM LENGTH                      01360000
+         LA    R1,PARMFUNC(R1)         FIRST BYTE AFTER PARM            01370000
+         SR    R1,R0                   LENGTH OF NAME                   01380000
+         BZ    EXIT16                  NO NAME, QUIT                    01390000
+         CLR   R1,R15                  LENGTH > 8?                      01400000
+         BH    EXIT16                  YES, QUIT                        01410000
+         ICM   R1,B'1000',=X'40'       PADDING CHARACTER                01420000
+         MVCL  R14,R0                  MOVE MODULE NAME, PAD WITH X'40' 01430000
+         DROP  R11                                                      01440000
+*********************************************************************** 01450000
+*                                                                     * 01460000
+*        CHECK THAT THE USER HAS "UPDATE" AUTHORITY TO SYS1.PARMLIB.  * 01470000
+*                                                                     * 01480000
+*        IF HE DOESN'T, EXIT WITH RC=8                                * 01490000
+*                                                                     * 01500000
+*********************************************************************** 01510000
+         L     R14,RACF_CML            CAMLST 1ST WORD                  01520000
+         LA    R15,RACF_DSN            DATA SET NAME                    01530000
+         SLR   R0,R0                                                    01540000
+         LA    R1,RACFWORK             WORK AREA                        01550000
+         STM   R14,R1,SIXWORDS         STORE RELOCATED CAMLST           01560000
+         LOCATE SIXWORDS               GET VOLSER AND DEVICE TYPE       01570000
+         LTR   R15,R15                 CHECK FOR SUCCESSFUL COMPLETION  01580000
+         BNZ   EXIT8                   LOCATE FAILED, EXIT              01590000
+         MVC   RACF_VOL,RACFWORK+6     VOLSER                           01600000
+*                                                                       01610000
+         MVC   RACF_DYN(RACF_LEN),RACF_MOD                              01620000
+         RACROUTE REQUEST=AUTH,                                        X01630000
+               WORKA=RACFWORK,                                         X01640000
+               VOLSER=RACF_VOL,        VOLUME                          X01650000
+               MF=(E,RACF_DYN)                                          01660000
+         LTR   R15,R15                 USER AUTHORIZED?                 01670000
+         BZ    CHKFUNC                 YES, CONTINUE                    01680000
+*                                                                       01690000
+         L     R2,PSAAOLD-PSA          POINT TO MY ASCB.                01700001
+         L     R2,ASCBASXB-ASCB(,R2)   POINT TO MY ASXB.                01710001
+         L     R2,ASXBSENV-ASXB(,R2)   POINT TO MY ACEE.                01720001
+         USING ACEE,R2                                                  01730001
+         CLC   =CL8'IBMUSER',ACEEUSRI  AUTHORIZED USER?                 01740001
+         BE    CHKFUNC                 YES, CONTINUE                    01750001
+         DROP  R2                      ACEE                             01760001
+         B     EXIT8                   NO, QUIT                         01770000
+*                                                                       01780000
+RACF_MOD RACROUTE REQUEST=AUTH,        CHECK AUTHORIZATION             X01790000
+               LOG=NONE,               DO NOT LOG FAILURES             X01800000
+               CLASS='DATASET',        CHECK FOR DATASET AUTHORITY     X01810000
+               ENTITY=RACF_DSN,        DATA SET NAME                   X01820000
+               ATTR=UPDATE,            MUST BE ALLOWED TO UPDATE       X01830000
+               MF=L                                                     01840000
+RACF_DSN DC    CL44'SYS1.PARMLIB'                                       01850000
+RACF_CML CAMLST NAME,*-*,,*-*          CAMLST FOR LOCATE                01860000
+*                                                                       01870000
+CHKFUNC  CLI   FUNCTION,C'D'           PARM=DELETE?                     01880000
+         BE    DEL00                   YES, JUMP                        01890000
+*********************************************************************** 01900000
+*                                                                     * 01910000
+*        LOAD THE MODULE TO CREATE A CDE/XTLST                        * 01920000
+*                                                                     * 01930000
+*        THIS IS A TRIAL LOAD OF THE MODULE TO CHECK                  * 01940000
+*        ITS EXISTENCE, VALIDITY, ETC.                                * 01950000
+*                                                                     * 01960000
+*        IF THE LOAD IS SUCCESSFUL, THE CDE AND XTLST CREATED BY      * 01970001
+*        LOAD ARE RETRIEVED FROM THE JPAQ AND USED AS A MODEL TO      * 01980001
+*        CREATE THE CDE AND XTLST IN SQA.                             * 01990001
+*                                                                     * 02000000
+*        ONCE THE CDE (AND XTLST) HAVE BEEN PROCESSED, A DELETE       * 02010000
+*        MACRO IS ISSUED TO FREE UP THE SPACE.                        * 02020000
+*                                                                     * 02030000
+*********************************************************************** 02040000
+JPAQ00   L     R4,PSATOLD-PSA          PSATOLD (MY TCB)                 02050000
+         USING TCB,R4                                                   02060000
+         ICM   R2,B'1111',TCBJLB       JOBLIB/STEPLIB/TASKLIB DCB       02070000
+         BNZ   JPAQ12                  OK, JUMP                         02080000
+         L     R1,CVTPTR               NO STEPLIB, USE LINKLIST         02090000
+         L     R2,CVTLINK-CVT(,R1)     DCB FOR SYS1.LINKLIB             02100000
+JPAQ12   ST    R2,STEPLIB              SAVE FOR 2ND LOAD                02110000
+*                                                                       02120000
+         LOAD  EPLOC=MODULE,           ENTRY-POINT NAME                X02130000
+               GLOBAL=YES,             LOAD INTO SP 241                X02140000
+               DCB=(R2),               JOBLIB/STEPLIB OR LINKLIST      X02150000
+               SF=(E,LOAD1L)                                            02160000
+*                                                                       02170000
+*        RETRIEVE THE CDE FROM THE JPAQ                                 02180000
+*                                                                       02190000
+         L     R4,TCBJSTCB             THE JOB STEP TCB                 02200000
+         L     R5,TCBJPQ               POINT TO FIRST CDE IN CHAIN      02210000
+         USING CDENTRY,R5                                               02220000
+*LOOP                                                                   02230000
+JPAQ21   CLC   MODULE,CDNAME           IS THIS MY MODULE?               02240000
+         BE    SCAN00                  YES, EXIT                        02250000
+         ICM   R5,B'1111',CDCHAIN      CHECK FOR END OF CHAIN           02260000
+         BNZ   JPAQ21                  LOOP THROUGH RB TABLE            02270000
+*ENDLOOP                                                                02280000
+         B     EXIT20                  NOT FOUND IN JPAQ                02290002
+         DROP  R4                      TCB                              02300000
+*********************************************************************** 02310000
+*                                                                     * 02320000
+*        SCAN THE JPAQ TO CHECK IF THE MODULE IS ALREADY THERE        * 02330000
+*                                                                     * 02340000
+*        IF IT'S FOUND, EXIT WITH RC=12                               * 02350000
+*                                                                     * 02360000
+*********************************************************************** 02370000
+SCAN00   MVC   MAJNAME,CDNAME          MAJOR NAME                       02380000
+         TM    CDATTR,CDMIN            IS THIS A MINOR CDE?             02390000
+         BZ    SCAN12                  NO, JUMP                         02400000
+         L     R1,CDXLMJP              POINT TO MAJOR CDE               02410000
+         MVC   MAJNAME,CDNAME-CDENTRY(R1)   MAJOR NAME                  02420000
+*                                                                       02430000
+SCAN12   L     R3,CVTPTR                                                02440000
+         L     R6,CVTQLPAQ-CVT(,R3)    ACTIVE LPA QUEUE                 02450000
+         USING CDENTRY,R6                                               02460000
+*LOOP                                                                   02470000
+SCAN31   CLC   MODULE,CDNAME           IS THIS MY NAME?                 02480000
+         BE    EXIT12                  YES, QUIT                        02490000
+         CLC   MAJNAME,CDNAME          IS THIS MY NAME?                 02500000
+         BE    EXIT12                  YES, QUIT                        02510000
+         ICM   R6,B'1111',CDCHAIN      END OF CHAIN?                    02520000
+         BNZ   SCAN31                  NO, LOOP                         02530000
+*ENDLOOP                                                                02540000
+         DROP  R6                                                       02550000
+*********************************************************************** 02560000
+*                                                                     * 02570000
+*        ALLOCATE SPACE IN SQA FOR THE CDE & XTLST                    * 02580000
+*                                                                     * 02590000
+*        IF THE ENTRY-POINT IS AN ALIAS, GET SPACE FOR 2 CDE'S        * 02600000
+*                                                                     * 02610000
+*********************************************************************** 02620000
+BUILD10  LA    R2,CDE_LEN+XTL_LEN      LENGTH OF CDE + XTLST            02630000
+         TM    CDATTR,CDMIN            IS THIS A MINOR CDE?             02640000
+         BZ    BUILD12                 NO, JUMP                         02650000
+         ST    R5,JPAMINOR             SAVE ADDR OF MINOR CDE           02660000
+         L     R5,CDXLMJP              POINT TO MAJOR CDE               02670000
+         LA    R2,CDE_LEN+XTL_LEN+CDE_LEN   ROOM FOR 2 CDE'S AND 1 XTL  02680000
+*                                                                       02690000
+BUILD12  GETMAIN R,                    GET STORAGE FOR CDE/XTLST       X02700000
+               SP=245,                 SQA, FIXED                      X02710000
+               LV=(R2)                 LENGTH OF CDE + XTLST            02720000
+         ST    R1,LPAMAJOR             SAVE ADDRESS                     02730000
+*                                                                       02740000
+         LR    R6,R1                   NEW CDE                          02750000
+         USING CDENTRY,R6                                               02760000
+         MODESET KEY=ZERO                                               02770000
+         MVC   CDENTRY(CDE_LEN),0(R5)  MOVE MAJOR CDE                   02780000
+         XC    CDCHAIN,CDCHAIN         END OF CHAIN                     02790000
+         OI    CDATTR,CDNIP            NIP=1,JPAQ=0                     02800000
+         NI    CDATTR,255-CDJPA        NIP=1,JPAQ=0                     02810000
+         MVI   CDATTRB,0               RESET CDEX FLAG                  02820000
+         XC    CDUSE,CDUSE             USE COUNT IS ZERO                02830000
+*                                                                       02840000
+         LA    R7,CDENTRY+CDE_LEN      NEW XTLST                        02850000
+         USING XTLST,R7                                                 02860000
+         L     R1,CDXLMJP              ADDR OF ORIGINAL XTLST           02870000
+         MVC   XTLST(XTL_LEN),0(R1)    MOVE XTLST                       02880000
+         ST    R7,CDXLMJP              ADDR OF NEW XTLST                02890000
+*                                                                       02900000
+*        SET-UP THE MINOR CDE IF THE ENTRY-POINT IS AN ALIAS            02910000
+*                                                                       02920000
+         ICM   R5,B'1111',JPAMINOR     POINT TO THE MINOR CDE           02930000
+         BZ    BUILD38                 NO MINOR CDE, JUMP               02940000
+*                                                                       02950000
+         LA    R1,CDENTRY+CDE_LEN+XTL_LEN  MY MINOR CDE                 02960000
+         ST    R1,CDCHAIN              MAJOR-->MINOR                    02970000
+         LR    R6,R1                   MY MINOR CDE                     02980000
+         MVC   CDENTRY(CDE_LEN),0(R5)  MOVE MINOR CDE                   02990000
+         XC    CDCHAIN,CDCHAIN         END OF CHAIN                     03000000
+         OI    CDATTR,CDNIP            NIP=1,JPAQ=0                     03010000
+         NI    CDATTR,255-CDJPA        NIP=1,JPAQ=0                     03020000
+         MVI   CDATTRB,0               RESET CDEX FLAG                  03030000
+         MVC   CDXLMJP,LPAMAJOR        POINT TO MAJOR CDE               03040000
+*                                                                       03050000
+*        FREE UP THE TRIAL COPY OF THE MODULE                           03060000
+*                                                                       03070000
+BUILD38  MODESET KEY=NZERO                                              03080000
+         DELETE EPLOC=MODULE           DELETE PATTERN MODULE            03090000
+*                                                                       03100000
+*********************************************************************** 03110000
+*                                                                     * 03120000
+*        LOAD THE MODULE INTO THE CSA (SP=241,KEY=0)                  * 03130000
+*                                                                     * 03140000
+*        UPDATE LOAD-POINT AND ENTRY-POINT ADDRESSES IN CDE/XTLST     * 03150000
+*                                                                     * 03160000
+*********************************************************************** 03170000
+*                                                                       03180000
+LOAD00   SLR   R2,R2                                                    03190000
+         ICM   R2,B'0111',XTLMSBLN     24-BIT LENGTH                    03200000
+         MODESET KEY=ZERO                                               03210000
+         CLI   XTLMSBAD,0              RMODE=ANY?                       03220000
+         BNE   LOAD31                  YES, JUMP                        03230000
+*                                                                       03240000
+*        ALLOCATE CSA SPACE (RMODE=24)                                  03250000
+*                                                                       03260000
+         GETMAIN R,                    RMODE=24                        X03270000
+               SP=241,                 CSA, KEY=0                      X03280000
+               LV=(R2)                 LENGTH OF THE MODULE             03290000
+         B     LOAD40                                                   03300000
+*                                                                       03310000
+*        ALLOCATE CSA SPACE (RMODE=ANY)                                 03320000
+*                                                                       03330000
+LOAD31   GETMAIN RU,                   RMODE=ANY                       X03340000
+               SP=241,                 CSA, KEY=0                      X03350000
+               LV=(R2),                LENGTH OF THE MODULE            X03360000
+               LOC=ANY                 RMODE=31                         03370000
+*                                                                       03380000
+*        LOAD MODULE INTO CSA (USING MAJOR ENTRY POINT NAME)            03390000
+*                                                                       03400000
+LOAD40   LR    R2,R1                   LOAD POINT ADDRESS               03410000
+         L     R3,STEPLIB              STEPLIB DCB                      03420000
+         L     R6,LPAMAJOR             MAJOR CDE                        03430000
+         LOAD  EPLOC=MAJNAME,          MODULE NAME                     X03440000
+               ADDR=(R2),              LOAD INTO CSA (SP 241)          X03450000
+               DCB=(R3),               JOBLIB/STEPLIB/TASKLIB/LINKLIST X03460000
+               SF=(E,LOAD2L)                                            03470000
+         ST    R0,CDENTPT              ENTRY POINT OF MAJOR NAME        03480000
+*                                                                       03490000
+*        SET UP ADDR OF MINOR ENTRY-POINT                               03500000
+*                                                                       03510000
+         ICM   R6,B'1111',CDCHAIN      DO WE HAVE A MINOR ENTRY POINT?  03520000
+         BZ    LOAD90                  NO, QUIT                         03530000
+         ST    R6,LPAMINOR             YES, KEEP IT FOR DSPLY           03540000
+         L     R0,CDENTPT              GET JPAQ ENTRY-POINT             03550000
+         SL    R0,XTLMSBAD             OFFSET TO MINOR EP               03560000
+         ALR   R0,R2                   CHANGE OFFSET TO ADDRESS         03570000
+         ST    R0,CDENTPT              STORE RELOCATED ENTRY POINT      03580000
+*                                                                       03590000
+LOAD90   ST    R2,XTLMSBAD             LOAD-POINT                       03600000
+         DROP  R6,R7                   CDE, XTLST                       03610000
+*---------------------------------------------------------------------* 03620000
+*                                                                     * 03630000
+*        CHAIN THE CDE AT THE BOTTOM OF THE LPAQ                      * 03640000
+*                                                                     * 03650000
+*---------------------------------------------------------------------* 03660000
+CHAIN    MODESET KEY=ZERO,MODE=SUP                                      03670000
+         SETLOCK OBTAIN,                                               X03680000
+               TYPE=LOCAL,             LOCAL LOCK                      X03690000
+               MODE=UNCOND,                                            X03700000
+               REGS=USE,               DO NOT CHANGE R11-R13           X03710000
+               RELATED=CHAIN9                                           03720000
+         SETLOCK OBTAIN,                                               X03730000
+               TYPE=CMS,               CROSS-MEMORY SERVICES           X03740000
+               MODE=UNCOND,                                            X03750000
+               REGS=USE,               DO NOT CHANGE R11-R13           X03760000
+               RELATED=CHAIN9                                           03770000
+*                                                                       03780000
+         L     R3,CVTPTR                                                03790000
+         L     R6,CVTQLPAQ-CVT(,R3)    ACTIVE LPA QUEUE                 03800000
+         L     R0,0(,R6)               FIRST CDE IN LPAQ                03810000
+*LOOP                                                                   03820000
+CHAIN3   LR    R6,R0                   PASS ADDR OF NEXT CDE            03830000
+         USING CDENTRY,R6                                               03840000
+         ICM   R0,B'1111',CDCHAIN      END OF CHAIN?                    03850000
+         BNZ   CHAIN3                  NO, LOOP                         03860000
+*ENDLOOP                                                                03870000
+         MVC   CDCHAIN,LPAMAJOR        UPDATE FWD PTR                   03880000
+         DROP  R6                                                       03890000
+*                                                                       03900000
+CHAIN9   SETLOCK RELEASE,                                              X03910000
+               TYPE=ALL,               LOCAL AND CMS                   X03920000
+               REGS=USE,               DO NOT CHANGE R11-R13           X03930000
+               RELATED=CHAIN1                                           03940000
+         MODESET KEY=NZERO,MODE=PROB                                    03950000
+*---------------------------------------------------------------------* 03960000
+*                                                                     * 03970000
+*        DISPLAY CDE/XTLST ON CONSOLE                                 * 03980000
+*                                                                     * 03990000
+*---------------------------------------------------------------------* 04000000
+DSPLY00  WTO   MF=(E,WTO1L)            DISPLAY HEADER                   04010000
+         MVC   WTO1M(WTO1LL),WTO1L     MOVE MODEL WTO                   04020000
+         MVC   WTO1TEXT+1(L'WTO1TEXT-1),WTO1TEXT  BLANK HEADER OUT      04030000
+*                                                                       04040000
+DSPLY20  L     R6,LPAMAJOR             POINT TO MAJOR CDE               04050000
+         USING CDENTRY,R6                                               04060000
+         L     R7,CDXLMJP              POINT TO XTLST (OR MAJOR CDE)    04070000
+         USING XTLST,R7                                                 04080000
+         MVC   WTO1TEXT+3(L'CDNAME),CDNAME                              04090000
+         ICM   R0,B'1111',CDENTPT      CONVERT TO HEX                   04100000
+         BAL   R14,DSPLYHEX            CONVERT TO HEX                   04110000
+         MVC   WTO1TEXT+12(8),SIXWORDS                                  04120000
+         ICM   R0,B'1111',CDATTRB      CONVERT TO HEX                   04130000
+         BAL   R14,DSPLYHEX            CONVERT TO HEX                   04140000
+         MVC   WTO1TEXT+23(2),SIXWORDS                                  04150000
+         ICM   R0,B'1111',CDSP         CONVERT TO HEX                   04160000
+         BAL   R14,DSPLYHEX            CONVERT TO HEX                   04170000
+         MVC   WTO1TEXT+27(2),SIXWORDS                                  04180000
+         ICM   R0,B'1111',CDATTR       CONVERT TO HEX                   04190000
+         BAL   R14,DSPLYHEX            CONVERT TO HEX                   04200000
+         MVC   WTO1TEXT+31(2),SIXWORDS                                  04210000
+         ICM   R0,B'1111',CDATTR2      CONVERT TO HEX                   04220000
+         BAL   R14,DSPLYHEX            CONVERT TO HEX                   04230000
+         MVC   WTO1TEXT+37(2),SIXWORDS                                  04240000
+         ICM   R0,B'1111',CDUSE        CONVERT TO HEX                   04250000
+         BAL   R14,DSPLYHEX            CONVERT TO HEX                   04260000
+         MVC   WTO1TEXT+43(4),SIXWORDS                                  04270000
+         ICM   R0,B'1111',XTLMSBLN     CONVERT TO HEX                   04280000
+         BAL   R14,DSPLYHEX            CONVERT TO HEX                   04290000
+         MVC   WTO1TEXT+60(6),SIXWORDS                                  04300000
+         ICM   R0,B'1111',XTLMSBAD     CONVERT TO HEX                   04310000
+         BAL   R14,DSPLYHEX            CONVERT TO HEX                   04320000
+         MVC   WTO1TEXT+69(8),SIXWORDS                                  04330000
+         ICM   R0,B'1111',LPAMAJOR+1   CONVERT TO HEX                   04340000
+         BAL   R14,DSPLYHEX            CONVERT TO HEX                   04350000
+         MVC   WTO1TEXT+81(6),SIXWORDS                                  04360000
+         ICM   R0,B'1111',CDXLMJP+1    CONVERT TO HEX                   04370000
+         BAL   R14,DSPLYHEX            CONVERT TO HEX                   04380000
+         MVC   WTO1TEXT+90(6),SIXWORDS                                  04390000
+         WTO   MF=(E,WTO1M)            DISPLAY MAJOR CDE                04400000
+*                                                                       04410000
+DSPLY40  ICM   R6,B'1111',LPAMINOR     DO WE HAVE A MINOR CDE?          04420000
+         BZ    DSPLY99                 NO MINOR CDE, EXIT               04430000
+         MVC   WTO1TEXT+3(L'CDNAME),CDNAME                              04440000
+         ICM   R0,B'1111',CDENTPT      CONVERT TO HEX                   04450000
+         BAL   R14,DSPLYHEX            CONVERT TO HEX                   04460000
+         MVC   WTO1TEXT+12(8),SIXWORDS                                  04470000
+         ICM   R0,B'1111',CDATTRB      CONVERT TO HEX                   04480000
+         BAL   R14,DSPLYHEX            CONVERT TO HEX                   04490000
+         MVC   WTO1TEXT+23(2),SIXWORDS                                  04500000
+         ICM   R0,B'1111',CDATTR       CONVERT TO HEX                   04510000
+         BAL   R14,DSPLYHEX            CONVERT TO HEX                   04520000
+         MVC   WTO1TEXT+31(2),SIXWORDS                                  04530000
+         ICM   R0,B'1111',CDATTR2      CONVERT TO HEX                   04540000
+         BAL   R14,DSPLYHEX            CONVERT TO HEX                   04550000
+         MVC   WTO1TEXT+37(2),SIXWORDS                                  04560000
+         MVC   WTO1TEXT+49(8),MAJNAME                                   04570000
+         ICM   R0,B'1111',LPAMINOR+1   CONVERT TO HEX                   04580000
+         BAL   R14,DSPLYHEX            CONVERT TO HEX                   04590000
+         MVC   WTO1TEXT+81(6),SIXWORDS                                  04600000
+         MVC   WTO1TEXT+90(6),WTO1TEXT+89   ERASE XTLST                 04610001
+         WTO   MF=(E,WTO1M)            DISPLAY MINOR CDE                04620001
+*                                                                       04630000
+DSPLY99  SLR   R15,R15                 RC=00                            04640000
+         B     EXIT                                                     04650000
+*                                                                       04660000
+&TEXT    SETC  '   NAME     ENTPT    ATTRB SP ATTR  ATTR2  USE'         04670000
+&TEXT    SETC  '&TEXT   MAJ-CDE    LENGTH   LOAD-PNT     CDE     XTLST' 04680000
+&TEXTL   SETA  K'&TEXT                                                  04690000
+WTO1L    WTO   '&TEXT ',ROUTCDE=2,MF=L                                  04700000
+WTO1LL   EQU   *-WTO1L                                                  04710000
+*                                                                       04720000
+*        CONVERT (R0) TO HEXADECIMAL FOR DISPLAY                        04730000
+*                                                                       04740000
+DSPLYHEX ST    R0,SIXWORDS+20          HEX VALUE                        04750000
+         UNPK  SIXWORDS(9),SIXWORDS+20(5)                               04760000
+         TR    SIXWORDS(8),DSPLYTAB-C'0'                                04770000
+         BR    R14                                                      04780000
+DSPLYTAB DC    C'0123456789ABCDEF'                                      04790000
+*                                                                       04800000
+*********************************************************************** 04810000
+*                                                                     * 04820000
+*        FUNCTION=DELETE                                              * 04830000
+*                                                                     * 04840000
+*********************************************************************** 04850000
+*                                                                       04860000
+DEL00    MODESET KEY=ZERO,MODE=SUP                                      04870000
+         SETLOCK OBTAIN,                                               X04880000
+               TYPE=LOCAL,             LOCAL LOCK                      X04890000
+               MODE=UNCOND,                                            X04900000
+               REGS=USE,               DO NOT CHANGE R11-R13           X04910000
+               RELATED=DEL32                                            04920000
+         SETLOCK OBTAIN,                                               X04930000
+               TYPE=CMS,               CROSS-MEMORY SERVICES           X04940000
+               MODE=UNCOND,                                            X04950000
+               REGS=USE,               DO NOT CHANGE R11-R13           X04960000
+               RELATED=DEL32                                            04970000
+*                                                                       04980000
+         L     R3,CVTPTR                                                04990000
+         L     R6,CVTQLPAQ-CVT(,R3)    ACTIVE LPA QUEUE                 05000000
+         USING CDENTRY,R6                                               05010000
+*LOOP                                                                   05020000
+DEL23    CLC   MODULE,CDNAME           IS THIS MY CDE?                  05030000
+         BE    DEL31                   YES, EXIT LOOP                   05040000
+         LR    R3,R6                   SAVE ADDR OF PREVIOUS CDE        05050000
+         ICM   R6,B'1111',CDCHAIN      END OF CHAIN?                    05060000
+         BNZ   DEL23                   NO, LOOP                         05070000
+*ENDLOOP                                                                05080000
+         B     DEL32                   MODULE NOT FOUND                 05090000
+*                                                                       05100000
+*        CDE FOUND ON QUEUE, REMOVE IT                                  05110000
+*                                                                       05120000
+DEL31    MVC   CDCHAIN-CDENTRY(,R3),CDCHAIN    REMOVE MY CDE FROM CHAIN 05130000
+*                                                                       05140000
+DEL32    SETLOCK RELEASE,                                              X05150000
+               TYPE=ALL,               LOCAL AND CMS                   X05160000
+               REGS=USE,               DO NOT CHANGE R11-R13           X05170000
+               RELATED=DEL21                                            05180000
+         MODESET KEY=NZERO,MODE=PROB                                    05190000
+         LTR   R6,R6                   MODULE FOUND?                    05200000
+         BZ    EXIT4                   NO, QUIT                         05210000
+*                                                                       05220000
+*        FREE MODULE AND XTLST (MAJOR CDE ONLY)                         05230000
+*                                                                       05240000
+         TM    CDATTR,CDMIN            IS THIS A MINOR CDE?             05250000
+         BO    DEL77                   YES, JUMP                        05260000
+         L     R7,CDXLMJP              ADDR OF XTLST                    05270000
+         USING XTLST,R7                                                 05280000
+*                                                                       05290000
+*        FREE THE MODULE (CSA, SP=241)                                  05300000
+*                                                                       05310000
+         MODESET KEY=ZERO              SWITCH TO KEY=ZERO FOR FREEMAIN  05320000
+         SLR   R0,R0                                                    05330000
+         ICM   R0,B'0111',XTLMSBLN     24-BIT LENGTH                    05340000
+         L     R1,XTLMSBAD             31-BIT ADDRESS                   05350000
+         FREEMAIN RU,                  FREE MODULE                     X05360000
+               SP=241,                 SQA, FIXED                      X05370000
+               A=(R1),                 A(MODULE)                       X05380000
+               LV=(R0)                 LENGTH OF MODULE                 05390000
+         MODESET KEY=NZERO             SWITCH TO KEY=TCB                05400000
+*                                                                       05410000
+*        FREE XTLST (SQA,SP=245)                                        05420000
+*                                                                       05430000
+         FREEMAIN R,                   FREE XTLST                      X05440000
+               SP=245,                 SQA, FIXED                      X05450000
+               A=(R7),                 A(XTLST)                        X05460000
+               LV=XTL_LEN              LENGTH OF XTLST                  05470000
+*                                                                       05480000
+*        FREE CDE (SQA,SP=245)                                          05490000
+*                                                                       05500000
+DEL77    FREEMAIN R,                   FREE CDE                        X05510000
+               SP=245,                 SQA, FIXED                      X05520000
+               A=(R6),                 A(CDENTRY)                      X05530000
+               LV=CDE_LEN              LENGTH OF CDE                    05540000
+*                                                                       05550000
+DEL99    SLR   R15,R15                 RC=00                            05560000
+         B     EXIT                                                     05570000
+*                                                                       05580000
+*********************************************************************** 05590000
+*                                                                     * 05600000
+*        GOBACK TO CALLER                                             * 05610000
+*                                                                     * 05620000
+*********************************************************************** 05630000
+*                                                                       05640000
+EXIT4    LA    R15,4                   MODULE NOT FOUND ON LPAQ         05650000
+         B     EXIT                                                     05660000
+*                                                                       05670000
+EXIT8    LA    R15,8                   USER IS NOT AUTHORIZED           05680000
+         B     EXIT                                                     05690000
+*                                                                       05700000
+EXIT12   LA    R15,12                  MODULE ALREADY IN LPA            05710000
+         B     EXIT                                                     05720000
+*                                                                       05730000
+EXIT16   LA    R15,16                  PARM INVALID OR OMITTED          05740000
+         B     EXIT                                                     05750001
+*                                                                       05760000
+EXIT20   LA    R15,20                  MODULE FOUND IN PLPA             05770001
+*                                                                       05780000
+EXIT     LR    R1,R13                  A(DYNAM)                         05790000
+         LR    R2,R15                  RETURN_CODE                      05800000
+         L     R13,4(,R13)                                              05810000
+         FREEMAIN R,LV=DYNAML,A=(1)    FREE DYNAMIC STORAGE             05820000
+         LR    R15,R2                  RETURN_CODE                      05830000
+         RETURN (14,12),RC=(15)                                         05840000
+*                                                                       05850000
+*********************************************************************** 05860000
+*                                                                     * 05870000
+*        INPUT PARM (FROM EXEC STATEMENT)                             * 05880000
+*                                                                     * 05890000
+*********************************************************************** 05900000
+PARM     DSECT                                                          05910000
+PARMLEN  DS    H                      LENGTH OF PARM                    05920000
+PARMFUNC DS    C'LOAD,'               FUNCTION: LOAD/DELETE             05930000
+PARMNAME DS    CL8                    NAME OF LOAD MODULE               05940000
+*********************************************************************** 05950000
+*                                                                     * 05960000
+*        DYNAMIC STORAGE                                              * 05970000
+*                                                                     * 05980000
+*********************************************************************** 05990000
+DYNAM    DSECT                                                          06000000
+         DS    18F                    SAVE AREA                         06010000
+MODULE   DS    CL8                    ENTRY-POINT NAME                  06020000
+MAJNAME  DS    CL8                    MAJOR NAME                        06030000
+FUNCTION DS    C'L'                   L=LOAD  D=DELETE                  06040000
+JPAMINOR DS    A(CDENTRY)             ADDR OF THE MINOR CDE (IN JPAQ)   06050000
+LPAMAJOR DS    A(CDENTRY)             ADDR OF MY MAJOR CDE (IN SQA)     06060000
+LPAMINOR DS    A(CDENTRY)             ADDR OF MY MINOR CDE (IN SQA)     06070000
+STEPLIB  DS    A                      DCB ADDRESS                       06080000
+SIXWORDS DS    6F                     WORK AREA                         06090000
+*                                                                       06100000
+LOAD1L   LOAD  SF=L                                                     06110000
+LOAD2L   LOAD  SF=L                                                     06120000
+*                                                                       06130000
+RACF_DYN RACROUTE REQUEST=AUTH,MF=L                                     06140000
+RACF_LEN EQU   *-RACF_DYN                                               06150000
+RACFWORK DS    64D                    RACROUTE WORK AREA (512 BYTES)    06160000
+RACF_VOL DS    C'SYSRES'              VOLSER                            06170000
+*                                                                       06180000
+WTO1M    WTO   '&TEXT',ROUTCDE=2,MF=L                                   06190000
+WTO1TEXT EQU   WTO1M+4,&TEXTL         TEXT                              06200000
+*                                                                       06210000
+DYNAML   EQU   *-DYNAM                                                  06220000
+*********************************************************************** 06230000
+*                                                                     * 06240000
+*        MVS CONTROL BLOCKS USED IN LOADMLPA                          * 06250000
+*                                                                     * 06260000
+*********************************************************************** 06270000
+         PRINT NOGEN                                                    06280000
+PRINT    OPSYN ANOP                                                     06290000
+         IHAPSA DSECT=YES                                               06300000
+         CVT   DSECT=YES,LIST=NO                                        06310000
+         IKJTCB DSECT=YES,LIST=NO                                       06320000
+         IHAASCB                                                        06330001
+         IHAASXB                                                        06340001
+         IHAACEE                                                        06350001
+         IHACDE                                                         06360000
+         DS    0F                      ALIGNMENT                        06370000
+CDE_LEN  EQU   *-CDENTRY                                                06380000
+         IHAXTLST                                                       06390000
+         DS    0F                      ALIGNMENT                        06400000
+XTL_LEN  EQU   *-XTLST                                                  06410000
+         YREGS                                                          06420000
+         END                                                            06430000
+//SYSLIB   DD DSN=SYS1.MACLIB,DISP=SHR                                  06440000
+//         DD DSN=SYS1.MODGEN,DISP=SHR                                  06450000
+//SYSUT1   DD UNIT=VIO,SPACE=(CYL,3)                                    06460002
+//SYSLIN   DD UNIT=VIO,SPACE=(TRK,1),DISP=(,PASS),DCB=BLKSIZE=3200      06470000
+//SYSPRINT DD SYSOUT=*                                                  06480000
+//*                                                                     06490000
+//LKED    EXEC PGM=LINKLLA,PARM='MAP,RENT,AC=1'                         06500001
+//SYSLIN   DD DSN=*.ASMH.SYSLIN,DISP=(OLD,DELETE)                       06510001
+//SYSLMOD  DD DSN=SYS1.P390.LINKLIB(LOADMLPA),DISP=SHR                  06520001
+//SYSPRINT DD SYSOUT=*                                                  06530001
+//                                                                      06540000
+//*                                                                     06550000
+//INSTALL EXEC PGM=LOADMLPA,PARM=(LOAD,EXECPGM)                         06560001
+//REMOVE  EXEC PGM=LOADMLPA,PARM=(DELETE,EXECPGM)                       06570001
+//SYSUDUMP DD SYSOUT=*                                                  06580001
+//ABNLTERM DD SYSOUT=*                                                  06590001
+//                                                                      06600000
+//                                                                      06610000
+//                                                                      06620000

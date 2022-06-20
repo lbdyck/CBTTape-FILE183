@@ -1,0 +1,363 @@
+//GILBERTS JOB (ACCT#),SHOWJPAQ,                                        00010000
+//*RESTART=GO,                                                          00020000
+// NOTIFY=&SYSUID,                                                      00030000
+// CLASS=A,MSGCLASS=H,COND=(0,NE),REGION=6M                             00040000
+//HLASM EXEC PGM=ASMA90,PARM=(OBJECT,NODECK,NOESD,NORLD,NOXREF)         00050000
+*PROCESS NOBATCH,USING(WARN(8))                                         00060000
+*********************************************************************** 00070000
+*                                                                     * 00080000
+* MODULE NAME = SHOWJPAQ                                              * 00090000
+*                                                                     * 00100000
+* DESCRIPTIVE NAME = Display contents of the JPAQ in TSO environment  * 00110000
+*                                                                     * 00120000
+* STATUS = R202                                                       * 00130000
+*                                                                     * 00140000
+* FUNCTION = This assembler command can be invoked under TSO or ISPF  * 00150000
+*            to display the contents of the Job Pack Area (JPAQ).     * 00160000
+*                                                                     * 00170000
+* AUTHOR = Gilbert Saint-Flour <carlos@gsf-soft.com>                  * 00180000
+*          http://gsf-soft.com/Freeware/                              * 00190000
+*                                                                     * 00200000
+* ENVIRONMENT = SEE BELOW                                             * 00210000
+*                                                                     * 00220000
+*    DEPENDENCIES: OS/390 or z/OS                                     * 00230000
+*                                                                     * 00240000
+* MODULE TYPE = PROCEDURE, (CSECT TYPE)                               * 00250000
+*                                                                     * 00260000
+*    PROCESSOR = IBM OS/ASSEMBLER H VERSION 2 OR                      * 00270000
+*                IBM HIGH LEVEL ASSEMBLER/MVS                         * 00280000
+*                                                                     * 00290000
+*    MODULE SIZE = 2K                                                 * 00300000
+*                                                                     * 00310000
+*    ATTRIBUTES = REENTERABLE, RMODE ANY, AMODE 31,                   * 00320000
+*                 PROBLEM STATE, KEY 8                                * 00330000
+*                 APF AUTHORIZATION: NONE                             * 00340000
+*                                                                     * 00350000
+* CHANGE ACTIVITY                                                     * 00360000
+*                                                                     * 00370000
+* 100 Initial version called MAPJPAQ                             1988 * 00380000
+* 200 New version, based on the JPAQ section of SHOWMVS          2004 * 00390000
+* 201 PDATA=X'08020000,007D2D00,008D1768,00000000'               2009 * 00400001
+*     Move left                                                       * 00410001
+* 202 CDATTR3                                                         * 00420002
+*                                                                     * 00430000
+&REL     SETC  'R202'                                                 * 00440002
+*********************************************************************** 00450000
+SHOWJPAQ CSECT                                                          00460000
+SHOWJPAQ AMODE 31                                                       00470000
+         B     BEGIN-*(,R15)                                            00480000
+&D       SETC  '&SYSDATE'(7,2)'-'.'&SYSDATE'(1,2)'-'.'&SYSDATE'(4,2)    00490000
+         DC    C'GSF Utilities - SHOWJPAQ &REL - 20&D &SYSTIME',0H'0'   00500000
+BEGIN    BAKR  R14,0                                                    00510000
+         LR    R12,R15                                                  00520000
+         USING SHOWJPAQ,R12                                             00530000
+         GETMAIN R,LV=DYNAML                                            00540000
+         LR    R11,R1                                                   00550000
+         USING DYNAM,R11                                                00560000
+         L     R7,X'021C'(,0)          PSATOLD   A(TCB)                 00570000
+         USING TCB,R7                                                   00580000
+*---------------------------------------------------------------------* 00590000
+*                                                                     * 00600000
+*   NAME     ENTPT    ATTRB SP ATTR  ATTR2  USE    MAJ-CDE   LENGTH   * 00610000
+*                                                                     * 00620000
+*   SHOWJPAQ 840BAA30   30  FC  31    22    0001             0007E0   * 00630000
+*   JPAQ     840BAA30   30      35    02           SHOWJPAQ           * 00640000
+*                                                                     * 00650000
+*---------------------------------------------------------------------* 00660000
+         STRING       'Name     EntPt   Attrb Sp Attr Attr2 Attr3 Use  X00670002
+               Maj-CDE  Length Load-pnt Data-Set Name',INTO=LINE        00680002
+         BAL   R10,PUTLINE          <- Print line                       00690000
+         BAL   R10,PUTBLANK         <- Print blank line                 00700000
+*                                                                       00710000
+         SLR   R5,R5                   first-time switch                00720000
+*LOOP                                                                   00730000
+JPAQ11   BAL   R14,NEXTCDE          <- get next CDE                     00740000
+         LTR   R5,R5                   end of JPAQ?                     00750000
+         BZ    JPAQ91                  yes, exit                        00760000
+         USING CDENTRY,R5                                               00770000
+*                                                                       00780000
+         CSVQUERY SEARCH=JPALPA,       SEARCH JPAQ                     +00790000
+               INADDR=CDENTPT,         ADDRESS                         +00800000
+               OUTEPNM=EPNM,           RETURN EP NAME                  +00810000
+               OUTPID=PID,             PROVIDER ID                     +00820000
+               OUTPDATA=PDATA,         PROVIDER DATA                   +00830000
+               OUTEPTKN=MODTOKEN,      RETURN TOKEN                    +00840000
+               MF=(E,CSVQRYWK)         WORK AREA                        00850000
+         LTR   R2,R15                  pass return code                 00860000
+         BZ    JPAQ17                  OK, continue                     00870000
+         STRING 'CSVQUERY Failed, R15=',((R2),,L),INTO=CSVDWORK         00880000
+         LA    R1,CSVDWORK             message                          00890000
+         B     JPAQ82                                                   00900000
+*                                                                       00910000
+JPAQ17   CLC   =C'PGMF',PID            LOADED FROM JOBLIB/STEPLIB?      00920000
+         BNE   JPAQ31                  no, jump                         00930000
+         OC    PDATA,PDATA             Any provider data returned?      00940000
+         BZ    JPAQ41                  no, quit                         00950000
+         LA    R2,X'000000FF'          mask for NR                      00960000
+         N     R2,PDATA_TTRN           load TTRN from Provider Data     00970000
+         CLI   PDATA+1,X'01'           LOADED FROM -LNKLST- ?           00980000
+         BE    JPAQ34                  yes, jump                        00990000
+         CLI   PDATA+1,X'02'           LOADED FROM TASKLIB ?            01000001
+         BE    JPAQ50                  yes, jump                        01010001
+*                                                                       01020000
+*        Loaded from JOBLIB/STEPLIB/TASKLIB                             01030000
+*                                                                       01040000
+JPAQ21   TM    PDATA,X'80'             loaded from a PDSE?              01050000
+         BZ    JPAQ21L                 no, jump                         01060000
+         L     R3,PDATA_DDN+4          yes, get LFMD address            01070000
+         MVC   PDATA_DDN,044(R3)       move true ddname                 01080000
+JPAQ21L  L     R3,TCBTIO               TIOT                             01090000
+         USING TIOT1,R3                                                 01100000
+         LA    R3,TIOENTRY             First TIOT Entry                 01110000
+         USING TIOENTRY,R3                                              01120000
+         SLR   R0,R0                   PREPARE IC                       01130000
+*LOOP                                                                   01140000
+JPAQ22   CLC   PDATA_DDN,TIOEDDNM      is this my ddname ?              01150000
+         BE    JPAQ60                  yes, exit loop                   01160000
+         IC    R0,TIOELNGH             LOAD LENGTH OF CURRENT ENTRY     01170000
+         ALR   R3,R0                   BUMP UP TO NEXT ENTRY            01180000
+         CLI   TIOELNGH,0              IS THIS THE END?                 01190000
+         BNZ   JPAQ22                  NOT YET, LOOP THROUGH TIOT       01200000
+*ENDLOOP                                                                01210000
+*        DDname has been freed (not found in TIOT)                      01220000
+*                                                                       01230000
+         STRING (PDATA_DDN,,T),'+',((R2),,L),INTO=CSVDWORK              01240000
+         LA    R1,CSVDWORK             message                          01250000
+         B     JPAQ80                  exit                             01260000
+*                                                                       01270000
+*        Get module's TTRN in linklist (PID=LLAF)                       01280000
+*                                                                       01290000
+JPAQ31   CLC   =C'LLAF',PID            LOADED FROM LINK-LIST?           01300000
+         BNE   JPAQ41                  NO, EXIT                         01310000
+         MVC   CSVDWORK,=AL2(1,L'CSVDWORK)                              01320000
+         MVC   PDS2NAME,EPNM           EPNAME                           01330000
+         L     R1,CVTPTR               CVT address                      01340000
+         L     R1,CVTLINK-CVTMAP(,R1)  link-list DCB                    01350000
+         BLDL  (1),CSVDWORK            ISSUE BLDL (to LLA)              01360000
+         LTR   R15,R15                                                  01370000
+         BNZ   JPAQ45                  NOT FOUND, QUIT                  01380000
+         IC    R2,PDS2CNCT             pick-up concat#                  01390000
+         MVC   PDATA_DDN,DDNAME        move ddname                      01400000
+*                                                                       01410000
+*        Find link-list dsname from LLT                                 01420000
+*                                                                       01430000
+JPAQ34   MH    R2,=Y(LLTNEXT-LLTENTRY) make it an offset into the LLT   01440000
+         L     R14,X'0224'(,0)         PSAAOLD   A(ASCB)                01450000
+         L     R14,ASCBASSB-ASCB(,R14) ASSB                             01460000
+         L     R14,ASSBDLCB-ASSB(,R14) CSVDLCB                          01470000
+         L     R3,DLCBLLT@-DLCB(,R14)  LLT                              01480000
+         LA    R1,LLTDSN-LLT(R2,R3)    change offset to address         01490000
+         B     JPAQ80                  exit                             01500000
+*                                                                       01510000
+*        PDATA=zero or PID not equal to PGMF or LLAF                    01520000
+*                                                                       01530000
+JPAQ41   STRING 'PID(',(PID,,T),')',INTO=WORK44                         01540000
+         LA    R1,WORK44               message                          01550000
+         LA    R15,4                   RC=4                             01560000
+         B     JPAQ82                                                   01570000
+*                                                                       01580000
+*        BLDL_RC>0                                                      01590000
+*                                                                       01600000
+JPAQ45   STRING 1X,INTO=WORK44         dsname not found                 01610000
+         B     JPAQ82                                                   01620000
+*                                                                       01630000
+*        PDATA=X'08020000,007D2D00,008D1768,00000000'                   01640001
+*        PDATA may be related to DESERV/IGWSMDE ???                     01650001
+*        It seems that PDATA+0=X'08' ???                                01660001
+*                      PDATA+1=PDS2LIBF (the "Z byte").                 01670001
+*                      PDATA+4=TTRN                                     01680001
+*                      PDATA+8=A(TCB)                                   01690001
+*                                                                       01700000
+JPAQ50   LA    R1,TCB                  R1=A(TCB) - my own TCB           01710001
+         TM    PDATA+0,X'08'           X'08' ??                         01720001
+         BNO   JPAQ51                  no, jump                         01730001
+         L     R14,PDATA+8             R14=A(TCB)                       01740001
+         CLC   TCBTIO,TCBTIO-TCB(R14)  is this a TCB ?                  01750001
+         BNE   JPAQ51                  no, jump                         01760001
+         LR    R1,R14                  R1=A(TCB)                        01770001
+JPAQ51   L     R1,TCBJLB-TCB(,R1)      R1=A(DCB) STEPLIB/JOBLIB/TASKLIB 01780001
+         LH    R3,040(,R1)             DCBTIOT                          01790001
+         AL    R3,TCBTIO               ADD A(TIOT)                      01800001
+         MVC   PDATA_DDN,TIOEDDNM      copy JOBLIB/STEPLIB ddname       01810001
+*                                                                       01820000
+*        DDname found - Retrieve dsname from JFCB                       01830000
+*                                                                       01840000
+JPAQ60   LTR   R2,R2                   first data set in concat?        01850000
+         BZ    JPAQ66                  yes, exit                        01860000
+         SLR   R0,R0                                                    01870000
+*loop                                                                   01880000
+JPAQ61   IC    R0,TIOELNGH             LOAD LENGTH OF CURRENT ENTRY     01890000
+         ALR   R3,R0                   BUMP UP TO NEXT ENTRY            01900000
+         BCT   R2,JPAQ61               next concat#                     01910000
+*endloop                                                                01920000
+JPAQ66   LA    R2,CSVDWORK+4           WORK AREA                        01930000
+         ST    R2,CSVDWORK             WORK AREA                        01940000
+         USING ZB505,R2                                                 01950000
+         XC    SWAEPAX,SWAEPAX         CLEAR WORK AREA                  01960000
+         MVC   SWVA,TIOEJFCB           SVA OF THE JFCB                  01970000
+         SWAREQ FCODE=RL,EPA=CSVDWORK,MF=(E,SWAREQL1),UNAUTH=YES        01980000
+         L     R1,SWBLKPTR             31-BIT ADDRESS OF JFCB           01990000
+*                                                                       02000000
+JPAQ80   SLR   R15,R15                 RC=0                             02010000
+*                                                                       02020000
+JPAQ82   L     R6,CDXLMJP              POINT TO XL (OR MAJOR CDE)       02030000
+         TM    CDATTR,CDMIN            CHECK ATTRIBUTES                 02040000
+         BO    JPAQ85                  JUMP IF THIS IS A MINOR CDE      02050000
+         USING XTLST,R6                                                 02060000
+         STRING CDNAME,1X,(CDENTPT,,X),2X,(CDATTRB,,X),2X,(CDSP,,X),2X,X02070002
+               (CDATTR,,X),4X,(CDATTR2,,X),4X,(CDATTR3,,X),2X,         X02080002
+               (CDUSE,,X),10X,(XTLMSBLN,,X),1X,(XTLMSBAD,,X),          X02090002
+               1X,((R1),44,T),         DSname from CDEX                X02100002
+               INTO=LINE                                                02110000
+         BAL   R10,PUTLINE          <- Print line                       02120000
+         B     JPAQ11                                                   02130000
+JPAQ85   STRING CDNAME,1X,(CDENTPT,,X),2X,(CDATTRB,,X),6X,             X02140002
+               (CDATTR,,X),4X,(CDATTR2,,X),4X,(CDATTR3,,X),            X02150002
+               7X,(CDNAME-CDENTRY(R6),8),                              X02160002
+               17X,((R1),44,T),        DSname from CDEX                X02170002
+               INTO=LINE                                                02180000
+         BAL   R10,PUTLINE          <- Print line                       02190000
+         B     JPAQ11                  next JPAQ entry                  02200000
+*ENDLOOP                                                                02210000
+*                                                                       02220000
+* ATTRB: 80-EOM 40-IDENTY 20-DIRTY 10-CDEX 08-LPDE 04-GLOBAL 02-CONTA.. 02230000
+*  ATTR: 80-NIP/MLPA 40-NIC 20-RENT 10-REUS 08-NREUS 04-MINOR 02-JPAQ   02240000
+* ATTR2: 80-SP0 40-REL 20-XLE 10-RLC 08-AMODE_ANY 04-OVLY 02-APFLIB ... 02250000
+*                                                                       02260000
+JPAQ91   BAL   R10,PUTBLANK         <- Print blank line                 02270000
+         STRING 'ATTRB: 80-EOM 40-IDENTY 20-DIRTY 10-CDEX ',           X02280002
+               '08-LPDE 04-GLOBAL 02-CONTAMINATION 01-RACF',           X02290000
+               INTO=LINE                                                02300000
+         BAL   R10,PUTLINE          <- NEXT LINE                        02310000
+         STRING ' ATTR: 80-NIP/MLPA 40-NIC 20-RENT 10-REUS ',          X02320002
+               '08-NREUS 04-MINOR 02-JPAQ 01-NOT_OL',                  X02330000
+               INTO=LINE                                                02340000
+         BAL   R10,PUTLINE          <- NEXT LINE                        02350000
+         STRING 'ATTR2: 80-SP0 40-REL 20-XLE 10-RLC ',                 X02360002
+               '08-AMODE_ANY 04-OVLY 02-APFLIB 01-AC=1',               X02370000
+               INTO=LINE                                                02380000
+         BAL   R10,PUTLINE          <- NEXT LINE                        02390000
+         STRING 'Attr3: 80-OpMvsPath 40-PML',                          X02400002
+               INTO=LINE                                                02410000
+         BAL   R10,PUTLINE          <- NEXT LINE                        02420002
+         BAL   R10,PUTBLANK         <- Print blank line                 02430000
+         FREEMAIN R,LV=DYNAML,A=(R11)                                   02440000
+*                                                                       02450000
+         SLR   R15,R15                 RC=0                             02460000
+         PR                                                             02470000
+*                                                                       02480000
+*---------------------------------------------------------------------* 02490000
+*        Scan JPAQ backwards (from oldest CDE)                        * 02500000
+*              Input:  R5 points to current CDENTRY                   * 02510000
+*              Output: R5 point to next CDE                           * 02520000
+*---------------------------------------------------------------------* 02530000
+*                                                                       02540000
+NEXTCDE  LR    R0,R5                   point to current CDE             02550000
+         L     R5,TCBJSTCB             job-step TCB                     02560000
+         L     R5,TCBJPQ-TCB(,R5)      Top CDE (most recent)            02570000
+         LTR   R5,R5                   empty JPAQ?                      02580000
+         BZR   R14                     yes, goback with R5=0            02590000
+         USING CDENTRY,R5                                               02600000
+*--LOOP                                                                 02610000
+NEXTCDE2 CL    R0,CDCHAIN              is this the next RB?             02620000
+         BER   R14                     yes, goback                      02630000
+         ICM   R5,B'1111',CDCHAIN      previous CDE                     02640000
+         BNZ   NEXTCDE2                not found yet, loop more         02650000
+*--ENDLOOP                                                              02660000
+         BR    R14                     goback with R5=0                 02670000
+*---------------------------------------------------------------------* 02680000
+*        Display message using PUTLINE                                * 02690000
+*        ECT=LWAPECT,UPT=PSCBUPT in case we're CALLed as a program    * 02700000
+*---------------------------------------------------------------------* 02710000
+PUTBLANK MVI   LINE,C' '               blank line                       02720000
+         LA    R15,1                   length=1                         02730000
+PUTLINE  LA    R0,4(,R15)              length                           02740000
+         SLL   R0,16                   ll,00                            02750000
+         STCM  R0,B'1111',LINEHDR      store RDW                        02760000
+         L     R1,X'0224'(,0)          PSAAOLD   A(ASCB)                02770000
+         L     R1,ASCBASXB-ASCB(,R1)   A(ASXB)                          02780000
+         L     R1,X'0014'(,R1)         ASXBLWA   A(LWA)                 02790000
+         L     R0,X'0020'(,R1)         LWAPECT   A(ECT)                 02800000
+         L     R14,X'0018'(,R1)        LWAPSCB   A(PSCB)                02810000
+         L     R14,X'0034'(,R14)       PSCBUPT   A(UPT)                 02820000
+         L     R15,CVTPTR(,0)          CVT ADDRESS                      02830000
+         L     R15,CVTPUTL-CVTMAP(,R15) A(IKJPUTL)                      02840000
+         PUTLINE PARM=PUTBLK,UPT=(R14),ECT=(R0),ECB=ECB1,              X02850000
+               ENTRY=(15),             A(IKJPUTL)                      X02860000
+               OUTPUT=(LINEHDR,TERM,SINGLE,DATA),MF=(E,TENWORDS)        02870000
+         BR    R10                                                      02880000
+*---------------------------------------------------------------------* 02890000
+*        Dynamic Storage                                              * 02900000
+*---------------------------------------------------------------------* 02910000
+DYNAM    DSECT                                                          02920000
+TENWORDS DS    10F                                                      02930000
+ECB1     DS    F                                                        02940000
+PUTBLK   PUTLINE MF=L                                                   02950000
+SWAREQL1 SWAREQ MF=L                                                    02960000
+         CSVQUERY MF=(L,CSVQRYWK),PLISTVER=MAX                          02970000
+*                                                                       02980000
+BLDLWORK DS    0F,AL2(1,L'CSVDWORK)    prefix for BLDL                  02990000
+         IHAPDS DSECT=NO,PDSBLDL=YES   PDS Directory                    03000000
+CSVDWORK EQU   BLDLWORK,*-BLDLWORK     Work area for CSVDSN routine     03010000
+*                                                                       03020000
+LRETCODE DS    F                       Return code                      03030000
+LRSNCODE DS    F                       Reason code                      03040000
+PDATA    DS    XL16                                                     03050000
+PDATA_DDN EQU PDATA+8,8,C'C'           DDNAME                           03060000
+PDATA_TTRN EQU PDATA+4,4,C'X'          TTRN                             03070000
+PID      DS    XL4                                                      03080000
+MODTOKEN DS    XL8                                                      03090000
+PDATA_DSN DS   CL44                                                     03100000
+*                                                                       03110000
+LINEHDR  DS    Y(L'LINE+4,0)           PUTLINE                          03120000
+LINE     DS    CL121                                                    03130000
+*                                                                       03140000
+WORK44   DS    CL44                                                     03150000
+DDNAME   DS    CL8'-LNKLST-'                                            03160000
+EPNM     DS    CL8'SHOWJPAQ'                                            03170000
+EYECATCH DS    CL120                                                    03180000
+DYNAML   EQU   *-DYNAM                                                  03190000
+*---------------------------------------------------------------------* 03200000
+*        MVS control blocks used in this program                      * 03210000
+*---------------------------------------------------------------------* 03220000
+         CVT   PREFIX=YES,DSECT=YES,LIST=NO                             03230000
+         IKJTCB DSECT=YES,LIST=NO      Task Control Block               03240000
+         IHACDE                        Contents Directory Entry         03250000
+         IEFTIOT1                      Task Input-Output Table          03260000
+         IEFZB505 LOCEPAX=YES          EPA mapping for SWAREQ           03270000
+         IEFJESCT                      JES Vector Table                 03280000
+         IHAXTLST                      Extent List                      03290000
+         IHAASCB DSECT=YES             Address Space Control Block      03300000
+         IHAASSB LIST=NO               Address Space Secondary Block    03310000
+         CSVDLCB TITLE=NO              Dynamic Link-List                03320000
+*        IHALLT DSECT=YES              LNKLST/LPALST tables             03330000
+LLT      DSECT                                                          03340000
+LLTLLT   DS    C'LLT '                 BLOCK ACRONYM                    03350000
+LLTNO    DS    F                       NUMBER OF ENTRIES                03360000
+LLTENTRY DS    0CL45                   DSNAME ENTRY                     03370000
+LLTDSNL  DS    FL1                     DSNAME LENGTH AFTER TRUNCATION   03380000
+LLTDSN   DS    CL44                    DATA SET NAME                    03390000
+LLTNEXT  EQU   *                       NEXT ENTRY                       03400000
+*                                                                       03410000
+         STRING (GENERATE,,LOCTR)                                       03420000
+         YREGS                         R0-R15                           03430000
+         END                                                            03440000
+//SYSLIB   DD DSN=SYS1.MACLIB,DISP=SHR                                  03450000
+//         DD DSN=SYS1.MODGEN,DISP=SHR                                  03460000
+//         DD DSN=GILBERT.FILE183.PDS,DISP=SHR               STRING     03470000
+//SYSUT1   DD UNIT=VIO,SPACE=(CYL,5)                                    03480000
+//SYSPRINT DD SYSOUT=*                                                  03490000
+//SYSLIN   DD UNIT=VIO,SPACE=(TRK,2),DISP=(,PASS),BLKSIZE=3200          03500000
+//*                                                                     03510000
+//LKED    EXEC PGM=LINKEDIT,PARM='LIST,MAP,RENT,REFR'                   03520000
+//SYSPRINT DD SYSOUT=*                                                  03530000
+//SYSLIN   DD DSN=*.HLASM.SYSLIN,DISP=(OLD,PASS)                        03540000
+//SYSLMOD  DD DSN=GILBERT.FILE183.LOAD(SHOWJPAQ),DISP=SHR,              03550000
+// SPACE=(CYL,(0,1))                                                    03560000
+//*                                                                     03570000
+//GO      EXEC PGM=IKJEFT01,TIME=(,1)                                   03580000
+//STEPLIB  DD DSN=GILBERT.FILE183.LOAD,DISP=SHR                         03590000
+//SYSTSPRT DD SYSOUT=*                                                  03600000
+//SYSTSIN  DD *                                                         03610000
+SHOWJPAQ                                                                03620002
+CALL *(SHOWJPAQ)                                                        03630002

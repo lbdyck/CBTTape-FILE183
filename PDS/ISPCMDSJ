@@ -1,0 +1,286 @@
+//GILBERTI JOB (ACCT#),ISPCMDSJ,                                        00010000
+// NOTIFY=&SYSUID,                                                      00020000
+// CLASS=A,MSGCLASS=X,COND=(0,NE)                                       00030000
+//**********************************************************************00040006
+//*                                                                    *00050006
+//*    THIS JOB CREATES ISPF.TABLES(ISPCMDS) BY MERGING A SET          *00060008
+//*    OF IN-LINE COMMANDS WITH THE ORIGINAL ISPF COMMAND TABLE.       *00070006
+//*                                                                    *00080006
+//**********************************************************************00090006
+//ISPCMDS EXEC PGM=IKJEFT01                                             00100000
+//*---------------------------------------------------------------------00110001
+//*                                                                     00120001
+//*        UPDATE THESE DSNAMES FOR YOUR SITE                           00130001
+//*                                                                     00140001
+//*---------------------------------------------------------------------00150001
+//ISPTLIB  DD DISP=SHR,DSN=ISP.SISPTENU              <== INPUT          00160008
+//*                                                                     00170000
+//ISPTABL  DD DISP=SHR,DSN=CONVTEK.PRISM-CS.TABLES      <== OUTPUT      00180007
+//*                                                                     00190006
+//ISPMLIB  DD DISP=SHR,DSN=ISP.SISPMENU              <== MESSAGES       00200008
+//*---------------------------------------------------------------------00210001
+//*                                                                     00220001
+//*       THESE ARE THE NEW COMMANDS THAT WILL BE MERGED                00230000
+//*       INTO THE NEW ISPCMDS TABLE.                                   00240000
+//*                                                                     00250000
+//*---------------------------------------------------------------------00260001
+//UPDATES DD *                                                          00270006
+PDF      0 SELECT PANEL(ISR@PRIM) OPT(&ZPARM) NEWAPPL(ISR)              00280007
+           PDF MAIN MENU                                                00290007
+ED       0 SELECT PGM(FASTPATH) PARM(EDIT,&ZPARM)                       00300007
+           FAST PATH COMMAND: EDIT                                      00310007
+BR       0 SELECT PGM(FASTPATH) PARM(BROWSE,&ZPARM)                     00320007
+           FAST PATH COMMAND: BROWSE                                    00330007
+VI       0 SELECT PGM(FASTPATH) PARM(VIEW,&ZPARM)                       00340007
+           FAST PATH COMMAND: VIEW                                      00350007
+WP       0 SELECT PGM(FASTPATH) PARM(WP,&ZPARM)                         00360007
+           FAST PATH COMMAND: ISPF WORKPLACE                            00370007
+ICS      0 SELECT PGM(FASTPATH) PARM(ICS,&ZPARM)                        00380007
+           FAST PATH COMMAND: ICS                                       00390007
+FSHELP   0 SELECT PGM(FASTPATH) PARM(FSHELP,&ZPARM)                     00400007
+           FULL-SCREEN HELP                                             00410007
+MACLIB   3 SELECT PGM(FASTPATH) PARM(MACLIB,&ZPARM)                     00420007
+           FAST PATH COMMAND: VIEW MACLIB/MODGEN MACRO                  00430007
+SDSF     2 SELECT PGM(FASTPATH) PARM(SDSF,&ZPARM)                       00440007
+           FAST PATH COMMAND: SDSF                                      00450007
+UTIL     2 SELECT PGM(FASTPATH) PARM(UTIL,&ZPARM)                       00460007
+           FAST PATH COMMAND: PDF UTILITIES                             00470007
+WHOAMI   3 SELECT CMD(%WHOAMI &ZPARM)                                   00480007
+           DISPLAY SYSTEM ID AND USER ID IN LARGE LETTERS               00490007
+RECEIVE  4 SELECT CMD(RECEIVE &ZPARM) MODE(FSCR)                        00500007
+           TSO INTERACTIVE TRANSMIT/RECEIVE FACILITY                    00510007
+IND$FILE 0 SELECT CMD(IND$FILE &ZPARM) MODE(FSCR)                       00520007
+           PC/3270                                                      00530007
+LISTALC  5 SELECT PGM(PGMEDBRO) PARM(L,AMSLISTA,AMSLISTA)               00540007
+           FULL SCREEN TSO LISTALC                                      00550007
+LISTBC   5 SELECT CMD(LISTBC &ZPARM) MODE(FSCR)                         00560007
+           FULL SCREEN TSO LISTBC                                       00570007
+SEND     0 SELECT CMD(%AMSSEND &ZPARM) NEWAPPL(ISR)                     00580007
+           FULL SCREEN TSO SEND                                         00590007
+XMIT     0 SELECT CMD(%AMSXMIT &ZPARM) NEWAPPL(ISR)                     00600007
+           FULL SCREEN TSO XMIT                                         00610007
+MAIL     0 SELECT CMD(%NEWAPPL MAIL) NEWAPPL(MAIL)                      00620007
+           TSO/MAIL                                                     00630007
+HANDBOOK 5 SELECT PGM(FASTPATH) PARM(B,IBMUSER.HANDBOOK(&ZPARM))        00640007
+           ON-LINE MACRO LISTING                                        00650007
+VOLS     0 SELECT CMD(%AMSVOLS &ZPARM) NEWAPPL(ISR)                     00660007
+           VOLS COMMAND                                                 00670007
+PDS      0 SELECT CMD(%NEWAPPL PDS)                                     00680007
+           PDS UTILITY                                                  00690007
+CZX      0 SELECT CMD(%NEWAPPL CORTEX &ZPARM) NEWAPPL(CZX)              00700007
+           CORTEX PRIMARY MENU                                          00710007
+RMFMON   3 SELECT CMD(RMFMON &ZPARM) MODE(FSCR)                         00720007
+           RMF                                                          00730007
+ENQ      0 SELECT CMD(ENQ) MODE(FSCR)                                   00740007
+           ENQ COMMAND                                                  00750007
+USL      0 SELECT PGM(PGMEDBRO) PARM(E,USL,&ZPARM,STD)                  00760007
+           EDIT A USERLIB MEMBER                                        00770007
+DOC      0 SELECT PGM(PGMEDBRO) PARM(E,DOC,&ZPARM,TEXT)                 00780007
+           EDIT A DOCLIB MEMBER                                         00790007
+TXT      0 SELECT PGM(PGMEDBRO) PARM(E,TXT,&ZPARM,STD)                  00800007
+           EDIT A DTXTPRMT MEMBER                                       00810007
+PROC     0 SELECT PGM(PGMEDBRO) PARM(E,PRC,&ZPARM,STD)                  00820007
+           EDIT A IBMUSER.SITE.MJCLPRC MEMBER                           00830007
+TEL      0 SELECT PGM(PGMEDBRO) PARM(B,USL,TEL)                         00840007
+           BROWSE THE TELEPHONE DIRECTORY                               00850007
+MEMOS    4 SELECT PGM(PGMEDBRO) PARM(E,MEMO,&ZPARM,TEXT)                00860007
+           EDIT A MEMO                                                  00870007
+RDR      0 SELECT PGM(PGMEDBRO) PARM(E,RDR,&ZPARM,STD)                  00880007
+           EDIT A DJCLRDR MEMBER                                        00890007
+IPT      0 SELECT PGM(PGMEDBRO) PARM(E,IPT,&ZPARM,STD)                  00900007
+           EDIT A DJCLIPT MEMBER                                        00910007
+TIME     0 SELECT CMD(%AMSTIME)                                         00920007
+           DISPLAY TIME AND DATE                                        00930007
+CNTL     0 SELECT CMD(%AMSCNTL &ZPARM) NEWAPPL(ISR)                     00940007
+           EDIT ISPCTL0 DATA SET, EVEN IF VIO                           00950007
+LMCOPY   3 SELECT PANEL(LMCOPY) NEWAPPL(ISR)                            00960007
+           ISSUE LMCOPY COMMAND                                         00970007
+CZXMSG   0 SELECT PGM(CZX2PMID) PARM(&ZPARM) NOFUNC                     00980007
+           DISPLAY MVS-MS MESSAGE                                       00990007
+PGM      0 SELECT CMD(%XYZ2L053 &ZPARM) NEWAPPL(CZX)                    01000007
+           INVOKE PROGRAM MANAGEMENT PANEL OUTSIDE MVS-MS               01010007
+IPCS     4 SELECT CMD(%NEWAPPL IPCS) NEWAPPL(BLSG)                      01020007
+           INVOKE IPCS COMMAND                                          01030007
+ISMF     0 SELECT CMD(%NEWAPPL ISMF) NEWAPPL(DGT)                       01040007
+           INVOKE ISMF DIALOGS                                          01050007
+RACF     0 SELECT CMD(%NEWAPPL RACF) NEWAPPL(RACF)                      01060007
+           INVOKE RACF DIALOGS                                          01070007
+HSM      0 SELECT CMD(%NEWAPPL HSM) NEWAPPL(HSM)                        01080007
+           INVOKE HSM DIALOGS                                           01090007
+SMPE     3 SELECT CMD(%NEWAPPL SMPE) NEWAPPL(GIM)                       01100007
+           INVOKE SMP/E DIALOGS                                         01110007
+ICQ      0 SELECT CMD(%NEWAPPL ICQ) NEWAPPL(ICQ)                        01120007
+           INVOKE TSO/E DIALOGS                                         01130007
+DITTO    3 SELECT CMD(%NEWAPPL DITTO) NEWAPPL(DUT)                      01140007
+           INVOKE DITTO/MVS DIALOGS                                     01150007
+TLMS     0 SELECT CMD(%NEWAPPL TLMS) NEWAPPL(TLMS)                      01160007
+           INVOKE TLMS PANELS (NO SPLIT SCREEN)                         01170007
+LIBR     3 SELECT CMD(%NEWAPPL LIBR) NEWAPPL(LIB@)                      01180007
+           INVOKE LIBRARIAN /ELIPS PANELS                               01190007
+ELIPS    3 SELECT CMD(%NEWAPPL LIBR) NEWAPPL(LIB@)                      01200007
+           INVOKE LIBRARIAN /ELIPS PANELS                               01210007
+SHOWMVS  5 SELECT PGM(SHOWMVS) PARM(&ZPARM)                             01220007
+           INVOKE SHOWMVS PROGRAM                                       01230007
+JCL      0 SELECT PGM(FASTPATH) PARM(E,&ZUSER..JCL(&ZPARM),STD)         01240007
+           EDIT "USERID.JCL"                                            01250007
+SCRIPT   0 SELECT PGM(ISRFPR) PARM((ISRFP09) 9) NEWPOOL                 01260007
+           ISSUE SCRIPT COMMAND                                         01270007
+PLIB     0 SELECT PGM(FASTPATH) PARM(E,&ZUSER..PANELS(&ZPARM),STD)      01280007
+           EDIT "USERID.PANELS"                                         01290007
+SLIB     0 SELECT PGM(FASTPATH) PARM(E,&ZUSER..SKELS(&ZPARM),STD)       01300007
+           EDIT "USERID.SKELS"                                          01310007
+MLIB     0 SELECT PGM(FASTPATH) PARM(E,&ZUSER..MSGS(&ZPARM),STD)        01320007
+           EDIT "USERID.MSGS"                                           01330007
+EXEC     0 SELECT PGM(FASTPATH) PARM(E,&ZUSER..EXEC(&ZPARM),STD)        01340007
+           EDIT "USERID.EXEC"                                           01350007
+TEXT     0 SELECT PGM(FASTPATH) PARM(E,&ZUSER..TEXT(&ZPARM),STD)        01360007
+           EDIT "USERID.TEXT"                                           01370007
+CLIST    0 SELECT PGM(FASTPATH) PARM(E,&ZUSER..CLIST(&ZPARM),STD)       01380007
+           EDIT "USERID.CLIST"                                          01390007
+CA1      0 SELECT CMD(%NEWAPPL CA1) NEWAPPL(TMS)                        01400007
+           INVOKE CA-1 ISPF INTERFACE                                   01410007
+EPIC     0 SELECT CMD(%NEWAPPL EPIC) NEWAPPL(EPIC)                      01420007
+           INVOKE EPIC/MVS PANELS                                       01430007
+JOBTRAC  4 SELECT CMD(%NEWAPPL JOBTRAC) NEWAPPL(LJT)                    01440007
+           INVOKE JOBTRAC APPLICATION                                   01450007
+SAR      0 SELECT CMD(%NEWAPPL SAR &ZPARM) NEWAPPL(SAR)                 01460007
+           INVOKE SYSOUT ARCHIVAL AND RETRIEVAL SYSTEM                  01470007
+OMEGAMON 4 SELECT CMD(%NEWAPPL OMEG)                                    01480007
+           OMEGAMON                                                     01490007
+PCOMMAND 4 SELECT CMD(%NEWAPPL PCOMMAND)                                01500007
+           PREVAIL/XP (ALIAS SYSVIEW, PCOMMAND)                         01510007
+CCCA     0 SELECT CMD(%NEWAPPL CCCA) NEWAPPL(ABJ)                       01520007
+           COBOL CONVERSION                                             01530007
+SELECT   0 SELECT &ZPARM                                                01540007
+           GSF TEST                                                     01550007
+NEWAPPL  4 SELECT CMD(%NEWAPPL &ZPARM )                                 01560007
+           GSF TEST                                                     01570007
+PDB      0 SELECT CMD(%APPLPDB SITE(&ZPARM) ) NEWAPPL(CZXG)             01580007
+           CORTEX-PDB V5R2M1                                            01590007
+/*                                                                      01600000
+//*---------------------------------------------------------------------01610001
+//SYSTSPRT DD SYSOUT=*                                                  01620004
+//ISPLOG   DD SYSOUT=*,DCB=(RECFM=F,LRECL=121)                          01630000
+//BEFORE   DD SYSOUT=*                                                  01640004
+//AFTER    DD SYSOUT=*                                                  01650004
+//SYSPRINT DD SYSOUT=*                                                  01660000
+//ISPPROF  DD UNIT=SYSDA,SPACE=(1,(1,1,1)),DISP=(,PASS),                01670000
+//            DCB=(RECFM=FB,LRECL=80,BLKSIZE=800)                       01680000
+//SYSPROC  DD DISP=(OLD,PASS),DSN=*.ISPPROF,VOL=REF=*.ISPPROF           01690000
+//SYSUT2   DD DISP=(OLD,PASS),DSN=*.ISPPROF,VOL=REF=*.ISPPROF           01700000
+//DUMMY    DD DUMMY                                                     01710000
+//ISPPLIB  DD DISP=(OLD,PASS),DSN=*.ISPPROF,VOL=REF=*.ISPPROF           01720004
+//ISPSLIB  DD DISP=(OLD,PASS),DSN=*.ISPPROF,VOL=REF=*.ISPPROF           01730004
+//SYSTSIN  DD  *                                                        01740000
+CALL 'SYS1.LINKLIB(IEBUPDTE)' 'NEW'                                     01750000
+ISPSTART CMD(%ISPCMDS  -                                                01760003
+             OLD(ISPCMDS)         /* OLD TABLE FROM DDN(ISPTLIB)   */+  01770006
+             NEW(ISPCMDS)         /* NEW TABLE CREATED IN ISPTABL  */)  01780006
+/*                                                                      01790000
+//SYSIN    DD  *                                                        01800000
+./ ADD NAME=ISPCMDS                                                     01810006
+PROC 0 OLD() NEW()                                                      01820003
+CONTROL NOLIST NOFLUSH                                                  01830001
+                                                                        01840000
+ISPEXEC LMINIT DATAID(ISPTLIB) DDNAME(ISPTLIB) ENQ(SHR)                 01850000
+IF &LASTCC > 0 THEN GOTO SPFERROR                                       01860000
+                                                                        01870000
+ISPEXEC LMINIT DATAID(ISPPROF) DDNAME(ISPPROF) ENQ(EXCLU)               01880000
+IF &LASTCC > 0 THEN GOTO SPFERROR                                       01890000
+                                                                        01900000
+ISPEXEC LMINIT DATAID(ISPTABL) DDNAME(ISPTABL) ENQ(EXCLU)               01910005
+IF &LASTCC > 0 THEN GOTO SPFERROR                                       01920000
+                                                                        01930000
+ISPEXEC LMCOPY FROMID(&ISPTLIB) FROMMEM(&OLD) -                         01940003
+               TODATAID(&ISPPROF) TOMEM(WORKCMDS) REPLACE               01950003
+IF &LASTCC > 8 THEN GOTO SPFERROR                                       01960000
+                                                                        01970000
+ISPEXEC TBOPEN WORKCMDS WRITE LIBRARY(ISPPROF)                          01980003
+IF &LASTCC > 0 THEN GOTO SPFERROR                                       01990000
+                                    /**********************************/02000000
+OPENFILE BEFORE OUTPUT              /*                                */02010000
+                                    /*  DISPLAY TABLE BEFORE UPDATES  */02020000
+DO UNTIL (&RC > 0)                  /*                                */02030000
+  ISPEXEC TBSKIP WORKCMDS           /**********************************/02040003
+  SET RC = &LASTCC                                                      02050000
+  IF &RC = 0 THEN -                                                     02060000
+    DO                                                                  02070000
+      ISPEXEC TBGET WORKCMDS ROWID(ROW)                                 02080003
+      IF &LASTCC > 0 THEN GOTO SPFERROR                                 02090000
+      SET BEFORE = &SUBSTR(1:9,&ZCTVERB          )                      02100000
+      SET BEFORE = &STR(&BEFORE &ZCTTRUNC &SYSNSUB(1,&ZCTACT) )         02110000
+      PUTFILE BEFORE                                                    02120000
+      SET BEFORE = &STR(            &SYSNSUB(1,&ZCTDESC ) )             02130000
+      PUTFILE BEFORE                                                    02140000
+    END                                                                 02150000
+END                                                                     02160000
+CLOSFILE BEFORE                                                         02170000
+ /*TROL SYMLIST CONLIST                                                 02180000
+                                    /**********************************/02190000
+ISPEXEC TBBOTTOM WORKCMDS           /*                                */02200003
+IF &LASTCC > 0 THEN GOTO SPFERROR   /*   READ UPDATES                 */02210000
+                                    /*   ADD THEM TO THE TABLE        */02220000
+                                    /*                                */02230000
+OPENFILE UPDATES                    /**********************************/02240000
+ERROR IF &LASTCC=400 THEN GOTO CLOSEUPD                                 02250000
+                                                                        02260000
+DO UNTIL (&LASTCC=400)                                                  02270000
+  GETFILE  UPDATES                  /*       1ST LINE (VERB)          */02280000
+  SET ZCTVERB  = &SUBSTR(1:8,&SYSNSUB(1,&UPDATES) )                     02290000
+  SET ZCTVERB  = &ZCTVERB                                               02300002
+  SET ZCTTRUNC = &SUBSTR(10:10,&SYSNSUB(1,&UPDATES) )                   02310000
+  SET ZCTACT   = &SUBSTR(12:72,&SYSNSUB(1,&UPDATES)                   ) 02320000
+  SET L = &LENGTH(&SYSNSUB(1,&ZCTACT))                                  02330002
+  DO WHILE &SUBSTR(&L:&L,&SYSNSUB(1,&ZCTACT)) = &STR()                  02340002
+    SET L=&L-1                                                          02350002
+  END                                                                   02360002
+  SET ZCTACT   = &SUBSTR(1:&L,&SYSNSUB(1,&ZCTACT))                      02370002
+                                                                        02380002
+  GETFILE  UPDATES                  /*       2ND LINE (DESC)          */02390000
+  SET ZCTDESC  = &SUBSTR(12:72,&SYSNSUB(1,&UPDATES)                   ) 02400000
+  SET L = &LENGTH(&SYSNSUB(1,&ZCTDESC))                                 02410002
+  DO WHILE &SUBSTR(&L:&L,&SYSNSUB(1,&ZCTDESC)) = &STR()                 02420002
+    SET L=&L-1                                                          02430002
+  END                                                                   02440002
+  SET ZCTDESC  = &SUBSTR(1:&L,&SYSNSUB(1,&ZCTDESC))                     02450002
+  ISPEXEC TBADD WORKCMDS                                                02460003
+  IF &LASTCC > 0 THEN GOTO SPFERROR                                     02470000
+END                                                                     02480000
+                                                                        02490000
+CLOSEUPD: ERROR OFF                 /*     CANCEL ERROR TRAPPING     */ 02500000
+CLOSFILE UPDATES                                                        02510000
+                                                                        02520000
+ISPEXEC TBTOP WORKCMDS                                                  02530003
+IF &LASTCC > 0 THEN GOTO SPFERROR                                       02540000
+                                    /**********************************/02550000
+OPENFILE AFTER OUTPUT               /*                                */02560000
+                                    /*  DISPLAY TABLE AFTER UPDATES   */02570000
+DO UNTIL (&RC > 0)                  /*                                */02580000
+  ISPEXEC TBSKIP WORKCMDS           /**********************************/02590003
+  SET RC = &LASTCC                                                      02600000
+  IF &RC = 0 THEN -                                                     02610000
+    DO                                                                  02620000
+      ISPEXEC TBGET WORKCMDS ROWID(ROW)                                 02630003
+      IF &LASTCC > 0 THEN GOTO SPFERROR                                 02640000
+      SET AFTER = &SUBSTR(1:9,&ZCTVERB           )                      02650000
+      SET AFTER = &STR(&AFTER &ZCTTRUNC &SYSNSUB(1,&ZCTACT) )           02660000
+      PUTFILE AFTER                                                     02670000
+      SET AFTER  = &STR(            &SYSNSUB(1,&ZCTDESC) )              02680000
+      PUTFILE AFTER                                                     02690000
+    END                                                                 02700000
+END                                                                     02710000
+CLOSFILE AFTER                                                          02720000
+                                                                        02730000
+ISPEXEC TBCLOSE WORKCMDS LIBRARY(ISPPROF)                               02740003
+IF &LASTCC > 0 THEN GOTO SPFERROR                                       02750000
+                                                                        02760000
+ISPEXEC LMCOPY FROMID(&ISPPROF) FROMMEM(WORKCMDS) -                     02770003
+               TODATAID(&ISPTABL) TOMEM(&NEW) REPLACE                   02780005
+IF &LASTCC > 8 THEN GOTO SPFERROR                                       02790000
+                                                                        02800000
+EXIT CODE(0)                                                            02810000
+                                                                        02820000
+SPFERROR: +                                                             02830000
+  IF &ZERRMSG ^= &STR() THEN ISPEXEC LOG MSG(&ZERRMSG)                  02840000
+  EXIT CODE(12)                                                         02850000
+/*                                                                      02860000

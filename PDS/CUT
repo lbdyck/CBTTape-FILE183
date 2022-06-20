@@ -1,0 +1,301 @@
+/*************************************************************** REXX */00010001
+/*                                                                    */00020000
+/* MODULE NAME = CUT                                                  */00030000
+/*                                                                    */00040000
+/* DESCRIPTIVE NAME = CUT EDIT Macro for ISPF/PDF                     */00050000
+/*                                                                    */00060000
+/* STATUS   =  R402                                                   */00070002
+/*                                                                    */00080000
+/* FUNCTION =  Copy the data being edited (or part of it) to a        */00090000
+/*             clip-board for later retrieval by the PASTE command.   */00100000
+/*                                                                    */00110000
+/*             CUT is functionally similar to a CREATE command.       */00120000
+/*             It is used in conjunction with the PASTE macro.        */00130000
+/*                                                                    */00140001
+/* AUTHOR   =  Gilbert Saint-Flour <carlos@gsf-soft.com>              */00150002
+/*                                                                    */00160000
+/* SYNTAX   =  CUT                                                    */00170000
+/*                 clipboard             name of the clip board       */00180000
+/*                 first                 First line       .A          */00190000
+/*                 last                  Last line        .B          */00200000
+/*                                                                    */00210000
+/*             The clip-board is an optional name, identical in       */00220000
+/*             syntax to a PDS member name.  Each name refers to a    */00230000
+/*             different clip-board into which the data is stored.    */00240000
+/*             Clip-boards are managed by the CUTPGM program; they    */00250000
+/*             are deleted at the end of the TSO session.  If no      */00260000
+/*             clip-board name is specified, the default clip-board   */00270000
+/*             is used.                                               */00280000
+/*                                                                    */00290000
+/*             When data lines are cut, they replace the previous     */00300000
+/*             content of the clip-board, except when a + sign is     */00310000
+/*             specified instead of the name of a clip-board, in      */00320000
+/*             which case the lines are appended to the data already  */00330000
+/*             in the default clip-board.                             */00340000
+/*                                                                    */00350000
+/*             A range may be specified to limit the amount of data   */00360000
+/*             stored by the CUT macro.  The range may be specified   */00370000
+/*             in the command (e.g. CUT .X .Y) or as a line command   */00380000
+/*             (e.g C, Cn, CC/CC or M, Mn or MM/MM).  If no range is  */00390000
+/*             specified, the entire data set is copied to the        */00400000
+/*             clip-board.                                            */00410000
+/*                                                                    */00420000
+/*             The number of lines that can be CUT is limited by the  */00430000
+/*             size of the clip-board, as set in the variable "blocks"*/00440000
+/*             below; a block can hold 4K of data.                    */00450000
+/*                                                                    */00460000
+/*             The variable "compress" controls how the data is       */00470000
+/*             stored in a clip-board.  If compress=0, no compression */00480000
+/*             is performed and an 80-byte line takes up 82 bytes of  */00490000
+/*             storage.  If compress=1, trailing blanks are removed   */00500000
+/*             before the data is moved to the clip-board.            */00510000
+/*             If compress=2, the MVS compression-expansion services  */00520000
+/*             are used to compress strings of redundant characters;  */00530000
+/*             this reduces paging but consumes extra CPU time,       */00540000
+/*             particularily when the hardware compression feature    */00550000
+/*             is not available on the system.                        */00560000
+/*                                                                    */00570000
+/*             The CUT macro requires the CUTPGM program to be        */00580002
+/*             available to the ISPF SELECT service.  If CUTPGM is    */00590002
+/*             not present in the normal search sequence (ISPLLIB,    */00600002
+/*             TSOLIB, STEPLIB, system libraries), then the "loadlib" */00610002
+/*             variable can be set to the dsname of a load-library    */00620002
+/*             from which ISPF can load the program using the LIBDEF  */00630002
+/*             service. If CUTPGM is present in the normal search     */00640002
+/*             sequence, the "loadlib" variable should be set to      */00650002
+/*             a null string.                                         */00660002
+/*                                                                    */00670002
+/* DEPENDENCIES =  MVS/ESA 4.2.2                                      */00680000
+/*                 TSO/E V2                                           */00690000
+/*                 ISPF and ISPF/PDF V3                               */00700000
+/*                 CUTPGM utility program R400                        */00710000
+/*                                                                    */00720000
+/* CHANGE ACTIVITY                                                    */00730000
+/*                                                                    */00740000
+/*  $401  Correct various errors when user enters D/DD line commands  */00750001
+/*  $402  Use LIBDEF ISPLLIB when Loadlib='load.lib.dsname'           */00760002
+/*                                                                    */00770000
+/**********************************************************************/00780000
+Loadlib='userid.CUTPGM.LOAD'           /* Use LIBDEF ISPLLIB        */  00790002
+Loadlib=''                             /* Do not use LIBDEF ISPLLIB */  00800002
+                                                                        00810002
+ADDRESS ISPEXEC; 'CONTROL ERRORS RETURN';ZERRMSG=''                     00820000
+'ISREDIT MACRO (PARM) NOPROCESS'                                        00830000
+IF rc>0 THEN                                                            00840000
+  SIGNAL Not_an_EDIT_macro                                              00850000
+                                                                        00860000
+IF parm='?' THEN                                                        00870000
+  SIGNAL HELP_panel                           /* User requested HELP */ 00880000
+                                                                        00890000
+'ISREDIT (LINE2) = LINENUM .ZLAST'            /* Last Line           */ 00900000
+IF rc>0 | line2=0 THEN                                                  00910000
+  SIGNAL Empty_dataset                        /* No lines to cut     */ 00920000
+                                                                        00930000
+  /*-----------------------------------------------------------------*/ 00940000
+  /*   Define Default Parameters                                     */ 00950000
+  /*-----------------------------------------------------------------*/ 00960000
+                                                                        00970000
+compress=0                               /* No compression           */ 00980000
+compress=2                               /* Use MVS compression svcs */ 00990000
+compress=1                               /* Truncate trailing spaces */ 01000001
+Cut_Line_Numbers='NO'                    /* Do NOT cut line numbers  */ 01010000
+Cut_Line_Numbers='YES'                   /* Cut line numbers         */ 01020000
+blocks=4096                              /* clipboard size (4K units)*/ 01030000
+                                                                        01040000
+  /*-----------------------------------------------------------------*/ 01050000
+  /*   Define variables                                              */ 01060000
+  /*-----------------------------------------------------------------*/ 01070000
+                                                                        01080000
+clipboard=''                              /*  clip-board name        */ 01090000
+append=''                                 /*  append/replace         */ 01100000
+range1=''                                 /*  first line             */ 01110000
+range2=''                                 /*  last line              */ 01120000
+'ISREDIT (LRECL) = LRECL'                                               01130000
+                                                                        01140000
+CALL Parse_parm                           /*  Analyse the command    */ 01150000
+                                                                        01160000
+  /*-----------------------------------------------------------------*/ 01170000
+  /*   Build the parm for the CUTPGM program, as follows:            */ 01180000
+  /*                                                                 */ 01190000
+  /*     parm=Ccccccccc111111aklllll222222bbbbbb                     */ 01200000
+  /*                                                                 */ 01210000
+  /*         C          function=CUT                                 */ 01220000
+  /*         cccccccc   8-character clipboard name (or blanks)       */ 01230000
+  /*         111111     first line                                   */ 01240000
+  /*         a          + or blank (append flag)                     */ 01250000
+  /*         k          compression level: 0 1 2                     */ 01260000
+  /*         lllll      data set's LRECL                             */ 01270000
+  /*         222222     last line                                    */ 01280000
+  /*         bbbbbb     clipboard size in units of 4K blocks         */ 01290000
+  /*-----------------------------------------------------------------*/ 01300000
+                                                                        01310000
+parm='C'||LEFT(clipboard,8)||RIGHT(line1,6,'0')                         01320000
+parm=parm||RIGHT(append,1)||compress                                    01330000
+parm=parm||RIGHT(lrecl,5,'0')||RIGHT(line2,6,'0')||RIGHT(blocks,6,'0')  01340000
+                                                                        01350000
+  /*-----------------------------------------------------------------*/ 01360000
+  /*   Invoke the CUTPGM program; check the return code              */ 01370000
+  /*-----------------------------------------------------------------*/ 01380000
+                                                                        01390000
+'ISREDIT (NUMMODE,NUMTYPE) = NUMBER'   /* Query number mode info    */  01400000
+IF Nummode='ON' & Cut_Line_Numbers='YES' THEN                           01410000
+  'ISREDIT NUMBER = OFF'               /* Turn OFF number mode      */  01420000
+                                                                        01430002
+IF Loadlib\='' THEN DO                                                  01440002
+  p7=Loadlib                             /* for ISPD014 message   */    01450002
+  "LIBDEF ISPLLIB DATASET ID('"Loadlib"') STACK"                        01460002
+  IF rc>0 THEN                           /* ISPLLIB error         */    01470002
+    SIGNAL SETMSG                                                       01480002
+  END                                                                   01490002
+                                                                        01500000
+'SELECT PGM(CUTPGM) PARM('parm')'; Pgmrc=rc                             01510000
+                                                                        01520002
+IF Loadlib\='' THEN "LIBDEF ISPLLIB"                                    01530002
+                                                                        01540000
+'ISREDIT NUMBER =' Nummode              /* Turn number mode back ON */  01550000
+                                                                        01560000
+IF Pgmrc>0 THEN SIGNAL SETMSG                                           01570002
+                                                                        01580000
+  /*-----------------------------------------------------------------*/ 01590000
+  /*   Delete the lines just cut if user request MOVE                */ 01600000
+  /*-----------------------------------------------------------------*/ 01610000
+                                                                        01620000
+IF CMD='M' THEN                                /* user requested MOVE */01630000
+  'ISREDIT DELETE' line1 line2                 /* delete lines copied */01640000
+                                                                        01650000
+  /*-----------------------------------------------------------------*/ 01660000
+  /*   Issue completion message and exit                             */ 01670000
+  /*-----------------------------------------------------------------*/ 01680000
+                                                                        01690000
+i=line2-line1+1                                /* count lines copied  */01700000
+zedsmsg=i 'lines cut'                                                   01710000
+IF clipboard='' THEN                                                    01720000
+  zedlmsg=i 'lines have been copied to the default clipboard '          01730000
+ELSE                                                                    01740000
+  zedlmsg=i 'lines have been copied to clipboard' clipboard             01750000
+'SETMSG MSG(ISRZ000)'                                                   01760000
+EXIT 0                                                                  01770000
+/**********************************************************************/01780000
+/*            Parse Input Parm, process line commands.                */01790000
+/**********************************************************************/01800000
+Parse_parm:                                                             01810000
+  UPPER parm                                                            01820000
+  DO i=1 to WORDS(parm)                                                 01830000
+    p=WORD(parm,i)                            /* Extract current word */01840000
+    IF LEFT(p,1)='.' THEN DO                                            01850000
+      IF range1='' THEN                                                 01860001
+        range1=p                              /* First label          */01870000
+      ELSE DO                                                           01880000
+        IF range2\='' THEN SIGNAL Bad_clip_board                        01890000
+        range2=p                              /* Second label         */01900000
+        END                                                             01910000
+      END                                                               01920000
+    ELSE DO                                                             01930000
+      IF clipboard\='' THEN SIGNAL Invalid_label                        01940000
+      IF append\=''    THEN SIGNAL Invalid_label                        01950000
+      IF p='+' THEN                                                     01960000
+        append=p                                                        01970000
+      ELSE DO                                                           01980000
+        /*    Check the clip-board name for correct syntax.       */    01990000
+        /*    A clip-board name must be 1 to 8 characters;        */    02000000
+        /*    each character can be numeric (0-9),                */    02010000
+        /*    alphabetic (A-Z), or national (@#$).                */    02020000
+        /*    Clip-board names are not case-sensitive.            */    02030000
+        IF LENGTH(p)>8 THEN                  /*  name is too long    */ 02040000
+          SIGNAL Bad_clip_board                                         02050000
+        IF VERIFY(p,'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#$ ') > 0 THEN02060000
+          SIGNAL Bad_clip_board              /*  invalid character   */ 02070000
+        clipboard=p                                                     02080000
+        END                                                             02090000
+      END                                                               02100000
+  END                                                                   02110000
+                                                                        02120000
+  IF range1\='' & range2='' THEN                                        02130000
+    SIGNAL Invalid_line_range                                           02140000
+                                                                        02150000
+  /*    Check if the user selected a range by entering a line        */ 02160000
+  /*    command such as C, Cnn, CC/CC or M, Mnn, MM/MM. If it is     */ 02170000
+  /*    the case, set line1 and line2 to the first and last line     */ 02180000
+  /*    numbers, respectively.  If the user selected a range both    */ 02190000
+  /*    in the CUT command (such as CUT .X .Y) and in a line         */ 02200000
+  /*    command, issue an error message.                             */ 02210000
+                                                                        02220000
+  'ISREDIT PROCESS RANGE C M'                                           02230000
+  SELECT                                                                02240000
+    WHEN rc=0 THEN DO                                                   02250000
+      'ISREDIT (CMD)   = RANGE_CMD'                /* get C or M  */    02260000
+      IF range1\='' THEN SIGNAL Command_conflict                        02270000
+      "ISREDIT (LINE1) = LINENUM .ZFRANGE"         /* First line  */    02280001
+      "ISREDIT (LINE2) = LINENUM .ZLRANGE"         /* Last line   */    02290001
+      END                                                               02300000
+    WHEN rc=4 THEN DO                                                   02310000
+      CMD='C'                                                           02320000
+      IF Range1\='' THEN DO                       /* CUT .X .Y       */ 02330001
+        p=Range1                                                        02340001
+        "ISREDIT (LINE1) = LINENUM" Range1        /* LINENUM .X      */ 02350001
+        IF rc>0 THEN SIGNAL Invalid_label                               02360001
+        IF Range2='' THEN Range2='.ZLAST'          /*   DEFAULTS  */    02370001
+        p=Range2                                                        02380001
+        "ISREDIT (LINE2) = LINENUM" Range2        /* LINENUM .Y      */ 02390001
+        IF rc>0 THEN SIGNAL Invalid_label                               02400001
+        IF Line2<Line1 THEN DO                                          02410001
+          x=Line1; Line1=Line2; Line2=x           /* Swap labels     */ 02420001
+          END                                                           02430001
+        END                                                             02440001
+      ELSE DO                                                           02450000
+        Line1=1                                    /*   DEFAULTS  */    02460000
+        "ISREDIT (LINE2) = LINENUM .ZLAST"         /*   DEFAULTS  */    02470000
+        END                                                             02480000
+      END                                                               02490001
+    WHEN rc=20 THEN                       /* All lines deleted        */02500001
+      SIGNAL Empty_dataset                /* No lines to cut          */02510001
+    OTHERWISE DO                          /* Line command conflict    */02520001
+      Pgmrc=RC                            /* Save ISREDIT Return code */02530001
+      IF zerrmsg\='' THEN                                               02540001
+        'SETMSG MSG('zerrmsg')'           /* Edit has created message */02550001
+      EXIT Pgmrc                                                        02560001
+      END                                                               02570001
+  END                                                                   02580000
+  RETURN                                                                02590000
+/**********************************************************************/02600000
+/*            Exception Routines                                      */02610000
+/**********************************************************************/02620000
+Not_an_EDIT_macro:                                                      02630000
+  Zedsmsg = "EDIT Macro Only"                  /* Short message    */   02640000
+  Zedlmsg = "CUT may only be invoked as an EDIT macro"                  02650000
+  "SETMSG MSG(ISRZ001)"                        /* send the message */   02660000
+  EXIT 8                                                                02670000
+HELP_panel:                                                             02680000
+  'DISPLAY PANEL(CUTHLP1)'               /* Display HELP panel        */02690000
+  IF rc>8 THEN                                                          02700000
+    'SETMSG MSG('zerrmsg')'              /* HELP panel is missing     */02710001
+  EXIT RC                                                               02720001
+Empty_dataset:                                                          02730000
+  zedsmsg='No lines to cut'                                             02740000
+  zedlmsg='There are no lines to cut'                                   02750000
+  'SETMSG MSG(ISRZ001)'                                                 02760000
+  EXIT 12                                                               02770000
+Invalid_label:                                                          02780000
+  zerrsm='Probable label error'                                         02790000
+  zerrlm=p 'recognized as invalid or undefined label.'                  02800000
+  SIGNAL Beep_msg                                                       02810000
+Command_conflict:                                                       02820000
+  zerrsm='Command Conflict'                                             02830000
+  zerrlm='"'cmd'" conflicts with range specification; blank it out.'    02840000
+  SIGNAL Beep_msg                                                       02850000
+Bad_clip_board:                                                         02860000
+  zerrsm='Invalid clip-board'                                           02870000
+  zerrlm='The clip-board name must be a valid member name.'             02880000
+  SIGNAL Beep_msg                                                       02890000
+Invalid_line_range:                                                     02900000
+  zerrsm='Invalid line range'                                           02910000
+  zerrlm='Only one label was specified, CUT requires two for range.'    02920000
+  SIGNAL Beep_msg                                                       02930000
+Beep_msg:                                                               02940000
+  zerralrm='YES'                  /*   ALARM=YES                      */02950000
+  zerrhm='CUTHLP1'                /*   HELP Panel                     */02960000
+  'SETMSG MSG(ISRZ002)'           /*   Issue error message            */02970000
+  EXIT 20                                                               02980000
+SETMSG:                                                                 02990002
+  IF zerrmsg\='' THEN 'SETMSG MSG('zerrmsg')'                           03000002
+  EXIT 20                                                               03010002

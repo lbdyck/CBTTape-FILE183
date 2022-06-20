@@ -1,0 +1,209 @@
+//GILBERTL JOB (ACCT#),BUILDCDE,                                        00010000
+// NOTIFY=&SYSUID,                                                      00020000
+// CLASS=A,MSGCLASS=H,COND=(0,NE)                                       00030000
+//ASMH EXEC PGM=IEV90,PARM=(OBJECT,NODECK,NOESD,NORLD,NOXREF)           00040000
+*********************************************************************** 00050000
+*                                                                     * 00060000
+* MACRO NAME = BUILDCDE                                               * 00070000
+*                                                                     * 00080000
+* DESCRIPTIVE NAME = BUILD A MAJOR CDE TO IDENTIFY A STORAGE AREA     * 00090000
+*                                                                     * 00100000
+* FUNCTION = MAKES A STORAGE AREA EASIER TO LOCATE IN A               * 00110000
+*            DUMP BY MAKING IT APPEAR AS A LOAD_MODULE.               * 00120000
+*                                                                     * 00130000
+* STATUS = R200                                                       * 00140000
+*                                                                     * 00150000
+* AUTHOR = GILBERT SAINT-FLOUR <carlos@gsf-soft.com>                  * 00160000
+*                                                                     * 00170000
+* ENVIRONMENT = SEE BELOW                                             * 00180000
+*                                                                     * 00190000
+*     AMODE = ANY                                                     * 00200000
+*     SCP   = MVS/XA OR MVS/ESA                                       * 00210000
+*     KEY   = USER                                                    * 00220000
+*     MODE  = PROBLEM                                                 * 00230000
+*     APF   = OFF                                                     * 00240000
+*                                                                     * 00250000
+* OPERATION = BUILDCDE USES THE "LOADER" FORM OF IDENTIFY TO CREATE   * 00260000
+*             A MAJOR CDE AND CORRESPONDING XL, THEN ISSUES A LOAD    * 00270000
+*             SVC TO CREATE AN LLE AND ASSOCIATE THE CDE WITH THE     * 00280000
+*             CURRENT TCB.                                            * 00290000
+*                                                                     * 00300000
+* INVOCATION = SEE BELOW                                              * 00310000
+*                                                                     * 00320000
+*          (BEFORE)     GETMAIN RU,LV=20000                           * 00330000
+*                                                                     * 00340000
+*          (AFTER)      GETMAIN RU,LV=20000                           * 00350000
+*                       BUILDCDE LENGTH=(0),ADDR=(1),EP=DYNAM         * 00360000
+*                                                                     * 00370000
+* NOTES = SEE BELOW                                                   * 00380000
+*                                                                     * 00390000
+*        BUILDCDE MAY BE ISSUED MORE THAN ONCE, PROVIDED THE EP       * 00400000
+*        KEY-WORD HAS A DIFFERENT VALUE EACH TIME.                    * 00410000
+*                                                                     * 00420000
+*        IF STORAGE WAS ALLOCATED IN SUB-POOL ZERO (SP=0 IS           * 00430000
+*        SPECIFIED OR DEFAULTED TO IN THE GETMAIN MACRO),             * 00440000
+*        THE DELETE MACRO MAY BE ISSUED AGAINST THE SPECIFIED EP      * 00450000
+*        TO DELETE THE CDE AND FREE UP THE STORAGE.                   * 00460000
+*                                                                     * 00470000
+*        IF GETMAIN SPECIFIES A NON-ZERO SUBPOOL, THE DELETE MACRO    * 00480000
+*        DELETES THE CDE BUT DOES NOT FREE UP THE STORAGE:  YOU       * 00490000
+*        MUST ISSUE FREEMAIN YOURSELF.                                * 00500000
+*                                                                     * 00510000
+*        IN A MAJOR CDE CREATED BY THE "LOADER" FORM OF IDENTIFY,     * 00520000
+*        THE "RENT" AND "REUS" ATTRIBUTES ARE OFF.  THIS MEANS        * 00530000
+*        THAT YOU MAY NOT ISSUE LOAD AGAINST THE EP NAME (BUILDCDE    * 00540000
+*        HAS ALREADY ISSUED LOAD), BUT YOU MAY ISSUE LINK, ATTACH     * 00550000
+*        OR XCTL IF YOU WANT TO (ONCE ONLY).  YOU MAY ALSO ISSUE      * 00560000
+*        THE STANDARD FORM OF IDENTIFY TO DEFINE SECONDARY ENTRY      * 00570000
+*        POINTS WHICH HAVE THE "RENT" ATTRIBUTE.                      * 00580000
+*                                                                     * 00590000
+*        IF THIS MACRO IS USED BY AN AUTHORIZED PROGRAM, THEN         * 00600000
+*        A S306 ABEND WILL OCCUR (THE CDE CREATED HAS ITS CDSYSLIB    * 00610000
+*        BIT OFF).  LOOK FOR A SECOND VERSION OF THE MACRO THAT MAY   * 00620000
+*        BE USED IN AN AUTHORIZED PROGRAM AT THE END OF THIS JOB.     * 00630000
+*                                                                     * 00640000
+*        THE IDENTIFY MACRO SUPPLIED IN SYS1.MACLIB SUPPORTS THE      * 00650000
+*        "LOADER" FORM, BUT THE FORMAT OF THE PARAMETER LIST IS       * 00660000
+*        NOT DOCUMENTED, AS FAR AS I KNOW.  THE RETURN CODES X'18'    * 00670000
+*        OR X'1C' MAY BE RETURNED IN R15 WHEN THE PARAMETER LIST      * 00680000
+*        IS INVALID.  THESE RETURN CODES ARE DOCUMENTED ALONG WITH    * 00690000
+*        THE IDENTIFY MACRO.                                          * 00700000
+*                                                                     * 00710000
+*        WHEN THE LOAD-LIST IS EMPTY (I.E. NO LOAD HAS BEEN ISSUED    * 00720000
+*        FOR THIS TCB YET), IDENTIFY FAILS WITH A RETURN CODE 12.     * 00730000
+*        THIS CAN BE CIRCUMVENTED BY ISSUING THE FOLLOWING SEQUENCE:  * 00740000
+*                                                                     * 00750000
+*                       LOAD    EP=IEFBR14                            * 00760000
+*                       GETMAIN RU,LV=20000                           * 00770000
+*                       BUILDCDE LENGTH=(0),ADDR=(1),EP=DYNAM         * 00780000
+*                       DELETE  EP=IEFBR14                            * 00790000
+*                                                                     * 00800000
+*        I'VE NOTICED THAT ON MVS SYSTEMS PRIOR TO MVS/ESA 4.3, THE   * 00810000
+*        "LOADER" FORM OF IDENTIFY RETURNS THE ADDRESS OF THE CDE IT  * 00820000
+*        CREATED IN REG1.  IN MVS/ESA 4.3 THIS IS NO LONGER TRUE.     * 00830000
+*                                                                     * 00840000
+*********************************************************************** 00850000
+         MACRO                                                          00860000
+&REF     BUILDCDE &LENGTH=,&ADDR=,&EP=                                  00870000
+         LCLC   &EP8                   XF                               00880000
+&EP8     SETC  '&EP          '(1,8)                                     00890000
+&REF     IHBINNRA &ADDR,&LENGTH        SET R0,R1                        00900000
+         ST    R1,0(,R1)               STORE ENTRY-POINT ADDRESS        00910000
+         MVC   4(8,R1),=C'&EP8'        CDNAME                           00920000
+         XC    12(4,R1),12(R1)         CLEAR BYTES 12-15                00930000
+         LA    R14,16                  LENGTH OF PSEUDO XL              00940000
+         LA    R15,1                   NUMBER OF RELOCATION FACTORS     00950000
+         STM   R14,R1,16(R1)           FORMAT BYTES 16-31               00960000
+         MVI   24(R1),X'80'            END OF LIST                      00970000
+         MNOTE *,'       IDENTIFY MF=(E,(R1))'                          00980000
+         SLR   R0,R0                   LOADER-TYPE IDENTIFY             00990000
+         SVC   41                      ISSUE IDENTIFY SVC               01000000
+         LR    R14,R1                  PASS CDE ADDRESS                 01010000
+         MNOTE *,'       LOAD EP=&EP,DCB=0'                             01020000
+         LA    R0,=C'&EP8'             POINT TO EP NAME                 01030000
+         SLR   R1,R1                   NO DCB FOR LOAD                  01040000
+         SVC   8                       ISSUE LOAD SVC                   01050000
+         LR    R1,R0                   EP ADDRESS IN R1                 01060000
+         SLR   R0,R0                                                    01070000
+         ICM   R0,B'0111',25(R1)       LENGTH IN R0                     01080000
+         MEND                                                           01090000
+*********************************************************************** 01100000
+********* TEST PROGRAM ************************************************ 01110000
+*********************************************************************** 01120000
+TEMPNAME CSECT                                                          01130000
+TEMPNAME AMODE 31                                                       01140000
+         BALR  R3,0                                                     01150000
+         USING *,R3                                                     01160000
+         OPEN  (SNAPDD,OUTPUT)                                          01170000
+*                                                                       01180000
+         GETMAIN R,LV=3333                                              01190000
+         BUILDCDE LENGTH=(0),ADDR=(1),EP=DYNAM/24                       01200000
+         LR    R4,R14                                                   01210000
+         LR    R5,R15                                                   01220000
+         LR    R6,R0                                                    01230000
+         LR    R7,R1                                                    01240000
+*                                                                       01250000
+         GETMAIN RU,LV=5678,LOC=ANY                                     01260000
+         BUILDCDE LENGTH=(0),ADDR=(1),EP=DYNAM/31                       01270000
+         LR    R8,R14                                                   01280000
+         LR    R9,R15                                                   01290000
+         LR    R10,R0                                                   01300000
+         LR    R11,R1                                                   01310000
+*                                                                       01320000
+         SNAP  DCB=SNAPDD,SDATA=CB,PDATA=(REGS,JPA)                     01330000
+*                                                                       01340000
+         MVC   0(8,R7),=X'0A23,0A03'   SVC 35 (WTO) AND SVC 3 (EXIT)    01350000
+         LA    R1,WTOL                 POINT TO WTO PARM LIST           01360000
+         LINK  EP=DYNAM/24             GO EXECUTE SVC35                 01370000
+*                                                                       01380000
+         SNAP  DCB=SNAPDD,SDATA=CB     SHOW UPDATED CDE                 01390000
+*                                                                       01400000
+         SVC   3                       EXIT                             01410000
+*                                                                       01420000
+WTOL     WTO   'BUILDCDE - LINK WORKED!',ROUTCDE=11,MF=L                01430000
+*                                                                       01440000
+SNAPDD   DCB   DSORG=PS,MACRF=W,DDNAME=SNAPDD,                         X01450000
+               RECFM=VBA,LRECL=125,BLKSIZE=882                          01460000
+         YREGS                                                          01470000
+         END                                                            01480000
+//SYSLIB   DD DSN=SYS1.MACLIB,DISP=SHR                                  01490000
+//SYSUT1   DD UNIT=VIO,SPACE=(CYL,1)                                    01500000
+//SYSLIN   DD UNIT=VIO,SPACE=(TRK,1),DISP=(,PASS),DCB=BLKSIZE=3200      01510000
+//SYSPRINT DD SYSOUT=*                                                  01520000
+//*                                                                     01530000
+//GO      EXEC PGM=LOADER,PARM=NOPRINT                                  01540000
+//SYSLIN   DD DSN=*.ASMH.SYSLIN,DISP=(OLD,PASS)                         01550000
+//SNAPDD   DD SYSOUT=*                                                  01560000
+//SYSUDUMP DD SYSOUT=*                                                  01570000
+*********************************************************************** 01580000
+********* AUTHORIZED VERSION OF THE BUILDCDE MACRO ******************** 01590000
+*********************************************************************** 01600000
+         MACRO (AUTHORIZED VERSION)                                     01610000
+&REF     BUILDCDE &RU,&LENGTH=,&SP=0,&WORKREG=,                        X01620000
+               &BNDRY=DBLWD,&EP=BUILDCDE,&LOC=                          01630000
+      MNOTE *,'       GETMAIN &RU,LV=&LENGTH,SP=&SP,BNDRY=&BNDRY,&LOC=' 01640000
+&REF     GETMAIN &RU,LV=&LENGTH,SP=&SP,BNDRY=&BNDRY,&LOC=               01650000
+         ST    R1,0(,R1)               ENTRY POINT                      01660000
+         MVC   4(8,R1),=CL8'&EP'       CDNAME                           01670000
+         XC    12(4,R1),12(R1)         CLEAR BYTES 12-15                01680000
+         LA    R14,016                 LENGTH OF PSEUDO XL              01690000
+         LA    R15,001                 NUMBER OF RELOCATION FACTORS     01700000
+         STM   R14,R1,16(R1)           FORMAT SVC41 PARM                01710000
+         MVI   24(R1),X'80'            END OF LIST                      01720000
+         LR    R14,R1                  SAVE ADDRESS ACROSS SVC 41       01730000
+         MNOTE *,'       IDENTIFY EPLOC=0,ENTRY=(R1)'                   01740000
+         SLR   R0,R0                   LOADER-TYPE IDENTIFY             01750000
+         SVC   41                      ISSUE IDENTIFY SVC               01760000
+&LABEL   SETC  'IHB&SYSNDX'                                             01770000
+&R       SETC  '&WORKREG(1)'           SHORT FORM                       01780000
+         AIF   (T'&WORKREG NE 'O').WKREG2                               01790000
+         MNOTE 4,'WORKREG OPERAND OMITTED, WORKREG=(R2) ASSUMED'        01800000
+&R       SETC  'R2'                                                     01810000
+.WKREG2  L     &R,540(,0)              PSATOLD (MY TCB)                 01820000
+         L     &R,TCBJSCB-TCB(,&R)     MY JSCB                          01830000
+         USING IEZJSCB,&R                                               01840000
+         TM    JSCBOPTS,JSCBAUTH       CHECK AUTHORIZATION              01850000
+         BZ    &LABEL.N                JUMP IF NOT AUTHORIZED           01860000
+         MODESET KEY=ZERO              SWITCH TO KEY ZERO               01870000
+         NI    JSCBOPTS,255-JSCBAUTH   TURN APF FLAG OFF                01880000
+         SYNCH &LABEL.L                EXECUTE ROUTINE WITH TCB KEY     01890000
+         OI    JSCBOPTS,JSCBAUTH       TURN APF FLAG BACK ON            01900000
+         DROP  &R                                                       01910000
+         LR    &R,R0                   SAVE EP ADDRESS                  01920000
+         MODESET KEY=NZERO             SWITCH TO TCB KEY                01930000
+         LR    R0,&R                   EP ADDRESS                       01940000
+         B     &LABEL.X                                                 01950000
+&LABEL.I EQU   &R-2                    WORKREG MUST BE R2-R13           01960000
+&LABEL.J EQU   13-&R                   WORKREG MUST BE R2-R13           01970000
+&LABEL.N LA    R14,&LABEL.X            RETURN ADDRESS                   01980000
+         MNOTE *,'       LOAD EP=&EP,DCB=0'                             01990000
+&LABEL.L LA    R0,=CL8'&EP'            POINT TO EP NAME                 02000000
+         SLR   R1,R1                   NO DCB FOR LOAD                  02010000
+         SVC   8                       ISSUE LOAD SVC                   02020000
+         BR    R14                                                      02030000
+&LABEL.X LR    R1,R0                   ADDRESS IN R1                    02040000
+         SLR   R0,R0                                                    02050000
+         ICM   R0,B'0111',25(R1)       LENGTH IN R0                     02060000
+         MEND                                                           02070000
+         IEZJSCB                                                        02080000
+         IKJTCB                                                         02090000

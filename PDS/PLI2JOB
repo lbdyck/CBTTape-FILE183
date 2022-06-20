@@ -1,0 +1,142 @@
+//GILBERTJ JOB (ACCT#),PLI2JOB,                                         00010000
+// NOTIFY=&SYSUID,                                                      00020000
+// CLASS=A,MSGCLASS=H,COND=(4,LT)                                       00030000
+//*PLI EXEC PGM=IEL1AA,PARM=(OPTIONS,SOURCE)                            00040000
+//*STEPLIB DD DSN=IEL111.SIELCOMP,DISP=SHR                              00050000
+//PLI EXEC PGM=IBMZPLI,PARM=(OPTIONS,SOURCE,NOLIST),REGION=64M          00060000
+//STEPLIB  DD DSN=IEL330.SIBMZCMP,DISP=SHR                              00070000
+//SYSPRINT DD SYSOUT=*                                                  00080000
+//SYSUT1   DD UNIT=VIO                                                  00090000
+//SYSLIN   DD UNIT=VIO,DISP=(,PASS)                                     00100000
+//SYSIN    DD *                                                         00110000
+ /********************************************************************/ 00120000
+ /*                                                                  */ 00130000
+ /*  MODULE NAME = PLI2JOB                                           */ 00140000
+ /*                                                                  */ 00150000
+ /*  DESCRIPTIVE NAME = Sample PL/I program to retrieve job-related  */ 00160000
+ /*                     information from MVS control blocks and      */ 00170000
+ /*                     display it on SYSPRINT.                      */ 00180000
+ /*                                                                  */ 00190000
+ /*  FUNCTION = This sample program demonstrates how to retrieve     */ 00200000
+ /*             JOB-related info about the job, TSO or STC address   */ 00210000
+ /*             space in which it is executed.                       */ 00220000
+ /*                                                                  */ 00230000
+ /*             The layout of the MVS control blocks is described    */ 00240000
+ /*             in the MVS Data Areas manuals, which can be found    */ 00250000
+ /*             on any MVS or OS/390 CD collection or viewed         */ 00260000
+ /*             on-line by going to:                                 */ 00270000
+ /*          http://www.s390.ibm.com/bookmgr-cgi/bookmgr.cmd/library */ 00280000
+ /*             and searching for:  MVS DATA AREAS                   */ 00290000
+ /*                                                                  */ 00300000
+ /*  AUTHOR   =  Gilbert Saint-Flour <carlos@gsf-soft.com>           */ 00310000
+ /*              http://gsf-soft.com/Freeware/                       */ 00320000
+ /*                                                                  */ 00330000
+ /********************************************************************/ 00340000
+     PLI2JOB: Procedure Options(MAIN);                                  00350000
+                                                                        00360000
+       DCL cb1(256) based(addr_cb1) Pointer;                            00370000
+       DCL cb1_text based(addr_cb1) Char(1024);                         00380000
+       DCL cb2(256) based(addr_cb2) Pointer;                            00390000
+       DCL cb2_text based(addr_cb2) Char(1024);                         00400000
+       DCL four_bytes Char(4),                                          00410000
+           full_word Fixed Bin(31,0) based(Addr(four_bytes)),           00420000
+           ptr4 Pointer based(Addr(four_bytes));                        00430000
+       DCL ptr0 Pointer;                                                00440000
+       DCL eight_bytes Char(8),                                         00450000
+           double_word Fixed Bin(31,0) based(addr(eight_bytes));        00460000
+       DCL 1 Results,                                                   00470000
+             2 job_name  Char(8),                                       00480000
+             2 proc_step Char(8),                                       00490000
+             2 step_name Char(8),                                       00500000
+             2 program_name Char(8),                                    00510000
+             2 program_name2 Char(8),                                   00520000
+             2 job_number Char(8),                                      00530000
+             2 job_class Char(1),                                       00540000
+             2 msg_class Char(1),                                       00550000
+             2 acct1 Char(32),                                          00560000
+             2 programmer_name Char(20),                                00570000
+             2 batch_or_cics Char(5),                                   00580000
+             2 micro_seconds Fixed Dec(12,0),                           00590000
+             2 user_id Char(8),                                         00600000
+             2 group_name Char(8),                                      00610000
+             2 user_name Char(20);                                      00620000
+                                                                        00630000
+       four_bytes='00000000'X; ptr0=ptr4;                   /* PTR0=0 */00640000
+                                                                        00650000
+       addr_cb1=ptr0;                                         /* PSA  */00660000
+       addr_cb1=cb1(136);                                     /* TCB  */00670000
+       eight_bytes=SUBSTR(cb1_text,317,8);                              00680000
+       micro_seconds=double_word/4096;                                  00690000
+                                                                        00700000
+       addr_cb2=cb1(4);                                       /* TIOT */00710000
+       job_name=SUBSTR(cb2_text,1,8);                                   00720000
+      step_name=SUBSTR(cb2_text,9,8);                                   00730000
+      proc_step=SUBSTR(cb2_text,17,8);                                  00740000
+                                                                        00750000
+       addr_cb2=cb1(46);                                      /* JSCB */00760000
+      program_name=SUBSTR(cb2_text,361,8);                              00770000
+                                                                        00780000
+       addr_cb2=cb2(80);                                      /* SSIB */00790000
+      job_number=SUBSTR(cb2_text,13,8);                                 00800000
+                                                                        00810000
+       addr_cb2=cb1(1);                                       /* PRB  */00820000
+      program_name2=SUBSTR(cb2_text,97,8);                              00830000
+                                                                        00840000
+      PUT FILE(SYSPRINT) SKIP EDIT(' JOB=',job_name,                    00850000
+                                   ' STEP=',step_name,                  00860000
+                                   ' PROCSTEP=',proc_step,              00870000
+                                   ' PGM=',program_name,                00880000
+                                   ' PGM2=',program_name2,              00890000
+                                   ' ',micro_seconds)      (A);         00900000
+                                                                        00910000
+       addr_cb2=cb1(46);                                      /* JSCB */00920000
+       addr_cb2=cb2(66);                                      /* JCT  */00930000
+      job_class=SUBSTR(cb2_text,48,1);                                  00940000
+      msg_class=SUBSTR(cb2_text,23,1);                                  00950000
+                                                                        00960000
+      four_bytes='00'X || SUBSTR(cb2_text,57,3);                        00970000
+      addr_cb2=ptr4;                                          /* ACT  */00980000
+      programmer_name=SUBSTR(cb2_text,25,20);                           00990000
+      four_bytes='000000'X || SUBSTR(cb2_text,49,1);                    01000000
+      acct1=SUBSTR(cb2_text,50,full_word);                              01010000
+                                                                        01020000
+      addr_cb2=cb1(53);                                       /* EXT2 */01030000
+      If SUBSTR(cb2_text,21,4) = '00000000'X THEN             /* CAUF */01040000
+        batch_or_cics='BATCH';                                          01050000
+      Else                                                              01060000
+        batch_or_cics='CICS ';                                          01070000
+                                                                        01080000
+      PUT FILE(SYSPRINT) SKIP EDIT(' ',batch_or_cics,                   01090000
+                                   ' JNUM=',job_number,                 01100000
+                                   ' CLASS=',job_class,                 01110000
+                                   ' MSGCLASS=',msg_class,              01120000
+                                   " PGMR='",programmer_name,"'",       01130000
+                                   ' ACCT=',acct1,                      01140000
+                                                    ' ') (A);           01150000
+                                                                        01160000
+      addr_cb1=ptr0;                                          /* PSA  */01170000
+      addr_cb1=cb1(138);                                      /* ASCB */01180000
+      addr_cb2=cb1(28);                                       /* ASXB */01190000
+      user_id=SUBSTR(cb2_text,193,8);                                   01200000
+      addr_cb2=cb2(51);                                       /* ACEE */01210000
+      group_name=SUBSTR(cb2_text,31,8);                                 01220000
+      addr_cb1=cb2(26);                                       /* UNAM */01230000
+      user_name=SUBSTR(cb1_text,2,20);                                  01240000
+      PUT FILE(SYSPRINT) SKIP EDIT(' USERID=',user_id,                  01250000
+                                   ' GROUP=',group_name,                01260000
+                                   " USER='",user_name,"'",             01270000
+                                                    ' ') (A);           01280000
+                                                                        01290000
+     END PLI2JOB;                                                       01300000
+/*                                                                      01310000
+//PROC2 PROC                                                            01320000
+//GO    EXEC PGM=LOADER,PARM=PRINT                                      01330000
+//SYSLIN DD DSN=*.PLI.SYSLIN,DISP=(OLD,DELETE)                          01340000
+//SYSLIB DD DSN=CEE.SCEELKED,DISP=SHR                                   01350000
+//SYSLOUT DD SYSOUT=*                                                   01360000
+//SYSPRINT DD SYSOUT=*                                                  01370000
+//CEEDUMP DD SYSOUT=*                                                   01390000
+//      PEND                                                            01400000
+//*                                                                     01410000
+//PSTEP1 EXEC PROC2                                                     01420000
+//                                                                      01430000

@@ -1,0 +1,628 @@
+//GILBERTT JOB (ACCT#),TRIMMAC,                                         00010006
+// NOTIFY=&SYSUID,                                                      00030000
+// CLASS=A,MSGCLASS=H,COND=(1,LT)                                       00040006
+//*                                                                     00070000
+//*     THIS PROGRAM CREATES A REDUCED-SIZE MACLIB THAT MAY BE          00080000
+//*     USED INSTEAD OF THE SYS1.MACLIB/SYS1.MODGEN CONCATENATION       00090000
+//*     TO IMPROVE THE PERFORMANCE OF THE ASSEMBLER.                    00100015
+//*                                                                     00110000
+//*     THE "TRIMMAC" LIBRARY IS BUILT AS FOLLOWS:                      00120000
+//*                                                                     00130000
+//*        1. SELECTED MACROS ARE READ FROM DDNAME "SYSLIB",            00140000
+//*           TRIMMED FROM PL/AS CODE AND OTHER COMMENT LINES,          00150000
+//*           THEN COPIED TO A TEMPORARY DATA SET.                      00160000
+//*                                                                     00170000
+//*        2. THE SORT UTILITY IS INVOKED TO SORT THE MACROS            00180000
+//*           IN ASCENDING SEQUENCE OF THEIR SIZE.                      00190000
+//*                                                                     00200000
+//*        3. THE SORTED MACROS ARE WRITTEN TO SYSPUNCH                 00210000
+//*           AS AN IEBUPDTE SYSIN STREAM.                              00220000
+//*                                                                     00230000
+//*        4. IEBUPDTE IS EXECUTED IN THE LAST STEP TO                  00240000
+//*           LOAD THE MACROS INTO THE "TRIMMAC" LIBRARY,               00250000
+//*           THE SMALLEST MACROS BEING LOADED FIRST.                   00260000
+//*                                                                     00270000
+//*    YOU MAY CUSTOMIZE THE MEMBER LIST AND THE INPUT                  00280000
+//*    CONCATENATION TO ADD OTHER MACROS AND/OR MACRO                   00290000
+//*    LIBRARIES, AS NEEDED.                                            00300000
+//*                                                                     00310000
+//*    USE THE "TRIMMAC" LIBRARY INSTEAD OF THE MACLIB/AMODGEN          00320000
+//*    CONCATENATION TO ASSEMBLE A PROGRAM AND COMPARE THE              00330000
+//*    BEFORE/AFTER VALUES FOR THE ELAPSED TIME, EXCP COUNT AND         00340000
+//*    I/O CONNECT TIME.  EXPECT SAVINGS OF 30 TO 60 PERCENT WHEN       00350000
+//*    "TRIMMAC" IS USED.                                               00360000
+//*                                                                     00370000
+//*    MY "TRIMMAC" PDS IS CURRENTLY ALLOCATED AS FOLLOWS:              00380000
+//*                                                                     00390000
+//*          UNIT=3390,SPACE=(CYL,(18,,18)),                            00400015
+//*          DCB=(RECFM=FB,LRECL=80,BLKSIZE=27920)                      00410000
+//*                                                                     00420000
+//ASMH EXEC PGM=IEV90,PARM=(OBJECT,NODECK,NOESD,NORLD,NOXREF)           00430000
+TRIMMAC  CSECT                                                          00440000
+         SAVE  (14,12),,'TRIMMAC &SYSDATE '                             00450000
+         LR    R12,R15                                                  00460014
+         USING TRIMMAC,R12                                              00470014
+         GETMAIN R,LV=DYNAML                                            00480000
+         ST    R1,8(,R13)                                               00490000
+         ST    R13,4(,R1)                                               00500000
+         LM    R13,R1,8(R13)           SET R13, RELOAD R1               00510000
+         USING DYNAM,R13                                                00520000
+         XC    TRTBL,TRTBL             BUILD TRT TABLE (FIRST BLANK)    00530000
+         MVI   TRTBL+C' ',C' '         BUILD TRT TABLE (FIRST BLANK)    00540000
+         MVI   TRTNBL,1                BUILD TRT TABLE (1ST NON-BLANK)  00550000
+         MVC   TRTNBL+1(255),TRTNBL    BUILD TRT TABLE (1ST NON-BLANK)  00560000
+         MVI   TRTNBL+C' ',0           BUILD TRT TABLE (1ST NON-BLANK)  00570000
+*********************************************************************** 00580000
+*                                                                       00590000
+*        SECTION 1                                                      00600000
+*                                                                       00610000
+*              READ MACRO NAMES FROM DDNAME=MEMBERS                     00620000
+*              READ MACRO TEXT FROM DDNAME=SYSLIB                       00630000
+*              WRITE SELECTED LINES TO DDN=SORTIN                       00640000
+*              BUILD TABLE WITH THE NUMBER OF LINES FOR EACH MEMBER     00650000
+*                                                                       00660000
+*********************************************************************** 00670000
+         OPEN  (MEMBERS,,SYSLIB,,SORTIN,OUTPUT,SYSPRINT,OUTPUT)         00680000
+         GETBUF SYSLIB,(R3)            GET A BUFFER FROM POOL           00690000
+         ST    R3,DECB1+12             STORE ITS ADDRESS INTO DECB      00700000
+         LA    R8,TABLE                START OF TABLE                   00710000
+*LOOP                                                                   00720000
+L1GET    GET   MEMBERS                 GET A MACRO NAME                 00730000
+         CLI   0(R1),C'*'              IS THIS A COMMENT LINE?          00740000
+         BE    L1GET                   YES, IGNORE IT                   00750000
+         MVC   BLDLIST(4),=Y(1,12)     HEADER                           00760000
+         MVC   MEMBER,0(R1)            MEMBER NAME                      00770000
+         BLDL  SYSLIB,BLDLIST          LOCATE MEMBER                    00780000
+         LTR   R15,R15                                                  00790000
+         BNZ   L1NOTF                  NOT FOUND, ERROR                 00800000
+         ZAP   RECNO,=P'0'             RESET COUNTER                    00810000
+         ZAP   DWD,=P'0'               INIT COUNTER & FLAGS             00820000
+         FIND  SYSLIB,TTRN,C           POINT TO START OF MEMBER         00830000
+*--LOOP                                                                 00840000
+L1GETB   READ  DECB1,SF,SYSLIB,*-*,'S' READ A BLOCK                     00850000
+         CHECK DECB1                                                    00860000
+         L     R3,DECB1+12             BUFFER ADDRESS FROM DECB         00870000
+*----LOOP                                                               00880000
+L1GETR   AP    RECNO,=P'1'             COUNT INPUT RECORDS              00890000
+         BAL   R14,SELECT              SELECT/SKIP RECORDS              00900000
+         B     L1NEXTR              +0 RECORD SHOULD BE IGNORED         00910000
+         PUT   SORTIN               +4 RECORD SHOULD BE WRITTEN         00920000
+         MVC   0(72,R1),0(R3)          MOVE RECORD                      00930000
+         MVC   72(8,R1),MEMBER         MOVE MEMBER NAME                 00940000
+         AP    DWD+4(4),=P'1'          COUNT WRITTEN RECORDS            00950000
+L1NEXTR  LH    R14,SYSLIB+82           R14 CONTAINS RECORD LENGTH       00960000
+         L     R15,DECB1+12            ADDRESS OF BUFFER                00970000
+         AH    R15,SYSLIB+62           ADD BLKSIZE FROM DCB             00980000
+         L     R1,DECB1+16             IOB ADDRESS FROM DECB            00990000
+         SH    R15,14(,R1)             SUBTRACT RESIDUAL COUNT          01000000
+         SLR   R15,R14                 LAST BYTE OF CURRENT BLOCK       01010000
+         BXLE  R3,R14,L1GETR           LOOP UNTIL END-OF-BLOCK          01020000
+*----ENDLOOP                                                            01030000
+         B     L1GETB                  NEXT BLOCK                       01040000
+*--ENDLOOP                                                              01050000
+L1EOM    ZAP   DWD,DWD                 ANY LINES SELECTED?              01060000
+         BZ    L1NOTF                  NO, IGNORE                       01070000
+         MVC   MESSAGE+08(8),MEMBER    BUILD PRINT RECORD               01080000
+         OI    DWD+7,15                NO SIGN                          01090000
+         UNPK  MESSAGE+29(5),DWD+5(3)  BUILD PRINT RECORD               01100000
+         OI    RECNO+3,15              NO SIGN                          01110000
+         UNPK  MESSAGE+59(5),RECNO+1(3) BUILD PRINT RECORD              01120000
+         PUT   SYSPRINT,MESSAGE        WRITE PRINT RECORD               01130000
+         MVC   0(4,R8),DWD+4           MOVE NUMBER OF LINES TO TABLE    01140000
+         LA    R8,4(,R8)               BUMP POINTER                     01150000
+L1NOTF   B     L1GET                   NEXT SYSIN RECORD (MACRO NAME)   01160000
+*ENDLOOP                                                                01170000
+L1EOD    CLOSE (MEMBERS,,SYSLIB,,SORTIN)                                01180000
+         FREEPOOL MEMBERS                                               01190000
+         FREEPOOL SYSLIB                                                01200000
+*********************************************************************** 01210000
+*        SECTION 2: UPDATE RECORDS TO ADD MACRO SIZE IN POS 81-84       01220000
+*********************************************************************** 01230000
+         OPEN  (SORTIN,UPDAT)                                           01240000
+         LA    R8,TABLE-4              START OF TABLE                   01250000
+*LOOP                                                                   01260000
+L2GET    GET   SORTIN                                                   01270000
+         LTR   R3,R1                   PASS RECORD ADDRESS              01280000
+         BZ    L2EOD                   EOJ, EXIT                        01290000
+         CLC   DWD,72(R3)              SAME MEMBER?                     01300000
+         BE    L2PUT                   YES, JUMP                        01310000
+         MVC   DWD,72(R3)              NO, KEEP NAME                    01320000
+         LA    R8,4(,R8)               NEXT ENTRY IN TABLE              01330000
+L2PUT    MVC   80(4,R3),0(R8)          NUMBER OF LINES                  01340000
+         PUTX  SORTIN                  REWRITE RECORD                   01350000
+         B     L2GET                                                    01360000
+*ENDLOOP                                                                01370000
+L2EOD    CLOSE SORTIN                                                   01380000
+         FREEPOOL SORTIN                                                01390000
+*********************************************************************** 01400000
+*        SECTION 3: SORT MACROS BY SIZE, WRITE IEBUPDTE INPUT           01410000
+*********************************************************************** 01420000
+         LINK  EP=SORT,PARAM=H0,VL=1   SORT WORK DATA SET               01430000
+         OPEN  (SORTOUT,,SYSPUNCH,OUTPUT)                               01440000
+         MVI   DWD,0                   FIRST TIME                       01450000
+*LOOP                                                                   01460000
+L3GET    GET   SORTOUT                                                  01470000
+         LTR   R3,R1                   PASS RECORD ADDRESS              01480000
+         BZ    L3EOD                   EOJ, EXIT                        01490000
+         CLC   DWD,72(R1)              SAME MEMBER?                     01500000
+         BE    L3PUT                   YES, JUMP                        01510000
+         MVC   DWD,72(R1)              NO, KEEP NAME                    01520000
+         PUT   SYSPUNCH                                                 01530000
+         MVC   0(13,R1),=C'./ ADD NAME= '                               01540000
+         MVC   13(67,R1),12(R1)        BLANK OUT REST OF RECORD         01550000
+         MVC   12(8,R1),DWD            MOVE MEMBER NAME                 01560000
+L3PUT    PUT   SYSPUNCH                                                 01570000
+         MVC   0(80,R1),0(R3)          MOVE RECORD                      01580000
+         B     L3GET                                                    01590000
+*ENDLOOP                                                                01600000
+L3EOD    CLOSE (SORTOUT,,SYSPUNCH,,SYSPRINT)                            01610000
+         L     R13,4(,R13)                                              01620000
+         RETURN (14,12),RC=00                                           01630000
+*                                                                       01640000
+*        RECORD SELECTION ROUTINE                                       01650000
+*                                                                       01660000
+SELECT   TM    DWD,1                   MEND CARD FOUND YET?             01670000
+         BOR   R14                     YES, SKIP TEXT AFTER MEND CARD   01680000
+         TM    DWD,2                   CHECK CONTINUATION FLAG          01690000
+         BO    L1SKIP                  JUMP IF CONTINUED COMMENT        01700000
+         TM    DWD,4                   CHECK CONTINUATION FLAG          01710000
+         BO    L1CONT                  JUMP IF CONTINUED INSTRUCTION    01720000
+         CLI   0(R3),C'*'              ASM COMMENT                      01730000
+         BE    L1SKIP                  JUMP IF ASM COMMENT LINE         01740000
+         CLI   1(R3),C'*'              MACRO COMMENT                    01750000
+         BE    L1SKIP                  JUMP IF MACRO COMMENT LINE       01760000
+         CLI   0(R3),C'/'              IS THIS A JCL LINE?              01770002
+         BE    L1SKIP                  YES, IGNORE IT                   01780002
+*                                                                       01790000
+         TRT   0(16,R3),TRTBL          FIND FIRST BLANK                 01800000
+         BZ    L1CONT                  FAILED, WRITE RECORD             01810000
+         TRT   0(64,R1),TRTNBL         FIND FIRST NON-BLANK             01820000
+         BZ    L1CONT                  FAILED, WRITE RECORD             01830000
+         CLC   =C'MEND ',0(R1)         CHECK OPCODE                     01840000
+         BNE   L1SPACE                 JUMP IF NOT 'MEND'               01850000
+         OI    DWD,1                   REMEMBER "MEND" CARD FOUND       01860000
+L1SPACE  CLI   0(R3),C' '              ANY LABEL ON THIS LINE?          01870000
+         BNE   L1CONT                  YES, WRITE IT                    01880000
+         CLC   =C'SPACE ',0(R1)        CHECK OPCODE                     01890000
+         BE    L1SKIP                  JUMP IF 'SPACE'                  01900000
+         CLC   =C'EJECT ',0(R1)        CHECK OPCODE                     01910000
+         BNE   L1CONT                  RECORD SHOULD BE WRITTEN         01920000
+*                                                                       01930000
+L1SKIP   NI    DWD,255-2               RESET CONTINUATION FLAG          01940000
+         CLI   71(R3),C' '             CHECK FOR A CONTINUATION         01950000
+         BER   R14                     QUIT WITH RC4 IF NO CONTINUATION 01960000
+         OI    DWD,2                   SET CONTINUATION FLAG            01970000
+         BR    R14                     GOBACK                           01980000
+*                                                                       01990000
+L1CONT   NI    DWD,255-4               RESET CONTINUATION FLAG          02000000
+         CLI   71(R3),C' '             CHECK FOR A CONTINUATION         02010000
+         BE    4(,R14)                 GOBACK, WRITE RECORD             02020000
+         OI    DWD,4                   SET CONTINUATION FLAG            02030000
+         B     4(,R14)                 GOBACK, WRITE RECORD             02040000
+H0       DC    H'0'                                                     02050000
+MESSAGE  DC   C' MEMBER 12345678 PROCESSED - 12345 RECORDS SELECTED OUT+02060000
+                OF 12345'                                               02070000
+MEMBERS  DCB   DSORG=PS,MACRF=GL,DDNAME=MEMBERS,EODAD=L1EOD             02080000
+SYSPRINT DCB   DSORG=PS,MACRF=PM,DDNAME=SYSPRINT,                      X02090008
+               RECFM=FBA,LRECL=L'MESSAGE                                02100008
+SYSPUNCH DCB   DSORG=PS,MACRF=PL,DDNAME=SYSPUNCH,RECFM=FB,LRECL=80      02110000
+SORTIN   DCB   DSORG=PS,MACRF=(GL,PL),DDNAME=SORTIN,EODAD=EOD11,       X02120000
+               RECFM=FB,LRECL=72+8+4                                    02130000
+SORTOUT  DCB   DSORG=PS,MACRF=(GL,PL),DDNAME=SORTOUT,EODAD=EOD11        02140000
+EOD11    SLR   R1,R1                                                    02150000
+         BR    R14                                                      02160000
+SYSLIB   DCB   DSORG=PO,MACRF=R,DDNAME=SYSLIB,EODAD=L1EOM,             X02170000
+               BUFNO=1,NCP=1,RECFM=FB,LRECL=80                          02180000
+         YREGS                                                          02190000
+DYNAM    DSECT                                                          02200000
+         DS    18F                                                      02210000
+DWD      DS    D                                                        02220000
+RECNO    DS    PL4                                                      02230000
+BLDLIST  DS    Y(1,12),CL8,4X          BLDL/FIND                        02240000
+MEMBER   EQU   BLDLIST+4,8             BLDL/FIND                        02250000
+TTRN     EQU   MEMBER+8,4              BLDL/FIND                        02260000
+TRTBL    DS    XL256                   TRT TABLE (FIND FIRST BLANK)     02270000
+TRTNBL   DS    XL256                   TRT TABLE (FIND FIRST NON-BLANK) 02280000
+TABLE    DS    999PL4                  RECORD NUMBERS                   02290000
+DYNAML   EQU   *-DYNAM                                                  02300000
+         END                                                            02310000
+//SYSLIB   DD DSN=SYS1.MACLIB,DISP=SHR                                  02320000
+//SYSUT1   DD UNIT=VIO,SPACE=(CYL,2)                                    02330000
+//SYSPRINT DD SYSOUT=*                                                  02340000
+//SYSLIN   DD UNIT=VIO,SPACE=(TRK,1),DISP=(,PASS),DCB=BLKSIZE=3200      02350000
+//*                                                                     02360000
+//GO      EXEC PGM=LOADER,PARM=NOPRINT                                  02370000
+//SYSLIN   DD DSN=*.ASMH.SYSLIN,DISP=(OLD,PASS)                         02380000
+//SYSPRINT DD SYSOUT=*                                                  02390000
+//SYSOUT   DD SYSOUT=*                                                  02400000
+//SORTIN   DD UNIT=SYSALLDA,SPACE=(CYL,20),DSN=&&SORTIN                 02410015
+//SORTOUT  DD DSN=*.SORTIN,VOL=REF=*.SORTIN,DISP=(OLD,DELETE)           02420015
+//SORTWK01 DD UNIT=SYSALLDA,SPACE=(CYL,25),DSN=&&SORTWK01               02430015
+//SYSPUNCH DD UNIT=SYSALLDA,SPACE=(CYL,20),DISP=(,PASS)                 02440015
+//SYSIN    DD *                                                         02450000
+ SORT FIELDS=(81,4,CH,A),EQUALS                                         02460000
+//SYSLIB   DD DSN=SYS1.MACLIB,DISP=SHR,           <== INPUT LIBRARY     02470008
+// UNIT=SYSALLDA,VOL=SER=Z5RES1                                         02480017
+//         DD DSN=SYS1.MODGEN,DISP=SHR,           <== INPUT LIBRARY     02490008
+// UNIT=SYSALLDA,VOL=SER=Z5RES1                                         02500017
+//         DD DSN=SYS1.SHASMAC,DISP=SHR           <== INPUT LIBRARY     02510017
+//* THESE ARE MY OWN LIBRARIES                                          02520000
+//         DD DSN=GILBERT.GSF.SOURCE,DISP=SHR     <== INPUT LIBRARY     02530006
+//MEMBERS  DD *                                                         02560000
+ABEND              MVS                                                  02570000
+ACB                DFP VSAM                                             02580000
+ACBVS              DFP VSAM                                             02590000
+ALESERV            BCP 3.1                                              02600001
+ANTRQST            SDM                                                  02610014
+ANTRQSTL           SDM                                                  02620014
+ANTRQT1            SDM                                                  02630014
+ASASYMBP           MVS 5.1                                              02640013
+ASAXWC             MVS 5.2                                              02650013
+ATRFZQRY           OS/390 R3                                            02660013
+ATRQUERY           OS/390 R3                                            02670013
+ATTACH             MVS                                                  02680013
+AXSET              MVS                                                  02690013
+BLDL               DFP                                                  02700013
+BPXYCONS           ESA510                                               02710013
+BPXYGIDN           ESA510                                               02720013
+BPXYGIDS           ESA510                                               02730013
+BPXYMNTE           ESA510                                               02740013
+BPXYPGPS           ESA510                                               02750013
+CALL               MVS                                                  02760013
+CALLTSSR           TSO/E                                                02770013
+CAMLST             DFP                                                  02780013
+CHECK              DFP                                                  02790013
+CIRB               MVS                                                  02800013
+CLOSE              DFP                                                  02810013
+CSFCCVT            OS390R4                                              02820013
+CSVAPF             MVS/ESA 4.3                                          02830013
+CSVAPFAA           MVS/ESA 4.3                                          02840013
+CSVDLAA            OS/390 R3                                            02850013
+CSVDLCB            OS/390 R3                                            02860013
+CSVDYNEX           MVS/ESA 5.1                                          02870013
+CSVDYNL            OS/390 R3                                            02880013
+CSVEXAA            MVS/ESA 5.1                                          02890013
+CSVEXRET           MVS/ESA 5.1                                          02900013
+CSVQUERY           MVS/ESA 4.2                                          02910013
+CSVRTAA            OS/390 R4                                            02920013
+CSVRTLS            OS/390 R4                                            02930013
+CVT                MVS                                                  02940013
+DCB                DFP                                                  02950013
+DCBD               DFP                                                  02960013
+DCBE               DFSMS/MVS                                            02970015
+DEBCHK             DFP                                                  02980013
+DELETE             MVS                                                  02990013
+DEQ                MVS                                                  03000013
+DETACH             MVS                                                  03010013
+DEVTYPE            DFP                                                  03020013
+DOM                                                                     03030013
+DYNALLOC           MVS                                                  03040013
+ENDREQ             DFP VSAM                                             03050013
+ENQ                MVS                                                  03060013
+ERASE              DFP VSAM                                             03070013
+ESPIE              MVS                                                  03080013
+ESTAE              MVS                                                  03090013
+EXCP               DFP                                                  03100013
+EXLST              DFP VSAM                                             03110001
+EXLVS              DFP VSAM                                             03120001
+EXTRACT            BCP                                                  03130013
+FEOV               DFP                                                  03140013
+FIND               DFP BPAM                                             03150013
+FREEMAIN           MVS                                                  03160013
+FREEPOOL           DFP                                                  03170013
+GET                DFP                                                  03180013
+GETBUF             DFP                                                  03190013
+GETDSAB            MVS 3.1                                              03200013
+GETLINE            TSO                                                  03210014
+GETMAIN            MVS                                                  03220013
+GQSCAN             MVS                                                  03230013
+GTSIZE             TSO                                                  03240013
+IARRAX             MVS SRM                                              03250013
+IARRCE             MVS SRM                                              03260013
+IAZJSAB            MVS                                                  03270013
+IAZXJSAB                                                                03280013
+ICHMM                                                                   03290013
+ICHPRCVT           RACF                                                 03300013
+ICHSAFP            RACROUTE                                             03310013
+IDACBACB           DFP VSAM                                             03320013
+IDACB1             DFP VSAM                                             03330013
+IDACB2             DFP VSAM                                             03340013
+IDACB3             DFP VSAM                                             03350013
+IDAVSACB           DFP VSAM                                             03360013
+IDAVSCB3           DFP VSAM                                             03370013
+IDAVSOPT           DFP VSAM                                             03380013
+IDAVSRPL           DFP VSAM                                             03390013
+IDENTIFY           MVS                                                  03400013
+IEAMETR            MVS ETR                                              03410013
+IECDDCE            MVS IOS                                              03420013
+IECDIOCM           MVS IOS                                              03430013
+IECDPPL            DFP PURGE PARM LIST                                  03440013
+IECDUCBC           MVS                                                  03450013
+IECDUCBD           MVS                                                  03460013
+IECDUCBE           MVS                                                  03470013
+IECDUCBG           MVS                                                  03480013
+IECDUCBT           MVS                                                  03490013
+IECDUCBU           MVS                                                  03500013
+IECSDSL1           DFP                                                  03510013
+IEEBASEA           MVS MASTER SCHED RES DATA AREA                       03520013
+IEECHAIN           MVS CSCB                                             03530013
+IEECUCM            MVS UNIT CONTROL MODULE                              03540013
+IEESMCA            SMF                                                  03550013
+IEFAJCTB           DFP JOB CONTROL BLOCK + ACCOUNT TABLE                03560013
+IEFALLCT           MVS                                                  03570013
+IEFASCTB           DFP STEP CONTROL BLOCK                               03580013
+IEFASIOT           DFP STEP I/O TABLE                                   03590013
+IEFDDSRV           MVS 5.2 DD SERVICES                                  03600013
+IEFDISMP           MVS 5.2 DD SERVICES                                  03610013
+IEFDISRC           MVS 5.2 DD SERVICES                                  03620013
+IEFJCTX            MVS JCT EXTENSION                                    03630013
+IEFJESCT           MVS                                                  03640013
+IEFJFCBN           DFP                                                  03650013
+IEFJFCBX           DFP                                                  03660016
+IEFJSCVT           MVS                                                  03670013
+IEFJSSIB           MVS                                                  03680013
+IEFJSSOB           MVS                                                  03690013
+IEFJSSVT           MVS                                                  03700013
+IEFPRMLB           OS/390 R2                                            03710013
+IEFQMIDS           MVS SWA MANAGER                                      03720016
+IEFQMNGR           MVS SWA MANAGER                                      03730013
+IEFSCTX            MVS SCT EXTENSION                                    03740013
+IEFSJDKY                                                                03750013
+IEFSSCS            CANCEL/STATUS                                        03760013
+IEFSSOB            MVS                                                  03770013
+IEFSSOBH           MVS                                                  03780013
+IEFSSREQ           MVS                                                  03790013
+IEFSSSA            SMS                                                  03800013
+IEFSSVI            BCP                                                  03810013
+IEFTCT             SMF                                                  03820013
+IEFTIOT1           MVS                                                  03830013
+IEFUCBOB           MVS                                                  03840013
+IEFZB4D0                      DYNALLOC REQUEST BLOCK                    03850013
+IEFZB4D2                      DYNALLOC TEXT UNIT KEYS                   03860013
+IEFZB4UV           MVS                                                  03870013
+IEFZB505           DFP                                                  03880013
+IEFZPMAP           OS/390 R2                                            03890013
+IEZATTCH           MVS                                                  03900013
+IEZBITS            MVS BIT0-BIT7                                        03910013
+IEZDEB             DFP                                                  03920013
+IEZIOB             DFP                                                  03930013
+IEZJSCB            MVS                                                  03940013
+IEZVX100                                                                03950013
+IFAEDIDF           PRODUCT ENABLE/DISABLE                               03960013
+IFBNTASM           MVS 5.1                                              03970013
+IFGACB             DFP VSAM                                             03980013
+IFGACBVS           DFP VSAM                                             03990013
+IFGRPL             DFP VSAM                                             04000013
+IFGRPLVS           DFP VSAM                                             04010013
+IGDSGD             SMS                                                  04020013
+IGDVLD             SMS                                                  04030013
+IGWCISM            DFP                                                  04040017
+IHAACEE            RACF                                                 04050013
+IHAARL             DFP                                                  04060013
+IHAASCB            MVS                                                  04070013
+IHAASSB            BCP                                                  04080013
+IHAASVT            MVS                                                  04090013
+IHAASXB            MVS                                                  04100013
+IHACDE             MVS                                                  04110013
+IHACSD             MVS                                                  04120013
+IHADCBE            DFSMS/MVS                                            04130015
+IHADECB            DFP                                                  04140015
+IHADFA             DFP                                                  04150013
+IHADQE             MVS                                                  04160013
+IHADSAB            DFP                                                  04170013
+IHADVA             DFP                                                  04180013
+IHAECVT            BCP                                                  04190013
+IHAEPIE            MVS                                                  04200013
+IHAETRI            MVS ETR                                              04210013
+IHAGDA             MVS CSV                                              04220013
+IHAIPA             OS/390 R2                                            04230013
+IHAIQE             MVS                                                  04240013
+IHALDA             MVS CSV                                              04250013
+IHALLCB            MVS CSV LLA                                          04260013
+IHALLE             MVS                                                  04270013
+IHALPDE            MVS                                                  04280013
+IHAOUXB            SRM                                                  04290013
+IHAPCCA            MVS                                                  04300013
+IHAPDS             DFP                                                  04310013
+IHAPSA             MVS                                                  04320013
+IHAPSAE            R10                                                  04330013
+IHARB              MVS                                                  04340013
+IHARD              MVS                                                  04350013
+IHARMPL            MVS (RESMGR)                                         04360013
+IHASCA             MVS SPIE/ESPIE CONTROL AREA                          04370013
+IHASCB             MVS STAE CONTROL BLOCK                               04380013
+IHASCCB            MVS SVC PROCESSOR                                    04390013
+IHASCVT            MVS                                                  04400013
+IHASDWA            MVS                                                  04410013
+IHASPQA            MVS                                                  04420013
+IHASPQE            MVS                                                  04430013
+IHASTCB            MVS                                                  04440013
+IHASVC             MVS                                                  04450013
+IHASVT             MVS                                                  04460013
+IHATQE             MVS                                                  04470013
+IHAUDA             DFP                                                  04480015
+IHAXTLST           MVS                                                  04490013
+IHBERMAC           DFP                                                  04500013
+IHBINNRA           MVS                                                  04510013
+IHBINNRB           MVS                                                  04520013
+IHBINNRR           MVS                                                  04530013
+IHBINNRX           MVS                                                  04540013
+IHBOPLST           MVS                                                  04550013
+IHBOPLTX           MVS/ESA                                              04560013
+IHBRDWRD           DFP BSAM/BPAM                                        04570013
+IHBRDWRS           DFP BSAM/BPAM                                        04580013
+IHB01              DFP                                                  04590013
+IKJCPPL            TSO/E                                                04600013
+IKJECT             TSO/E                                                04610013
+IKJEESCB           TSO/E SEND PARMLIB                                   04620013
+IKJEFFDF           TSO/E DAIRFAIL                                       04630013
+IKJEFFMT           TSO/E                                                04640013
+IKJEFLWA           TSO/E                                                04650013
+IKJENDP            TSO/E                                                04660013
+IKJGTPB            TSO/E                                                04670014
+IKJIDENT           TSO/E                                                04680013
+IKJIOPL            TSO/E                                                04690014
+IKJKEYWD           TSO/E                                                04700013
+IKJLSD             TSO/E                                                04710013
+IKJNAME            TSO/E                                                04720013
+IKJPARM            TSO/E                                                04730013
+IKJPOSIT           TSO/E                                                04740013
+IKJPPL             TSO/E                                                04750013
+IKJPSCB            TSO/E                                                04760013
+IKJRB              MVS                                                  04770013
+IKJRLGB            TSO/E                                                04780013
+IKJRLSA            TSO/E                                                04790013
+IKJSUBF            TSO/E                                                04800013
+IKJTAXE            TSO/E                                                04810013
+IKJTCB             MVS                                                  04820013
+IKJTMPWA           TSO/E                                                04830013
+IKJTPL             TSO/E                                                04840013
+IKJTSB             TSO/E                                                04850013
+IKJTSMSG           TSO/E                                                04860013
+IKJTSVT            TSO/E                                                04870013
+IKJUPT             TSO/E                                                04880013
+IKTTCAST           TSO/VTAM                                             04890013
+IKTTSBX            TSO/VTAM                                             04900013
+ILRASMVT           MVS                                                  04910013
+IOSCHPD            OS390R7                                              04920013
+IOSCMXA            MVS 5.1                                              04930013
+IOSDSHID           MVS 4.3             OW13347                          04940013
+IOSDUCBC           MVS                                                  04950013
+IOSDUCBP           MVS                                                  04960013
+IRAOUCB            MVS                                                  04970013
+IRARASD            WLM 5.1                                              04980013
+IRARMCT            SRM 4.3                                              04990013
+IRASRMST           SRM 5.1                                              05000013
+IRAWMST            SRM HBB6606                                          05010013
+IRXEFPL            REXX EXTERNAL FUNCTION PARM LIST                     05020013
+IRXENVB            REXX ENVIRONMENT BLOCK                               05030013
+IRXENVT            REXX ENVIRONMENT TABLE (IRXANCHR)                    05040013
+IRXEVALB           REXX EVALUATION BLOCK                                05050013
+IRXEXTE            REXX EXTERNAL FUNCTION ENTRY POINTS                  05060013
+IRXINSTB           REXX IN-STORAGE BLOCK                                05070013
+IRXPACKT           REXX FUNCTION PACKAGE TABLE                          05080013
+IRXPARMB           REXX PARAMETER BLOCK                                 05090013
+IRXSHVB            REXX SHARED VARIABLE REQ BLOCK                       05100013
+IRXSUBCT           REXX SUBCOMMAND TABLE                                05110013
+ISGGVT             MVS        GRS                                       05120013
+ISGPEL             MVS        GRS                                       05130013
+ISGRIB             MVS        GRS                                       05140013
+ISGRNLE            MVS        GRS                                       05150013
+ISITMGD            DFP                                                  05160017
+IVTCSM             OS390R3                                              05170013
+IVTDATSP           OS390R3                                              05180013
+IVTSTATA           OS390R3                                              05190013
+IWMCQRY            WORKLOAD MANAGER                                     05200008
+IWMPB              WORKLOAD MANAGER                                     05210008
+IWMPQRY            WORKLOAD MANAGER                                     05220008
+IWMSVDCR           WORKLOAD MANAGER                                     05230008
+IWMSVPCD           WORKLOAD MANAGER                                     05240008
+IWMSVPOL           WORKLOAD MANAGER                                     05250008
+IWMYCON            WORKLOAD MANAGER                                     05260008
+IXCMG              XCF ACCOUNTING                                       05270010
+IXCQUERY           XCF                                                  05280007
+IXCYAMDA           XCF ACCOUNTING                                       05290013
+IXCYQUAA           XCF                                                  05300013
+IXLMG              XES MEASUREMENTS                                     05310011
+IXLYAMDA           XES MEASUREMENTS                                     05320011
+IXLYNDE            XES MEASUREMENTS                                     05330011
+LINK               MVS                                                  05340000
+LOAD               MVS                                                  05350000
+LOCASCB            MVS                                                  05360000
+LOCATE             DFP                                                  05370000
+LSPACE             DADSM                                                05380014
+MGCR                                                                    05390007
+MODESET            MVS                                                  05400000
+NOTE               DFP                                                  05410000
+NUCLKUP            MVS        (SVCUPDTE)                                05420000
+OBTAIN             DFP                                                  05430000
+OPEN               DFP                                                  05440000
+PGSER              MVS        PAGE SERVICES                             05450000
+POINT              DFP                                                  05460000
+POST               MVS                                                  05470000
+PURGE              DFP                                                  05480000
+PUT                DFP                                                  05490000
+PUTLINE            TSO                                                  05500001
+PUTX               DFP                                                  05510000
+RACHECK            RACF                                                 05520013
+RACINIT            RACF                                                 05530013
+RACROUTE           MVS/SAF RACF                                         05540001
+RDJFCB             DFP                                                  05550000
+READ               DFP                                                  05560000
+RELSE              DFP                                                  05570000
+RESERVE            MVS                                                  05580000
+RESMGR             ESA 4.1                                              05590000
+RETURN             MVS                                                  05600000
+RPL                DFP VSAM                                             05610000
+RPLVS              DFP VSAM                                             05620000
+SAVE               MVS                                                  05630000
+SCHEDIRB           MVS 4.3                                              05640000
+SCHEDXIT           MVS 4.1                                              05650001
+SETLOCK            MVS                                                  05660000
+SETRP              MVS                                                  05670000
+SHOWCB             DFP VSAM                                             05680000
+SPIE               MVS                                                  05690000
+SPLEVEL            MVS                                                  05700000
+STACK              TSO/E                                                05710007
+STAE               OS/360                                               05720000
+STATUS             MVS                                                  05730000
+STAX               TSO/E                                                05740002
+STCKCONV           MVS/ESA 4.1                                          05750000
+STCKSYNC           MVS/ESA 4.1                                          05760000
+STCOM              TSO/E                                                05770009
+STFSMODE           TSO/E                                                05780000
+STIMER             MVS                                                  05790000
+STIMERM            MVS                                                  05800000
+STLINENO           TSO/E                                                05810013
+STORAGE            MVS                                                  05820013
+STTMPMD            TSO/E                                                05830000
+SVCUPDTE           MVS                                                  05840000
+SWAREQ             DFP                                                  05850000
+SYNADAF            DFP                                                  05860000
+SYNADRLS           DFP                                                  05870000
+SYNCH              MVS                                                  05880000
+SYSEVENT           SRM                                                  05890002
+SYSSTATE           MVS/ESA                                              05900000
+TCBTOKEN           MVS/ESA                                              05910000
+TCLEARQ            TSO/E                                                05920013
+TESTAUTH           MVS                                                  05930013
+TESTCB             DFP VSAM                                             05940013
+TGET               TSO/E                                                05950009
+TIME               MVS                                                  05960000
+TPUT               TSO/E                                                05970000
+TRKCALC            DFP                                                  05980000
+TRUNC              DFP                                                  05990000
+TTIMER             MVS                                                  06000000
+UCBDEVN            MVS/ESA 4.3                                          06010000
+UCBINFO            MVS/ESA 4.2.2                                        06020012
+UCBLOOK            MVS/ESA 4.1                                          06030013
+UCBSCAN            MVS/ESA 4.1                                          06040013
+WAIT               MVS                                                  06050000
+WRITE              DFP                                                  06060000
+WTO                MVS                                                  06070000
+XCTL               MVS                                                  06080000
+YREGS              MVS R0-R15                                           06090000
+*                                                                       06100000
+*        THESE ARE MACROS FROM MY OWN LIBRARIES                         06110000
+*                                                                       06120000
+STRING             ---                                                  06130000
+//*-------------------------------------------------------------------- 06140000
+//LOADPROC PROC DS='GILBERT.TRIMMAC',            <== DSNAME             06150013
+//            UNIT=3390,                         <== UNIT NAME          06160000
+//          VOLSER=,                             <== VOL SER            06170000
+//         BLKSIZE=0                             <== BLOCK SIZE (SDB)   06180000
+//DELOLD  EXEC PGM=IEFBR14                                              06190000
+//DELOLD   DD DSN=&DS,UNIT=&UNIT,SPACE=(1,0),DISP=(MOD,DELETE)          06200000
+//*                                                                     06210000
+//LOAD    EXEC PGM=IEBUPDTE,PARM=NEW                                    06220000
+//SYSIN    DD DSN=*.GO.SYSPUNCH,DISP=(OLD,PASS)                         06230000
+//SYSUT2   DD DSN=&DS,DISP=(,CATLG,DELETE),                             06240000
+// UNIT=&UNIT,                                                          06250000
+// SPACE=(CYL,(20,1,20),RLSE,CONTIG),                                   06260014
+// VOL=SER=&VOLSER,                                                     06270000
+// DCB=(DSORG=PO,RECFM=FB,LRECL=80,BLKSIZE=&BLKSIZE)                    06280000
+//SYSPRINT DD DUMMY                                                     06290000
+//LOADPROC PEND                                                         06300000
+//*-------------------------------------------------------------------- 06310000
+//TRIMMAC  EXEC LOADPROC                          <== EXEC PROC         06320000
+//                                                                      06400007

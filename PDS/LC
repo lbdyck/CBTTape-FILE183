@@ -1,0 +1,61 @@
+/*************************************************************** REXX *\00010000
+|*                                                                    *|00020000
+|* Module Name: LC (ListCat)                                          *|00030000
+|*                                                                    *|00040000
+|* Descriptive Name:  Issue LISTCAT command and display output        *|00050000
+|*                    using the ISPF BRIF option.                     *|00060000
+|*                                                                    *|00070000
+|* Status: R201                                                       *|00080001
+|*                                                                    *|00090000
+|* Function: This EXEC helps ISPF users trap the output of the        *|00100000
+|*           LISTCAT command and display it via the STEMVIEW routine. *|00110000
+|*           If the user enters the V command, then STEMVIEW displays *|00120000
+|*           the result of the LISTCAT command with VIEW instead      *|00130000
+|*           of BROWSE.  VIEW allows commands such as CUT or CREATE,  *|00140000
+|*           and EDIT macros, such as ROUTE.                          *|00150000
+|*                                                                    *|00160000
+|*           LC can be used here :                                    *|00170001
+|*             Opt 11 : ISPF WorkPlace              (WP)              *|00180000
+|*             Opt 3.4 : ISPF Data Set List Utility (DSLIST)          *|00190000
+|*             Opt 6 : ISPF Command Shell           (ICS)             *|00200001
+|*                                                                    *|00210000
+|* Author: Gilbert Saint-Flour <carlos@gsf-soft.com>                  *|00220000
+|*         http://gsf-soft.com/Freeware/                              *|00230000
+|*                                                                    *|00240000
+|* Syntax: LC                                                         *|00250000
+|*             dsname        data set name                            *|00260000
+|*             options       ALL NAME HISTORY VOLUME                  *|00270000
+|*                                                                    *|00280000
+|* Example:  LC 'ibmuser.load' ALL                                    *|00290000
+|*           LC 'ibmuser.load' VOLUME                                 *|00300000
+|*                                                                    *|00310000
+|* Environment: TSO/E V2                                              *|00320000
+|*              ISPF/PDF 2.3                                          *|00330000
+|*              STEMVIEW  http://gsf-soft.com/Freeware/STEMEDIT.shtml *|00341001
+|*                                                                    *|00350000
+|*200 New version (STEMVIEW)                                          *|00360000
+|*201 Check for missing data set name                                 *|00370001
+\**********************************************************************/00380000
+PARSE UPPER ARG dsname options                                          00390001
+IF dsname='' THEN DO                        /* dsname is missing      */00400001
+  ZEDSMSG = 'Missing Data Set Name'                                     00410001
+  ZEDLMSG = 'Data Set Name is required but was not specified'           00420001
+  "ISPEXEC SETMSG MSG(ISRZ001)"                                         00430001
+  EXIT 20                                                               00440001
+  END                                                                   00450001
+IF options='' THEN options='ALL'            /* Default Options        */00460000
+cmd="LISTCAT ENT("dsname")" options                                     00470000
+RC=OUTTRAP("LINE."); cmd; cc=rc; rc=OUTTRAP("OFF")                      00480000
+                                                                        00490000
+SIGNAL ON SYNTAX                            /* STEMDISP not available */00500000
+CALL STEMDISP "BROWSE","LINE.",,,cmd        /* Display LISTCAT Output */00510000
+EXIT cc                                                                 00520000
+                                                                        00530000
+SYNTAX:                            /* STEMDISP function not available */00540000
+  error=rc                                                              00550000
+  'ISPEXEC CONTROL DISPLAY LINE START(1)'                               00560000
+  SAY 'REXX error' error 'in line' sigl':' errortext(error)             00570000
+  SAY sourceline(sigl)                                                  00580000
+  SAY ''                                                                00590000
+  DO i=1 TO QUEUED(); PARSE PULL line; SAY line ; END                   00600000
+  EXIT                                                                  00610000

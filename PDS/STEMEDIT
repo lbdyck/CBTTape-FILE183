@@ -1,0 +1,982 @@
+//GILBERTV JOB (ACCT#),STEMEDIT,                                        00010000
+// NOTIFY=&SYSUID,                                                      00020000
+// CLASS=A,MSGCLASS=H,COND=(0,NE)                                       00030006
+//HLASM EXEC PGM=ASMA90,PARM=(OBJECT,NODECK,NOESD,NORLD,NOXREF)         00040000
+*********************************************************************** 00050000
+*                                                                     * 00060000
+* MODULE NAME = STEMEDIT                                              * 00070001
+*                                                                     * 00080000
+* DESCRIPTIVE NAME = Display REXX Stem Variables using BRIF or VIIF.  * 00090002
+*                                                                     * 00100000
+* STATUS = R207                                                       * 00110007
+*                                                                     * 00120000
+* FUNCTION = This assembler sub-routine can be invoked by a REXX      * 00130000
+*            EXEC to display the contents of stem variables using     * 00140000
+*            the ISPF BRIF, VIIF or EDIT services.  STEMEDIT is       * 00150002
+*            a nice complement to the REXX OUTTRAP function,          * 00160002
+*            when it is used in the ISPF/PDF environment.             * 00170002
+*                                                                     * 00180000
+*            STEMEDIT can also PULL lines from the data stack         * 00190001
+*            instead of using stem variables.  This only works        * 00200003
+*            with EDIT or VIEW, i.e. not with BROWSE.                 * 00210003
+*                                                                     * 00220000
+* AUTHOR = Gilbert Saint-Flour <carlos@gsf-soft.com>                  * 00230002
+*          http://gsf-soft.com/Freeware/                              * 00240002
+*                                                                     * 00250000
+* ENVIRONMENT = SEE BELOW                                             * 00260000
+*                                                                     * 00270000
+*    DEPENDENCIES: OS/390 R10 or z/OS                                 * 00280001
+*                  ISPF/PDF V3 (or above)                             * 00290005
+*                                                                     * 00300000
+* MODULE TYPE = PROCEDURE, (CSECT TYPE)                               * 00310000
+*                                                                     * 00320000
+*    PROCESSOR = IBM OS/ASSEMBLER H VERSION 2 OR                      * 00330000
+*                IBM HIGH LEVEL ASSEMBLER/MVS                         * 00340000
+*                                                                     * 00350000
+*    MODULE SIZE = 2K                                                 * 00360000
+*                                                                     * 00370000
+*    ATTRIBUTES = REENTERABLE, RMODE ANY, AMODE 31,                   * 00380000
+*                 PROBLEM STATE, KEY 8                                * 00390000
+*                 APF AUTHORIZATION: NONE                             * 00400000
+*                                                                     * 00410000
+* SYNTAX  =  See below                                                * 00420000
+*                                                                     * 00430000
+*    CALL STEMEDIT  service,                                          * 00440001
+*                   stemname                                          * 00450000
+*                   <,firstelem>                                      * 00460000
+*                   <,stemcount>                                      * 00470000
+*                   <,title>                                          * 00480000
+*                   <,panel>                                          * 00490000
+*                   <,lrecl>                                          * 00500000
+*                   <,recfm>                                          * 00510000
+*                   <,profile>                                        * 00520000
+*                                                                     * 00530000
+*    Arguments:                                                       * 00540000
+*                                                                     * 00550000
+*         service   This argument must be coded as 'BROWSE', 'VIEW'   * 00560001
+*                   or 'EDIT'.  It indicates which of the BRIF,       * 00570001
+*                   VIIF or EDIF services will be used for display.   * 00580001
+*                                                                     * 00590000
+*                   If the BROWSE service is requested, the user can  * 00600000
+*                   enter the V commands on the BROWSE screen to      * 00610001
+*                   switch to VIEW.  This allows the data to be       * 00620001
+*                   saved using CREATE/REPLACE, CUT or ROUTE.         * 00630001
+*                                                                     * 00640000
+*         stemname  the stem of the family of variables to display.   * 00650000
+*                   The combined lengths of the stemname argument     * 00660000
+*                   and the largest subscript (plus the period, if    * 00670000
+*                   specified) cannot exceed 80 characters.           * 00680000
+*                   If stemname is a true REXX stem, code a period    * 00690000
+*                   as the last character.  If you do not specify     * 00700000
+*                   the period, the subscripts will be concatenated   * 00710000
+*                   to the stem name without an intervening period.   * 00720000
+*                   For example, if you specify a stemname of "ABC.", * 00730000
+*                   STEMEDIT will look for variables of the form      * 00740001
+*                   "ABC.1", "ABC.2", etc. If you specify a stemname  * 00750000
+*                   of "XYZ" (no period), STEMEDIT will look for      * 00760001
+*                   variables of the form "XYZ1", "XYZ2", etc.        * 00770000
+*                                                                     * 00780000
+*                   If the service is coded as "VIEW" or "EDIT" and   * 00790005
+*                   stemname is omitted, STEMEDIT PULLs lines from    * 00800001
+*                   the stack.                                        * 00810000
+*                                                                     * 00820000
+*         firstelem the element of the pseudo-array to begin the      * 00830000
+*                   display on.  The default value is element 1.      * 00840000
+*                                                                     * 00850000
+*         stemcount the number of elements to display.                * 00860000
+*                   If you do not specify stemcount, STEMEDIT will    * 00870001
+*                   display variables beginning with firstelem, and   * 00880000
+*                   continuing until an un-initialized variable is    * 00890000
+*                   found (i.e., a variable which has its name for    * 00900000
+*                   a value).                                         * 00910000
+*                                                                     * 00920000
+*         title     an arbitrary character string which identifies    * 00930000
+*                   the data which is being displayed.  The maximum   * 00940000
+*                   length of this string is 54 characters.           * 00950000
+*                                                                     * 00960000
+*         panel     a 1 to 8 character name of the panel member       * 00970002
+*                   to use for the display.                           * 00980002
+*                   The default panel is ISRBROBA for BROWSE          * 00990003
+*                   and ISREDDE2 for VIEW and EDIT.                   * 01000002
+*                                                                     * 01010000
+*         lrecl     the record length that should be passed to        * 01020002
+*                   the BRIF, VIIF or EDIF services.                  * 01030002
+*                   The default value is 255.                         * 01040000
+*                                                                     * 01050000
+*         recfm     the record format that should be passed to        * 01060000
+*                   the BRIF, VIIF or EDIF services.                  * 01070002
+*                   Possible values are F, FA, FM, V, VA, VM, or U.   * 01080000
+*                   The default value is V.                           * 01090000
+*                                                                     * 01100000
+*         profile   the 8-char name of the profile that should be     * 01110000
+*                   used by VIIF and EDIF when the VIEW or EDIT       * 01120002
+*                   services are requested.                           * 01130002
+*                   The default value is TEXT.                        * 01140000
+*                                                                     * 01150000
+*    Examples:                                                        * 01160000
+*                                                                     * 01170000
+*         Call the STEMEDIT routine to display the output of the      * 01180001
+*         TSO "LISTCAT" command.  The variables to display            * 01190000
+*         begin with the characters "LINE.":                          * 01200000
+*                                                                     * 01210000
+*            CALL OUTTRAP 'LINE.'                                     * 01220000
+*            "LISTCAT"                                                * 01230000
+*            CALL STEMEDIT 'BROWSE','LINE.',,,'List Catalog'          * 01240001
+*                                                                     * 01250000
+*         QUEUE JCL to the data stack and call the STEMEDIT           * 01260001
+*         routine to VIEW it:                                         * 01270000
+*                                                                     * 01280000
+*            "MAKEBUF"                                                * 01290000
+*            QUEUE '//MYJOB JOB 12345,CLASS=A'                        * 01300000
+*            QUEUE '//STEP2 EXEC PGM=IEFBR14'                         * 01310000
+*            CALL STEMEDIT 'VIEW',,,,'Sample JCL'                     * 01320001
+*            "DROPBUF"                                                * 01330000
+*                                                                     * 01340000
+* RETURN-CODES = See below                                            * 01350000
+*                                                                     * 01360000
+*        The STEMEDIT function returns a return code that indicates   * 01370001
+*        whether the display worked.  The returned value is           * 01380000
+*        contained in the RC special variable.                        * 01390000
+*                                                                     * 01400000
+*        The following STEMEDIT return code values are possible:      * 01410001
+*                                                                     * 01420000
+*        0    The display was successful.                             * 01430000
+*                                                                     * 01440000
+*        4    There were no stems matching the description given in   * 01450001
+*             stemname (BROWSE).  The data was not modified (EDIT).   * 01460001
+*                                                                     * 01470001
+*        8    Option incompatible with requested service.             * 01480001
+*                                                                     * 01490000
+*        12   Invalid Service requested.                              * 01500000
+*                                                                     * 01510000
+*        16   BRIF, VIIF or EDIF failed.                              * 01520001
+*                                                                     * 01530001
+* USAGE NOTES = See below                                             * 01540001
+*                                                                     * 01550001
+*        The EDIT service only works with a stem variable.            * 01560001
+*        If the data is modified by the user, STEMEDIT DROPs the      * 01570001
+*        stem variable, sets stem.0 to the number of records          * 01580001
+*        written, copies records to the stem.1 through stem.n         * 01590002
+*        where n is equal to the value of the stem.0 variable,        * 01600001
+*        and sets the RC variable to 0.  If the data is not           * 01610001
+*        modified by the user, STEMEDIT sets the RC variable to 4.    * 01620001
+*                                                                     * 01630000
+* COMPATIBILITY                                                       * 01640000
+*                                                                     * 01650000
+*        STEMEDIT has been designed to be compatible with             * 01660001
+*        the STEMDISP function of the REXXTOOLS product from          * 01670000
+*        Open Software Technologies, with the following               * 01680000
+*        exceptions:                                                  * 01690000
+*                                                                     * 01700000
+*        1. STEMEDIT supports the BROWSE, VIEW and EDIT services      * 01710001
+*           (STEMDISP only supports BROWSE).                          * 01720001
+*                                                                     * 01730000
+*        2. If stemcount is not specified, STEMEDIT scans             * 01740001
+*           variables until an unitialised variable is found.         * 01750001
+*           (STEMDISP stops after 100000 variables).                  * 01760001
+*                                                                     * 01770000
+*        3. STEMEDIT has the ability to retrieve data from a          * 01780001
+*           stem variable or the data stack (STEMDISP can only        * 01790001
+*           retrieve data from a stem variable).                      * 01800001
+*                                                                     * 01810000
+* CHANGE ACTIVITY                                                     * 01820000
+*                                                                     * 01830000
+* 100 Initial release                                            1995 * 01840000
+* 101 Fix S0C4 in RDRTNE                                         1996 * 01850000
+* 102 VIEW support via EDIF                                           * 01860000
+* 103 Convert 2nd argument to uppercase (variable name)               * 01870000
+*     Add support for 3rd and 4th arguments                           * 01880000
+* 104 Change module name from STEMDISP to STEMVIEW               1997 * 01890000
+*     Punch ' ALIAS STEMDISP ' for compatibility with REXXTOOLS       * 01900000
+*     Change name of EDIT function to VIEW                            * 01910000
+*     Issue CONTROL DISPLAY REFRESH before BROWSE/EDIT                * 01920000
+*     Pass address of environment block to IRXEXCOM                   * 01930000
+* 105 PULL data from the stack when no variable name specified        * 01940000
+*     Prompt user before saving data in VIEW mode                     * 01950000
+*     LRECL can be specified in 7th argument                          * 01960000
+*     Check for missing parms to prevent S0C4                         * 01970000
+*     Replace STRING macro with in-line code                          * 01980000
+*     Accept SHVTRUNC as valid RC from IRXEXCOM                       * 01990000
+* 106 Truncate Title                                                  * 02000000
+* 107 E or V command switches from BROWSE to VIEW                1999 * 02010000
+* 108 Set ZVMODET='VIEW' to show VIEW instead of EDIT on ISREDDEx     * 02020000
+*     Add recfm and profile parameters for VIEW                       * 02030000
+*     Display error message after BRIF/EDIF failure                   * 02040000
+*     Display STEMVIEW Arguments Syntax if not invoked from REXX      * 02050000
+* 201 Program name changed from STEMVIEW to STEMEDIT             2002 * 02060001
+*     Use VIIF instead of EDIF (OS/390 R10 and z/OS)                  * 02070001
+*     Add EDIT function for stem variables                            * 02080001
+*     Maximum length of variable name increased to 255                * 02090001
+*     Maximum length of data line increased to 32760                  * 02100001
+* 202 Set default LRECL to 255                                   2003 * 02110002
+* 203 Force default panel names - ISRBROBA/ISREDDE2              2009 * 02120003
+*     Use SAVE3 in RDRTNE and WRITERTN                                * 02130003
+*     Move LINE fld to own DSECT                                      * 02140003
+*     When invoked for BROWSE and user issues V or E :                * 02150003
+*     1. Issue CONTROL DISPLAY SAVE/RESTORE                           * 02160003
+*     2. Clear Panel Name                                             * 02170003
+* 204 Change X'40' to X'41' (NBSP) in TITLE                           * 02180004
+* 205 Add support for ISPF V3                                         * 02190005
+*     Replace LINK macro with ISPLINK                                 * 02200005
+* 206 Check for empty records in RDRTN84                         2010 * 02210006
+* 207 VIIF only supported in ISPF V5 and above                        * 02211007
+*                                                                     * 02220000
+&REL     SETC  'R207'                                                 * 02230007
+*********************************************************************** 02240000
+         PUNCH ' ALIAS STEMDISP (compatibility with REXXTOOLS) '        02250000
+         PUNCH ' ALIAS STEMVIEW (compatibility with STEMVIEW) '         02260001
+STEMEDIT CSECT                                                          02270001
+STEMEDIT RMODE 24                      For TPUT                         02280003
+STEMEDIT AMODE 31                                                       02290003
+&D       SETC  '&SYSDATE'(7,2)'-'.'&SYSDATE'(1,2)'-'.'&SYSDATE'(4,2)    02300003
+         SAVE  (14,12),,'GSF Utilities - STEMEDIT &REL - 20&D &SYSTIME' 02310003
+         LR    R12,R15                                                  02320000
+         USING STEMEDIT,R12                                             02330001
+*---------------------------------------------------------------------* 02340000
+*                                                                     * 02350000
+*        ALLOCATE DYNAMIC STORAGE                                     * 02360000
+*                                                                     * 02370000
+*---------------------------------------------------------------------* 02380000
+         GETMAIN RU,LV=DYNAML,         Allocate Dynamic Storage Area   X02390003
+               LOC=BELOW,              24-bit address for TPUT         X02400003
+               BNDRY=PAGE                                               02410003
+         ST    R13,4(,R1)                                               02420000
+         ST    R1,8(,R13)                                               02430000
+         LA    R14,72(,R1)             CLEAR WORKING STORAGE            02440000
+         LA    R15,DYNAML-72           CLEAR WORKING STORAGE            02450003
+         SLR   R1,R1                   CLEAR WORKING STORAGE            02460000
+         MVCL  R14,R0                  CLEAR WORKING STORAGE            02470000
+         LM    R13,R1,8(R13)           SET R13, RELOAD R1               02480000
+         USING DYNAM,R13                                                02490000
+         STM   R15,R1,R15R0R1          save regs for cmd rtne           02500000
+         L     R11,EFPLARG-EFPL(,R1)   ADDR OF ARG LIST                 02510000
+         MVI   BLANKS,C' '             a bunch of blanks                02520000
+         MVC   BLANKS+1(L'BLANKS-1),BLANKS                              02530000
+         MVC   TITLE,BLANKS            default title                    02540000
+         MVC   PANEL_NAME,BLANKS       default panel name               02550000
+         MVI   STEMCOUNT,1             default count: X'01000000'       02560000
+         GETMAIN RU,LV=L'LINE,         Allocate Dynamic Storage Area   X02570003
+               BNDRY=PAGE                                               02580003
+         STM   R0,R1,LINE_LEN_ADDR     Save length/address              02590003
+         LR    R9,R1                   Copy A(LINE)                     02600003
+         USING LINE_DSECT,R9                                            02610003
+*---------------------------------------------------------------------* 02620000
+*                                                                     * 02630000
+*        BUILD THE SHVBLOCK                                           * 02640000
+*                                                                     * 02650000
+*---------------------------------------------------------------------* 02660000
+         LA    R10,DYNAM_SHVB                                           02670000
+         USING SHVBLOCK,R10                                             02680000
+         MVI   SHVCODE,SHVFETCH        FETCH VARIABLE                   02690000
+         LH    R0,=Y(L'LINE)           LENGTH OF 'FETCH' VALUE BUFFER   02700001
+         ST    R0,SHVBUFL              LENGTH OF 'FETCH' VALUE BUFFER   02710000
+         LA    R0,255                  default lrecl for BRIF/VIIF/EDIF 02720002
+         ST    R0,LRECL                default lrecl for BRIF/VIIF/EDIF 02730002
+         MVC   RECFM,=C'V '            default RECFM is V               02740000
+         MVC   PROFILE_NAME,=CL8'TEXT' default profile name             02750000
+         LA    R0,LINE                 ADDRESS OF VALUE BUFFER          02760000
+         ST    R0,SHVVALA              ADDRESS OF VALUE BUFFER          02770000
+         LA    R0,VARNAME              ADDRESS OF VARIABLE NAME         02780000
+         ST    R0,SHVNAMA              ADDRESS OF VARIABLE NAME         02790000
+         L     R15,ADDR_OF_ENVBLOCK    Environment block                02800000
+         CLC   =C'ENVBLOCK',0(R15)     Invoked from REXX?               02810000
+         BNE   NOREXX                  no, quit                         02820000
+         L     R15,ENVBLOCK_IRXEXTE-ENVBLOCK(,R15) A(IRXEXTE)           02830000
+         L     R15,IRXEXCOM-IRXEXTE(,R15)          A(IRXEXCOM)          02840000
+         L     R0,ADDR_OF_ENVBLOCK     ENVIRONMENT BLOCK                02850000
+         LA    R1,IRXEXCOM_PARM        parm list                        02860000
+         STM   R15,R1,IRXEXCOM_REGS    A(IRXEXCOM,ENVBLK,IRXPARM)       02870000
+         LA    R14,=C'IRXEXCOM'        Shared Variable Routine          02880000
+         SLR   R15,R15                 PARM2=0                          02890000
+         SLR   R0,R0                   PARM3=0                          02900000
+         LA    R1,SHVBLOCK             PARM4                            02910000
+         STM   R14,R1,IRXEXCOM_PARM    build parm list for IRXEXCOM     02920000
+         OI    IRXEXCOM_PARM+12,X'80'  VL=1                             02930000
+*---------------------------------------------------------------------* 02940005
+         MACRO                                                    macro 02950005
+&NAME    ISPLINK &OPRNDS,&ERRET=                                  macro 02960005
+         GBLB  &IHBSWA                                            macro 02970005
+&IHBSWA  SETB  1                       VL=1                       macro 02980005
+&NAME    LA    R1,PARMLIST             parm list                  macro 02990005
+         IHBOPLST ,&OPRNDS,MF=(E,(1))                             macro 03000005
+         L     R15,ISPLINK@            ISPLINK bootstrap                03010005
+         BALR  R14,R15                 invoke ISPLINK                   03020005
+         AIF   (T'&ERRET EQ 'O').MEND                             macro 03030005
+         LTR   R15,R15                 Any error?                       03040005
+         BNZ   &ERRET                  yes, jump                        03050005
+.MEND    MEND                                                     macro 03060005
+*---------------------------------------------------------------------* 03070000
+*                                                                     * 03080000
+*        PROCESS ARGUMENTS                                            * 03090000
+*                                                                     * 03100000
+*---------------------------------------------------------------------* 03110000
+         LOAD  EP=ISPLINK              preload ISPLINK                  03120005
+         ST    R0,ISPLINK@             A(ISPLINK)                       03130005
+         LA    R0,L'ZENVIR                                              03140005
+         ST    R0,DWD                                                   03150005
+         ISPLINK ($VCOPY,$ZENVIR,DWD,ZENVIR,$MOVE)                      03160005
+*                                                                       03170005
+         LM    R2,R3,8*1-8(R11)        1st ARG (BROWSE/EDIT)            03180000
+         LTR   R3,R3                   service specified?               03190000
+         BNP   ARG1N                   no, error                        03200000
+         CH    R3,=AL2(L'SERVICE)      name too long?                   03210000
+         BH    ARG1N                   yes, error                       03220000
+         BCTR  R3,0                    prepare "EX"                     03230000
+         MVC   SERVICE(*-*),0(R2)      move string                      03240000
+         EX    R3,*-6                  execute MVC                      03250000
+         OC    SERVICE,BLANKS          convert to uppercase             03260000
+*                                                                       03270000
+         CLI   ZENVIR+5,C'4'           ISPF V4 or above ?               03280005
+         BL    ARG1G                   no, keep blank panel name        03290005
+         MVC   PANEL_NAME,=C'ISRBROBA' default panel name (BROWSE)      03300003
+ARG1G    EQU   *                                                        03310005
+         CLC   =C'BROWSE',SERVICE      BROWSE?                          03320000
+         BE    ARG1X                   yes, exit                        03330000
+         CLI   ZENVIR+5,C'4'           ISPF V4 or above ?               03340005
+         BL    ARG1J                   no, keep blank panel name        03350005
+         MVC   PANEL_NAME,=C'ISREDDE2' default panel name (VIEW/EDIT)   03360003
+ARG1J    EQU   *                                                        03370005
+         CLC   =C'VIEW  ',SERVICE      VIEW?                            03380000
+         BE    ARG1X                   yes, exit                        03390000
+         CLC   =C'EDIT  ',SERVICE      EDIT?                            03400001
+         BE    ARG1X                   yes, exit                        03410000
+ARG1N    EQU   *                       bad service specified            03420003
+         B     EXIT12                  no service, exit with RC=12      03430001
+ARG1X    EQU   *                                                        03440000
+*                                                                       03450000
+         LM    R2,R3,8*2-8(R11)        2ND ARG (VAR NAME)               03460000
+         STM   R2,R3,STEMNAME          2ND ARG (VAR NAME)               03470000
+         LTR   R3,R3                   stemname specified?              03480000
+         BNP   ARG2N                   no, jump                         03490000
+         OI    0(R2),X'40'             convert to uppercase             03500000
+         LA    R2,1(,R2)               convert to uppercase             03510000
+         BCT   R3,*-8                  convert to uppercase             03520000
+         B     ARG2X                                                    03530000
+ARG2N    EQU   *                       no stemname specified            03540000
+         CLI   SERVICE,C'B'            SERVICE=BROWSE?                  03550001
+         BE    EXIT8                   yes, exit with RC=8              03560001
+         CLI   SERVICE,C'E'            SERVICE=EDIT?                    03570001
+         BE    EXIT8                   yes, exit with RC=8              03580001
+         LA    R14,=CL8'PULL'          FUNCTION                         03590000
+         LA    R15,SHVVALA             ADDRESS OF DATA RETURNED         03600000
+         LA    R0,SHVVALL              LENGTH OF DATA RETURNED          03610000
+         LA    R1,VALUE                VALUE RETURNED BY IRXSTK         03620000
+         LA    R2,ADDR_OF_ENVBLOCK     Environment block                03630000
+         LA    R3,RETCODE              RETURN CODE                      03640000
+         STM   R14,R3,IRXSTK_PARM      BUILD PARM LIST                  03650000
+         OI    IRXSTK_PARM+20,X'80'    BUILD PARM LIST                  03660000
+ARG2X    EQU   *                                                        03670000
+*                                                                       03680000
+         LM    R2,R3,8*3-8(R11)        3rd ARG (first element)          03690000
+         LTR   R3,R3                   zero length?                     03700000
+         BZ    ARG3X                   yes, jump                        03710000
+         BM    ARG9X                   eof, exit                        03720000
+         BCTR  R3,0                    decrement                        03730000
+         PACK  DWD,0(,R2)              *executed*                       03740000
+         EX    R3,*-6                  pack the value                   03750000
+         CVB   R0,DWD                  make it binary                   03760000
+         BCTR  R0,0                    relative to zero                 03770000
+         ST    R0,CURRECNO             save it for later                03780000
+ARG3X    EQU   *                                                        03790000
+*                                                                       03800000
+         LM    R2,R3,8*4-8(R11)        4th ARG (stem count)             03810000
+         LTR   R3,R3                   zero length?                     03820000
+         BZ    ARG4X                   yes, jump                        03830000
+         BM    ARG9X                   eof, exit                        03840000
+         BCTR  R3,0                    decrement                        03850000
+         PACK  DWD,0(,R2)              *executed*                       03860000
+         EX    R3,*-6                  pack the value                   03870000
+         CVB   R0,DWD                  make it binary                   03880000
+         AL    R0,CURRECNO             add origin                       03890000
+ ORG *-4                                                                03900006
+         ST    R0,STEMCOUNT            save it for later                03910000
+ARG4X    EQU   *                                                        03920000
+*                                                                       03930000
+         LM    R2,R3,8*5-8(R11)        5TH ARG (TITLE)                  03940000
+         LTR   R3,R3                   zero length?                     03950000
+         BZ    ARG5X                   yes, jump                        03960000
+         BM    ARG9X                   eof, exit                        03970000
+         LA    R1,TITLE                start of output area             03980000
+         CH    R3,=Y(L'TITLE)          title too long?                  03990000
+         BNH   ARG5M                   no, jump                         04000000
+         LH    R3,=Y(L'TITLE)          yes, truncate it                 04010000
+*LOOP                                                                   04020002
+ARG5M    MVC   0(1,R1),0(R2)           move one character               04030000
+         CLI   0(R1),X'40'             X'40' -> X'41' (NBSP)            04040004
+         BNE   *+8                     X'40' -> X'41' (NBSP)            04050004
+         MVI   0(R1),X'41'             X'40' -> X'41' (NBSP)            04060004
+         LA    R1,1(,R1)               next output char                 04070000
+         LA    R2,1(,R2)               next input char                  04080000
+         BCT   R3,ARG5M                move title, one char at a time   04090000
+*ENDLOOP                                                                04100002
+ARG5X    EQU   *                                                        04110000
+*                                                                       04120000
+         LM    R2,R3,8*6-8(R11)        6TH ARG (PANEL)                  04130000
+         LTR   R2,R2                   SPECIFIED?                       04140000
+         BZ    ARG6X                   no, jump                         04150000
+         BM    ARG9X                   eof, exit                        04160000
+         BCTR  R3,0                    prepare "EX"                     04170000
+         MVC   PANEL_NAME(*-*),0(R2)   move string                      04180000
+         EX    R3,*-6                  execute MVC                      04190000
+ARG6X    EQU   *                                                        04200000
+*                                                                       04210000
+         LM    R2,R3,8*7-8(R11)        7th ARG (lrecl)                  04220000
+         LTR   R3,R3                   zero length?                     04230000
+         BZ    ARG7X                   yes, jump                        04240000
+         BM    ARG9X                   eof, exit                        04250000
+         BCTR  R3,0                    decrement                        04260000
+         PACK  DWD,0(,R2)              *executed*                       04270000
+         EX    R3,*-6                  pack the value                   04280000
+         CVB   R0,DWD                  make it binary                   04290000
+         ST    R0,LRECL                save it for later                04300000
+         CH    R0,=Y(L'LINE)           lrecl too big?                   04310000
+         BH    EXIT8                   yes, exit with RC=8              04320001
+ARG7X    EQU   *                                                        04330000
+*                                                                       04340000
+         LM    R2,R3,8*8-8(R11)        8TH ARG (recfm)                  04350000
+         LTR   R2,R2                   SPECIFIED?                       04360000
+         BZ    ARG8X                   no, jump                         04370000
+         BM    ARG9X                   eof, exit                        04380000
+         CLI   SERVICE,C'B'            SERVICE=BROWSE?                  04390001
+         BE    EXIT8                   yes, exit with RC=8              04400001
+         CH    R3,=Y(L'RECFM)          too long?                        04410000
+         BH    EXIT8                   yes, exit with RC=8              04420001
+         BCTR  R3,0                    prepare "EX"                     04430000
+         MVC   RECFM(*-*),0(R2)        move string                      04440000
+         EX    R3,*-6                  execute MVC                      04450000
+         OC    RECFM,BLANKS            upper-case                       04460000
+ARG8X    EQU   *                                                        04470000
+*                                                                       04480000
+         LM    R2,R3,8*9-8(R11)        9TH ARG (profile)                04490000
+         LTR   R2,R2                   SPECIFIED?                       04500000
+         BZ    ARG9X                   no, jump                         04510000
+         BM    ARG9X                   eof, exit                        04520000
+         CLI   SERVICE,C'B'            SERVICE=BROWSE?                  04530001
+         BE    EXIT8                   yes, exit with RC=8              04540001
+         CH    R3,=Y(L'PROFILE_NAME)   too long?                        04550000
+         BH    EXIT8                   yes, exit with RC=8              04560001
+         BCTR  R3,0                    prepare "EX"                     04570000
+         MVC   PROFILE_NAME(*-*),0(R2) move string                      04580000
+         EX    R3,*-6                  execute MVC                      04590000
+*                                                                       04600000
+ARG9X    EQU   *                       end of arg list                  04610000
+*---------------------------------------------------------------------* 04620000
+*                                                                     * 04630000
+*        Invoke BRIF, VIIF or EDIF Services                           * 04640001
+*                                                                     * 04650000
+*---------------------------------------------------------------------* 04660000
+         ISPLINK ($CONTROL,$ERRORS,$RETURN) CONTROL ERRORS RETURN       04670005
+         ISPLINK ($CONTROL,$DISPLAY,$REFRESH) CONTROL DISPLAY REFRESH   04680005
+         LA    R0,SAVE2                PARM FOR READ ROUTINE            04690000
+         ST    R0,SAVE2                PARM FOR READ ROUTINE            04700000
+         LA    R2,RDRTNE               READ ROUTINE                     04710005
+         LA    R3,CMDRTNE              COMMAND ROUTINE                  04720005
+         LA    R4,WRITERTN             WRITE ROUTINE                    04730005
+         STM   R2,R4,RDCMDWR+0         READ,CMD,WRITE                   04740005
+         CLI   SERVICE,C'V'            SERVICE=VIEW?                    04750000
+         BE    VIIF                    yes, jump                        04760001
+         CLI   SERVICE,C'E'            SERVICE=EDIT?                    04770001
+         BE    EDIF                    yes, jump                        04780001
+         ISPLINK (=C'BRIF',            ISPF SERVICE                    X04790005
+               TITLE,                  DSNAME                          X04800000
+               RECFM,                  RECFM                           X04810000
+               LRECL,                  LRECL                           X04820000
+               RDCMDWR+0,              READ ROUTINE                    X04830005
+               RDCMDWR+4,              COMMAND ROUTINE                 X04840005
+               SAVE2,                  PARM FOR READ ROUTINE           X04850000
+               PANEL_NAME)             PANEL (ISRBROBF/ISRBROBA)        04860005
+         CH    R15,=H'12'              empty data set?                  04880001
+         BNE   GOBACK                  no, jump                         04890001
+         LA    R7,4                    yes, RC=4 "no data to browse"    04900001
+         B     GOBACK40                                                 04910001
+VIIF     EQU   *                                                        04920001
+         CLI   ZENVIR+5,C'5'           ISPF V5 or above ?               04930007
+         BL    EDIF                    no, use EDIF instead of VIIF     04940005
+         ISPLINK (=C'VIIF',            ISPF SERVICE                    X04950005
+               TITLE,                  DSNAME                          X04960000
+               PROFILE_NAME,           PROFILE NAME                    X04970000
+               RECFM,                  RECFM                           X04980000
+               LRECL,                  LRECL                           X04990000
+               RDCMDWR+0,              READ ROUTINE                    X05000005
+               0,                      COMMAND EXIT                    X05010000
+               SAVE2,                  PARM FOR READ ROUTINE           X05020000
+               0,                      Edit Length                     X05030000
+               PANEL_NAME)             PANEL (ISREDDE2/ISREDDE3)        05040005
+         B     GOBACK                                                   05050001
+EDIF     EQU   *                                                        05060001
+         ISPLINK (=C'EDIF',            ISPF SERVICE                    X05070005
+               TITLE,                  DSNAME                          X05080001
+               PROFILE_NAME,           PROFILE NAME                    X05090001
+               RECFM,                  RECFM                           X05100001
+               LRECL,                  LRECL                           X05110001
+               RDCMDWR+0,              READ ROUTINE                    X05120005
+               RDCMDWR+8,              WRITE ROUTINE                   X05130005
+               0,                      COMMAND EXIT                    X05140001
+               SAVE2,                  PARM FOR READ ROUTINE           X05150001
+               0,                      Edit Length                     X05160001
+               PANEL_NAME)             PANEL (ISREDDE2/ISREDDE3)        05170005
+         LTR   R7,R15                  OK?                              05180001
+         BZ    GOBACK40                yes, jump                        05190001
+         CH    R7,=H'4'                Data Modified?                   05200001
+         BE    GOBACK40                no, exit with RC=4               05210001
+*---------------------------------------------------------------------* 05220000
+*                                                                     * 05230000
+*        Set return code                                              * 05240000
+*                                                                     * 05250000
+*---------------------------------------------------------------------* 05260000
+GOBACK   EQU   *                                                        05270000
+         LTR   R7,R15                  OK?                              05280000
+         BZ    GOBACK40                yes, jump                        05290000
+         CH    R7,=H'4'                Severe error in BRIF/VIIF/EDIF?  05300001
+         BH    GOBACK16                yes, RC=16                       05310001
+         SLR   R7,R7                   no, RC=0                         05320001
+         B     GOBACK40                                                 05330000
+*                                                                       05340000
+*        BRIF/VIIF/EDIF error: display error message                    05350001
+*                                                                       05360000
+GOBACK16 LA    R7,1000(,R7)            RC=10nn: rc nn from BRIF/VIIF    05370001
+         LA    R0,L'ZERRMSG            max length                       05380000
+         ST    R0,DWD                  max length                       05390000
+         ISPLINK ($VCOPY,$ZERRMSG,DWD,ZERRMSG,$MOVE),                  X05400005
+               ERRET=GOBACK40          No MSG, skip SETMSG              05410005
+         ISPLINK ($SETMSG,ZERRMSG)                                      05420005
+*---------------------------------------------------------------------* 05430000
+*                                                                     * 05440000
+*        Pass return code in RC variable                              * 05450000
+*                                                                     * 05460000
+*---------------------------------------------------------------------* 05470000
+GOBACK40 EQU   *                                                        05480000
+         LA    R0,WORK80               ADDRESS OF VALUE BUFFER          05490003
+         ST    R0,SHVVALA              ADDRESS OF VALUE BUFFER          05500000
+         CVD   R7,DWD                  convert to decimal               05510000
+         OI    DWD+7,15                convert to decimal               05520000
+         UNPK  WORK80(5),DWD           convert to decimal               05530003
+         LA    R15,5                   LENGTH OF VARIABLE NAME          05540000
+         ST    R15,SHVVALL             length                           05550000
+         MVC   VARNAME(2),=C'RC'       variable name                    05560000
+         LA    R15,2                   LENGTH OF VARIABLE NAME          05570000
+         ST    R15,SHVNAML             LENGTH OF VARIABLE NAME          05580000
+         MVI   SHVCODE,SHVSTORE        STORE VARIABLE                   05590000
+         LM    R15,R1,IRXEXCOM_REGS    A(IRXEXCOM,ENVBLK,IRXPARM)       05600000
+         BALR  R14,R15              <- Store REXX variable "RC"         05610000
+         SLR   R7,R7                   RC=0                             05620000
+         B     EXIT                                                     05630000
+*---------------------------------------------------------------------* 05640000
+*                                                                     * 05650000
+*        STEMEDIT was not invoked from a REXX exec                    * 05660001
+*        Display argument syntax using TPUT                           * 05670000
+*                                                                     * 05680000
+*---------------------------------------------------------------------* 05690000
+NOREXX   EQU   *                                                        05700003
+         TPUT  SYNTAXMSG,L'SYNTAXMSG   display syntax                   05710003
+         LA    R7,20                   RC=20                            05720001
+         B     EXIT                                                     05730001
+*---------------------------------------------------------------------* 05740000
+*                                                                     * 05750000
+*        CLEAN-UP AND EXIT                                            * 05760000
+*                                                                     * 05770000
+*---------------------------------------------------------------------* 05780000
+EXIT8    LA    R7,8                    RC=8 Option incompat w/service   05790001
+         B     EXIT                                                     05800001
+EXIT12   LA    R7,12                   RC=12 Invalid Service            05810001
+*                                                                       05820001
+EXIT     LM    R0,R1,LINE_LEN_ADDR     Load length/address              05830003
+         FREEMAIN RU,LV=(R0),A=(R1)    Free Dynamic Storage Area        05840003
+         LR    R1,R13                  A(DYNAM)                         05850003
+         L     R13,4(,R13)                                              05860000
+         FREEMAIN RU,LV=DYNAML,A=(R1)  Free Dynamic Storage Area        05870001
+         LR    R15,R7                  pass return code                 05880000
+         RETURN (14,12),RC=(15)                                         05890000
+         DROP                                                           05900000
+*********************************************************************** 05910000
+*                                                                     * 05920000
+*        BRIF Command Routine                                         * 05930000
+*                                                                     * 05940000
+*        This routine is invoked by BRIF each time a command is       * 05950000
+*        entered on the BROWSE screen.  If the user enters the E      * 05960000
+*        or V command, then STEMEDIT reinvokes itself with VIEW       * 05970001
+*        instead of BROWSE.                                           * 05980000
+*                                                                     * 05990000
+*********************************************************************** 06000000
+CMDRTNE  SAVE  (14,12),,*                                               06010000
+         LR    R12,R15                                                  06020000
+         USING CMDRTNE,R12                                              06030000
+         LR    R14,R13                 CALLER'S SAVE AREA               06040000
+         L     R13,04(,R1)             PTR TO DIALOG DATA AREA          06050000
+         L     R13,0(,R13)             A(SAVE2)                         06060000
+         ST    R14,4(,R13)             CHAIN SAVE AREAS                 06070000
+         ST    R13,8(,R14)             CHAIN SAVE AREAS                 06080000
+         USING SAVE2,R13                                                06090000
+         L     R6,00(,R1)              Function Code                    06100000
+         L     R9,LINE_LEN_ADDR+4      A(LINE)                          06110003
+         USING LINE_DSECT,R9                                            06120003
+         CLC   =F'20',0(R6)            UNKNOWN COMMAND?                 06140000
+         BNE   CMDRTNE4                NO, EXIT                         06150000
+         LA    R0,L'WORK80             max length of variable           06160003
+         ST    R0,DWD                  max length of variable           06170000
+         ISPLINK ($VCOPY,$ZCMD,DWD,WORK80,$MOVE)                        06180005
+         OC    WORK80(2),BLANKS        upper-case                       06190003
+         CLC   =C'E ',WORK80           ZCMD="E" ?                       06210003
+         BE    CMDRTNE7                yes, do it                       06220000
+         CLC   =C'V ',WORK80           ZCMD="V" ?                       06230003
+         BE    CMDRTNE7                yes, do it                       06240000
+CMDRTNE4 L     R13,4(,R13)             BRIF SAVE AREA                   06250000
+         RETURN (14,12),RC=4           ISPF will process the command    06260000
+*                                                                       06270000
+*        Invoke VIEW when user enters V or E during BROWSE display      06280003
+*                                                                       06290000
+CMDRTNE7 EQU   *                                                        06300000
+         ISPLINK ($CONTROL,$DISPLAY,$SAVE) CONTROL DISPLAY SAVE         06310005
+*                                                                       06320003
+         LM    R15,R1,R15R0R1          restore regs at entry            06330000
+         L     R11,EFPLARG-EFPL(,R1)   ADDR OF ARG LIST                 06340000
+         LA    R2,$VIEW                service=VIEW                     06350000
+         LA    R3,L'$VIEW              length                           06360000
+         STM   R2,R3,0(R11)            update service name              06370000
+         SLR   R2,R2                   R2=0                             06380003
+         SLR   R3,R3                   R3=0                             06390003
+         STM   R2,R3,8*6-8(R11)        6TH ARG (PANEL)                  06400003
+         BALR  R14,R15              <- re-invoke myself for VIEW        06420000
+*                                                                       06430003
+         ISPLINK ($CONTROL,$DISPLAY,$RESTORE) CONTROL DISPLAY RESTORE   06440005
+*                                                                       06450003
+         L     R13,4(,R13)             BRIF SAVE AREA                   06460000
+         RETURN (14,12),RC=0           command processed                06470000
+         DROP                                                           06480000
+*********************************************************************** 06490000
+*                                                                     * 06500000
+*        BRIF/VIIF READ Routine                                       * 06510001
+*                                                                     * 06520000
+*        This routine is invoked by BRIF and VIIF to                  * 06530001
+*        return the address of a record.                              * 06540000
+*                                                                     * 06550000
+*********************************************************************** 06560000
+RDRTNE   SAVE  (14,12),,*                                               06570000
+         LR    R12,R15                                                  06580000
+         USING RDRTNE,R12                                               06590000
+         LR    R14,R13                 CALLER'S SAVE AREA               06600000
+         L     R13,12(,R1)             PTR TO DIALOG DATA AREA          06610000
+         L     R13,0(,R13)             A(SAVE2)                         06620000
+         LA    R13,SAVE3-SAVE2(,R13)   A(SAVE3)                         06630003
+         ST    R14,4(,R13)             CHAIN SAVE AREAS                 06640000
+         ST    R13,8(,R14)             CHAIN SAVE AREAS                 06650000
+         USING SAVE3,R13                                                06660003
+         L     R6,00(,R1)              RECORD DATA READ                 06670000
+         L     R7,04(,R1)              LENGTH                           06680000
+         L     R4,08(,R1)              RELATIVE RECORD NUMBER           06690000
+         L     R9,LINE_LEN_ADDR+4      A(LINE)                          06740003
+         USING LINE_DSECT,R9                                            06750003
+         CLI   SERVICE,C'V'            VIIF?                            06760001
+         BE    RDRTNE06                YES, JUMP                        06770000
+         CLI   SERVICE,C'E'            EDIF?                            06780001
+         BE    RDRTNE06                YES, JUMP                        06790001
+         L     R5,0(,R4)               LINE NUMBER REQUESTED BY BRIF    06800000
+         AL    R5,CURRECNO             add first element (4th arg)      06810000
+         B     RDRTNE07                                                 06820000
+RDRTNE06 EQU   *                                                        06830000
+         LA    R5,1                    NEXT LINE FOR EDIT               06840000
+         AL    R5,CURRECNO             RECORD NUMBER                    06850000
+         ST    R5,CURRECNO             RECORD NUMBER                    06860000
+RDRTNE07 EQU   *                                                        06870000
+*                                                                       06880000
+         LA    R10,DYNAM_SHVB                                           06890000
+         USING SHVBLOCK,R10                                             06900000
+         CL    R5,STEMCOUNT            end reached?                     06910000
+         BH    RDRTN79                 yes, exit with RC=8              06920000
+*                                                                       06930000
+*        Retrieve value of current variable                             06940000
+*                                                                       06950000
+         BAL   R14,FETCHVAR         <- retrieve stemmed variable        06960000
+         CLI   SHVRET,SHVCLEAN         OK?                              06970000
+         BE    RDRTN70                 yes, pass line to BRIF           06980000
+         CLI   SHVRET,SHVTRUNC         truncated value?                 06990000
+         BE    RDRTN70                 yes, pass line to BRIF           07000000
+         CLI   SHVRET,SHVNEWV          this variable exists?            07010000
+         BE    RDRTN80                 NO, EXIT                         07020000
+*                                                                       07030000
+*        If IRXEXCOM fails, display R15 and SHVRET values.              07040000
+*                                                                       07050000
+         MVC   LINE(L'VARNAME),VARNAME move variable name               07060000
+         L     R1,SHVNAML              length of variable name          07070000
+         LA    R2,LINE(R1)             length of variable name          07080000
+         MVC   0(5,R2),=C' R15='       move literal                     07090000
+         CVD   R15,DWD                 save return code                 07100000
+         OI    DWD+7,15                convert to decimal               07110000
+         UNPK  5(3,R2),DWD             move return code: R15=008        07120000
+         MVC   8(8,R2),=C',SHVRET='    move literal                     07130000
+         UNPK  16(3,R2),SHVRET(2)      hex display                      07140000
+         TR    16(2,R2),HEXTAB-240     hex display                      07150000
+         LA    R15,18(,R1)             data length                      07160000
+         ST    R15,SHVVALL             length                           07170000
+*                                                                       07180000
+*        Return value of variable                                       07190000
+*                                                                       07200000
+RDRTN70  L     R0,SHVVALA              DATA ADDRESS                     07210000
+         L     R1,SHVVALL              DATA LENGTH                      07220000
+         CLI   RECFM,C'F'              RECFM=F?                         07230000
+         BNE   RDRTN74                 no, jump                         07240000
+         CL    R1,LRECL                needs padding?                   07250000
+         BNL   RDRTN74                 no, jump                         07260000
+         LA    R14,LINE                "to" address                     07270000
+         L     R15,LRECL               "to" length                      07280000
+         ICM   R1,B'1000',BLANKS       padding                          07290000
+         MVCL  R14,R0                  move data to LINE                07300000
+         LA    R0,LINE                 DATA ADDRESS                     07310000
+         L     R1,LRECL                DATA LENGTH                      07320000
+RDRTN74  EQU   *                                                        07330000
+         ST    R0,0(,R6)               PASS DATA ADDRESS                07340000
+         ST    R1,0(,R7)               PASS DATA LENGTH                 07350000
+         ST    R5,LASTLINE             CURRENT LINE NUMBER              07360000
+         L     R13,4(,R13)             BRIF SAVE AREA                   07370000
+         RETURN (14,12),RC=0           GOBACK TO EDIT                   07380000
+*---------------------------------------------------------------------* 07390000
+*                                                                     * 07400000
+*        Scan variables to find the highest one                       * 07410000
+*                                                                     * 07420000
+*        This section determines the number of the last line and      * 07430001
+*        passes it to BRIF/VIIF/EDIF along with the EOF indicator.    * 07440001
+*                                                                     * 07450000
+*---------------------------------------------------------------------* 07460000
+RDRTN79  L     R5,STEMCOUNT            eof                              07470000
+         B     RDRTN81                                                  07480000
+RDRTN80  BCTR  R5,0                    previous line                    07490000
+RDRTN81  EQU   *                                                        07500000
+         CL    R5,LASTLINE             was good?                        07510000
+         BE    RDRTN88                 yes, exit                        07520000
+         L     R5,LASTLINE             previous line                    07530000
+*loop                                                                   07540000
+RDRTN84  LA    R5,1(,R5)               BUMP LINE NUMBER                 07550000
+         CL    R5,STEMCOUNT            end reached?                     07560006
+         BH    RDRTN87                 yes, exit with RC=8              07570006
+         BAL   R14,FETCHVAR         <- retrieve stemmed variable        07580000
+*check for empty variable generally created with:  stem. = ' '          07590006
+         OC    SHVVALL,SHVVALL         length=0 ?                       07600006
+         BZ    RDRTN87                 yes, exit                        07610006
+         CLI   SHVRET,SHVCLEAN         OK?                              07620000
+         BE    RDRTN84                 yes, try next variable           07630000
+*endloop                                                                07640000
+RDRTN87  BCTR  R5,0                    previous line                    07650000
+         ST    R5,LASTLINE             save number of last line         07660001
+RDRTN88  ST    R5,0(,R4)               LAST LINE                        07670000
+         L     R13,4(,R13)             BRIF SAVE AREA                   07680000
+         RETURN (14,12),RC=8           GOBACK TO BRIF (EOF)             07690000
+*---------------------------------------------------------------------* 07700000
+*                                                                     * 07710000
+*        Fetch value of a variable                                    * 07720000
+*                                                                     * 07730000
+*        1. build variable name by concatenating the stem name        * 07740000
+*           (such as "LINE.") to the sequence number in R5            * 07750000
+*        2. pass control to IRXEXCOM                                  * 07760000
+*                                                                     * 07770000
+*---------------------------------------------------------------------* 07780000
+FETCHVAR LM    R2,R3,STEMNAME          2ND ARG (VAR NAME)               07790000
+         LTR   R3,R3                   variable name specified?         07800000
+         BNP   FETCHV50                no, PULL from stack              07810000
+         LR    R0,R5                   seqno                            07820001
+         BAL   R15,BLDVARNM         <- build variable name              07830001
+         LM    R15,R1,IRXEXCOM_REGS    A(IRXEXCOM,ENVBLK,IRXPARM)       07860000
+         BR    R15                     FETCH VARIABLE                   07870000
+*                                                                       07880000
+*        PULL an element from the data stack                            07890000
+*                                                                       07900000
+FETCHV50 LR    R2,R14                  save return address              07910000
+         L     R15,ADDR_OF_ENVBLOCK    Environment block                07920000
+         L     R15,ENVBLOCK_IRXEXTE-ENVBLOCK(,R15) A(IRXEXTE)           07930000
+         L     R15,IRXSTK-IRXEXTE(,R15) STACK MANAGER                   07940000
+         LA    R1,IRXSTK_PARM          PARM LIST                        07950000
+         BALR  R14,R15              <- CALL IRXSTK                      07960000
+         LTR   R15,R15                 EOF yet?                         07970000
+         BZR   R2                      no, goback                       07980000
+         MVI   SHVRET,SHVNEWV          yes, simulate EOF                07990000
+         BR    R2                      and goback                       08000000
+         DROP                                                           08010000
+HEXTAB   DC    C'0123456789ABCDEF'                                      08020000
+*********************************************************************** 08030000
+*                                                                     * 08040000
+*        Write Routine (SERVICE=EDIT)                                 * 08050001
+*                                                                     * 08060000
+*********************************************************************** 08070000
+WRITERTN SAVE  (14,12),,*                                               08080001
+         LR    R12,R15                                                  08090001
+         USING WRITERTN,R12                                             08100001
+         LR    R14,R13                 CALLER'S SAVE AREA               08110001
+         L     R13,16(,R1)             PTR TO DIALOG DATA AREA          08120001
+         L     R13,0(,R13)             A(SAVE2)                         08130001
+         LA    R13,SAVE3-SAVE2(,R13)   A(SAVE3)                         08140003
+         ST    R14,4(,R13)             CHAIN SAVE AREAS                 08150001
+         ST    R13,8(,R14)             CHAIN SAVE AREAS                 08160001
+         USING SAVE3,R13                                                08170003
+         L     R6,00(,R1)              RECORD DATA                      08180001
+         L     R7,04(,R1)              LENGTH                           08190001
+         L     R4,08(,R1)              SOURCE/CHANGE BITS               08200001
+         L     R5,12(,R1)              REQUEST CODE                     08210001
+*              REQ=0                   write next record                08220001
+*              REQ=1                   first write request              08230001
+*              REQ=2                   last write request               08240001
+*              REQ=3                   first and last write request     08250001
+*              REQ=4                   no record to write (all deleted) 08260001
+*                                                                       08270001
+         L     R9,LINE_LEN_ADDR+4      A(LINE)                          08280003
+         USING LINE_DSECT,R9                                            08290003
+         LA    R10,DYNAM_SHVB                                           08300001
+         USING SHVBLOCK,R10                                             08310001
+         L     R5,0(,R5)               request code                     08320001
+         CH    R5,=H'0'                write next record                08330001
+         BE    WRTRTN40                yes, skip DROPVAR                08340001
+         CH    R5,=H'2'                write last record                08350001
+         BE    WRTRTN40                yes, skip DROPVAR                08360001
+*                                                                       08380001
+*        First time only: DROP stem. variables                          08390001
+*                                                                       08400001
+DROPVAR  LM    R2,R3,STEMNAME          2ND ARG (VAR NAME)               08410001
+         ST    R3,SHVNAML              LENGTH OF VARIABLE NAME          08420001
+         MVI   SHVCODE,SHVDROPV        DROP STEM VARIABLE               08430001
+         LM    R15,R1,IRXEXCOM_REGS    A(IRXEXCOM,ENVBLK,IRXPARM)       08440001
+         BALR  R14,R15              <- DROP STEM VARIABLE               08450001
+*                                                                       08490001
+*        Write current record to stem.nnn                               08500001
+*                                                                       08510001
+WRTRTN40 CH    R5,=H'4'                any record to write?             08520001
+         BE    WRTRTN80                no, exit                         08530001
+         MVC   SHVVALA,0(R6)           Record ADDRESS                   08550001
+         MVC   SHVVALL,0(R7)           Record LENGTH                    08560001
+         LA    R0,1                    count output records             08570001
+         AL    R0,WRTLINUM             count output records             08580001
+         ST    R0,WRTLINUM             count output records             08590001
+         BAL   R15,BLDVARNM         <- build variable name              08600001
+         MVI   SHVCODE,SHVSTORE        STORE VARIABLE                   08720001
+         LM    R15,R1,IRXEXCOM_REGS    A(IRXEXCOM,ENVBLK,IRXPARM)       08730001
+         BALR  R14,R15              <- STORE VARIABLE                   08740001
+*                                                                       08810001
+*        Last record only: set stem.0 to the number of records written  08820001
+*                                                                       08830001
+WRTRTN80 EQU   *                                                        08840001
+         CH    R5,=H'2'                last record ?                    08890001
+         BL    WRTRTN99                no, exit                         08900001
+         L     R0,WRTLINUM             count output records             08910001
+         CVD   R0,DWD                  seqno                            08920001
+         OI    DWD+7,15                                                 08930001
+         UNPK  LINE(8),DWD             99999999                         08940001
+         LA    R0,LINE                 unpack 7 digits                  08950001
+         ST    R0,SHVVALA              Value addr                       08960001
+         LA    R0,8                    Value length                     08970001
+         ST    R0,SHVVALL              Value length                     08980001
+         LM    R2,R3,STEMNAME          2ND ARG (VAR NAME)               08990001
+         LA    R0,1(,R3)               add one byte for "0"             09000001
+         ST    R0,SHVNAML              LENGTH OF VARIABLE NAME          09010001
+         LA    R14,VARNAME             "to" addr                        09020001
+         LR    R15,R3                  "to" length                      09030001
+         MVCL  R14,R2                  move stem.                       09040001
+         MVI   0(R14),C'0'             append a "0" : stem.0            09050001
+         MVI   SHVCODE,SHVSTORE        STORE VARIABLE                   09060001
+         LM    R15,R1,IRXEXCOM_REGS    A(IRXEXCOM,ENVBLK,IRXPARM)       09070001
+         BALR  R14,R15              <- STORE stem.0 VARIABLE            09080001
+*                                                                       09110001
+WRTRTN99 L     R13,4(,R13)             EDIF SAVE AREA                   09120001
+         RETURN (14,12),RC=0           GOBACK TO BRIF (EOF)             09130001
+         DROP  R12                                                      09140001
+*********************************************************************** 09150001
+*                                                                     * 09160001
+*        Build Variable Name                                          * 09170001
+*                                                                     * 09180001
+*********************************************************************** 09190001
+BLDVARNM CVD   R0,DWD                  seqno                            09200001
+         BALR  R2,0                 <- local base                       09210001
+         MVC   LINE(8),=X'4020202020202020'-*(R2)                       09220001
+         LM    R2,R3,STEMNAME          2ND ARG (VAR NAME)               09230001
+         LA    R0,VARNAME              "to" addr                        09240001
+         LR    R1,R3                   "to" length                      09250001
+         MVCL  R0,R2                   move stem name "LINE."           09260001
+         EDMK  LINE(8),DWD+4           unpack 7 digits                  09270001
+         LR    R2,R1                   addr of 1st non-zero byte        09280001
+         LA    R3,LINE+8               calc length                      09290001
+         SLR   R3,R2                   calc length                      09300001
+         LR    R1,R3                   "to" length                      09310001
+         MVCL  R0,R2                   move seq number                  09320001
+         LA    R1,VARNAME              "to" addr                        09330001
+         SLR   R0,R1                   calc length of variable name     09340001
+         ST    R0,SHVNAML              LENGTH OF VARIABLE NAME          09350001
+         BR    R15                     GOBACK                           09360001
+*********************************************************************** 09370000
+*                                                                     * 09380000
+*        CONSTANTS                                                    * 09390000
+*                                                                     * 09400000
+*********************************************************************** 09410000
+$CONTROL DC    C'CONTROL '                                              09420000
+$ERRORS  DC    C'ERRORS '                                               09430005
+$RETURN  DC    C'RETURN '                                               09440005
+$DISPLAY DC    C'DISPLAY '                                              09450000
+$REFRESH DC    C'REFRESH '                                              09460000
+$VCOPY   DC    C'VCOPY '                                                09470005
+$VERASE  DC    C'VERASE '                                               09480005
+$SETMSG  DC    C'SETMSG '                                               09490005
+$VDEFINE DC    C'VDEFINE '                                              09500000
+$ZERRMSG DC    C'ZERRMSG '                                              09510000
+$ZENVIR  DC    C'ZENVIR '                                               09520005
+$SAVE    DC    C'SAVE '                                                 09530005
+$RESTORE DC    C'RESTORE '                                              09540003
+$ZCMD    DC    C'ZCMD '                                                 09550005
+$VIEW    DC    C'VIEW '                                                 09560005
+$MOVE    DC    C'MOVE '                                                 09570005
+SYNTAXMSG DC     C'Syntax: CALL STEMEDIT service<,stemname><,firstelem>X09580001
+               <,stemcount><,title><,panel><,lrecl><,recfm><,profile>'  09590000
+*********************************************************************** 09600000
+*                                                                     * 09610000
+*        Dynamic Storage Area - LOC=BELOW                             * 09620000
+*                                                                     * 09630000
+*********************************************************************** 09640000
+DYNAM    DSECT                                                          09650000
+         DS    18F                     MAIN-LINE                        09660000
+SAVE2    DS    18F                     Save area for cmd rtne           09670003
+SAVE3    DS    18F                     Save area for read/write rtnes   09680003
+*                                                                       09690000
+DWD      DS    D                       work area for CVB/CVD            09700001
+R15R0R1  DS    A(R15,R0,R1)            regs at entry to STEMEDIT        09710001
+ISPLINK@ DS    V(ISPLINK)              ISPF INTERFACE                   09720005
+ADDR_OF_ENVBLOCK EQU R15R0R1+4,4,C'A'  ENVIRONMENT BLOCK                09730000
+PANEL_NAME DS  C'ISRBROBA'             PANEL (6th arg)                  09740000
+TITLE    DS    CL54                    Title                            09750000
+SERVICE  DS    C'BROWSE'               ISPF Service ("B" or "V" or "E") 09760000
+RECFM    DS    C'V '                   record format                    09770000
+PROFILE_NAME DS CL8'TEXT'              profile name for EDIF/VIIF       09780000
+STEMNAME DS    A,F                     ADDR/LEN OF STEM NAME (2nd arg)  09790000
+CURRECNO DS    F                       first element (3rd arg)          09800000
+STEMCOUNT DS   F                       number of variables (4th arg)    09810000
+LRECL    DS    F                       record length (7th arg)          09820000
+LASTLINE DS    F                       last line number                 09830000
+WRTLINUM DS    F                       line number for write rtne       09840001
+LINE_LEN_ADDR DS F,A(LINE_DSECT)       length and address of LINE fld   09850003
+PARMLIST DS    12F                     EDIF/BRIF/VIIF Parm List         09860000
+RDCMDWR  DS    A(RDRTNE,CMDRTNE,WRITERTN) READ/CMD/WRITE Routines       09870005
+IRXEXCOM_REGS DS A(R15,R0,R1)          IRXEXCOM                         09880000
+IRXEXCOM_PARM DS 4A                    IRXEXCOM                         09890000
+IRXSTK_PARM DS 6A                      IRXSTK                           09900000
+DYNAM_SHVB DS  XL(SHVBLEN)             SHVB (IRXEXCOM)                  09910000
+RETCODE  DS    F                       RETURN CODE                      09920000
+VALUE    DS    F                       VALUE RETURNED BY FUNCTION       09930000
+ZENVIR   DS    CL32'ISPF 3.2'          CURRENT ISPF LEVEL               09940005
+ZERRMSG  DS    CL8                     error message                    09950000
+WORK80   DS    CL80                    work area                        09960003
+VARNAME  DS    CL255                   variable name                    09970001
+BLANKS   DS    CL256                   a bunch of blanks                09980000
+DYNAML   EQU   *-DYNAM                                                  09990000
+*                                                                       10000003
+LINE_DSECT DSECT                       RMODE=31                         10010003
+LINE     DS    CL32760                                                  10020003
+*                                                                       10030003
+         PRINT NOGEN                                                    10040000
+         IRXEFPL DSECT=YES             External Function Parm List      10050000
+         IRXENVB                       Environment Block                10060000
+         IRXEXTE                       External Function Entry Points   10070000
+         IRXSHVB                       Shared REXX Variable Req Block   10080000
+         YREGS                         Register Equates (R0-R15)        10090000
+         END                                                            10100000
+//SYSLIB   DD DSN=SYS1.MACLIB,DISP=SHR                                  10130000
+//SYSUT1   DD UNIT=VIO,SPACE=(CYL,2)                                    10150000
+//SYSPRINT DD SYSOUT=*                                                  10160000
+//SYSLIN   DD UNIT=VIO,SPACE=(TRK,1),DISP=(,PASS),BLKSIZE=3200          10170001
+//*                                                                     10180006
+//LKED    EXEC PGM=IEWL,PARM='LIST,MAP,RENT,REFR'                       10300000
+//SYSLIN   DD DSN=*.HLASM.SYSLIN,DISP=(OLD,DELETE)                      10310000
+//SYSPRINT DD SYSOUT=*                                                  10320000
+//SYSLMOD  DD DSN=GILBERT.FILE183.LOAD(STEMEDIT),DISP=SHR               10330002

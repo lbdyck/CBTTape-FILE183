@@ -1,0 +1,60 @@
+//GILBERTC JOB (ACCT#),CMDJ,                                            00010000
+// NOTIFY=&SYSUID,                                                      00020000
+// CLASS=A,MSGCLASS=H,COND=(0,NE)                                       00030000
+//ASMH EXEC PGM=IEV90,PARM='NODECK,OBJECT,NOESD,NORLD,NOXREF'           00040000
+*********************************************************************** 00050000
+*                                                                     * 00060000
+*        SEND A JES2 COMMAND FOR CURRENT JOB                          * 00070000
+*                                                                     * 00080000
+*        EXAMPLE:                                                     * 00090000
+*                                                                     * 00100000
+*           //PURGE   EXEC PGM=CMDJES2,PARM=P       PURGE THE JOB     * 00110000
+*                                                                     * 00120000
+*           SENDS A $PJ##### COMMAND TO JES2, WHERE ##### IS THE      * 00130000
+*           JOB'S OWN JOB NUMBER.                                     * 00140000
+*                                                                     * 00150000
+*        WARNING !!! THIS PROGRAM MUST BE APF-AUTHORIZED.             * 00160000
+*                                                                     * 00170000
+*********************************************************************** 00180000
+CMDJES2  CSECT                                                          00190000
+CMDJES2  RMODE ANY                                                      00200000
+         SAVE  (14,12),,'GSF UTILITIES - CMDJ R100'                     00210000
+         LR    R12,R15                                                  00220000
+         USING CMDJES2,R12                                              00230000
+         L     R10,0(,R1)           PARM ADDRESS                        00240000
+         LH    R14,0(,R10)          PARM LENGTH                         00250000
+         CH    R14,=Y(L'CMD1CMD)    TOO LONG?                           00260000
+         BH    RC12                 YES, QUIT                           00270000
+         BCTR  R14,0                                                    00280000
+         EX    R14,*+4                                                  00290000
+         MVC   CMD1CMD(*-*),2(R10)  MOVE COMMAND                        00300000
+         L     R3,X'21C'            PSATOLD (CURRENT TCB)               00310000
+         L     R4,X'0B4'(,R3)       JSCB                                00320000
+         L     R5,X'13C'(,R4)       SSIB                                00330000
+         MVC   CMD1JOBI,X'00C'(R5)  SSIBJBID=JOB01234                   00340000
+         MVI   CMD1JOBI+1,C' '      O                                   00350000
+         MVI   CMD1JOBI+2,C' '      B                                   00360000
+         MODESET KEY=ZERO,MODE=SUP                                      00370000
+         SLR   R0,R0                                                    00380000
+         MGCR  CMD1                                                     00390000
+         MODESET KEY=NZERO,MODE=PROB                                    00400000
+         STIMER WAIT,BINTVL==A(500) WAIT 5 SECONDS                      00410000
+         RETURN (14,12),RC=0                                            00420000
+RC12     RETURN (14,12),RC=12       PARM IS TOO LONG                    00430000
+CMD1     WTO   '$                                     ',MF=L            00440000
+CMD1CMD  EQU   CMD1+5,24   P                                            00450000
+CMD1JOBI EQU   CMD1+6,8    JOB03210                                     00460000
+         YREGS                                                          00470000
+         END                                                            00480000
+//SYSLIB   DD DSN=SYS1.MACLIB,DISP=SHR                                  00490000
+//SYSUT1   DD UNIT=VIO,SPACE=(CYL,1)                                    00500000
+//SYSLIN   DD UNIT=VIO,SPACE=(TRK,1),DISP=(,PASS),DCB=BLKSIZE=3200      00510000
+//SYSPRINT DD SYSOUT=*                                                  00520000
+//*                                                                     00530000
+//LKED    EXEC PGM=IEWL,PARM='MAP,AC=1'                                 00540000
+//SYSLIN   DD DSN=*.ASMH.SYSLIN,DISP=(OLD,DELETE)                       00550000
+//SYSPRINT DD SYSOUT=*                                                  00560000
+//SYSLMOD  DD DSN=SYS1.P390.LINKLIB(CMDJES2),DISP=SHR                   00570000
+//*                                                                     00580000
+//GO      EXEC PGM=CMDJES2,PARM=P                     PURGE THE JOB     00590000
+//STEPLIB  DD DSN=SYS1.P390.LINKLIB,DISP=SHR                            00600000

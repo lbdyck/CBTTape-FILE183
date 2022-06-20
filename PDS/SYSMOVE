@@ -1,0 +1,768 @@
+//GILBERTM JOB (ACCT#),SYSMOVE,                                         00010000
+// NOTIFY=&SYSUID,                                                      00020000
+// CLASS=A,MSGCLASS=H,COND=(0,NE)                                       00030000
+//HLASM EXEC PGM=ASMA90,PARM=(OBJECT,NODECK,NOESD,NORLD,NOXREF)         00040004
+*PROCESS BATCH,USING(NOMAP,WARN(8))                                     00050003
+*********************************************************************** 00060000
+*                                                                     * 00070000
+* MODULE NAME = SYSMOVE                                               * 00080003
+*                                                                     * 00090000
+* DESCRIPTIVE NAME = Unload a PDS in IEHMOVE format                   * 00100003
+*                                                                     * 00110000
+* FUNCTION = The SYSMOVE program unloads a PDS to a sequential        * 00120003
+*        data set in IEHMOVE format.  The resulting data set          * 00130003
+*        (which is DSORG=PS,RECFM=FB,LRECL=80) can be written to      * 00140003
+*        disk or tape, and later used as input to IEHMOVE to          * 00150003
+*        reload the original PDS.                                     * 00160003
+*                                                                     * 00170000
+* STATUS = R405                                                       * 00180005
+*                                                                     * 00190000
+* AUTHOR = Gilbert Saint-Flour <carlos@gsf-soft.com>                  * 00200004
+*                                                                     * 00210000
+* NOTES = SEE BELOW                                                   * 00220003
+*                                                                     * 00230000
+*    DEPENDENCIES = STRING Macro                                      * 00240004
+*                                                                     * 00250000
+*    AUTHORIZATION = NONE                                             * 00260003
+*                                                                     * 00270000
+*    RESTRICTIONS = NONE                                              * 00280003
+*                                                                     * 00290000
+* MODULE TYPE = PROCEDURE, (BATCH PROGRAM)                            * 00300003
+*                                                                     * 00310000
+*    PROCESSOR = IBM OS/ASSEMBLER H VERSION 2 OR                      * 00320003
+*                IBM HIGH LEVEL ASSEMBLER/MVS                         * 00330003
+*                                                                     * 00340000
+*    MODULE SIZE = 4K                                                 * 00350003
+*                                                                     * 00360000
+*    ATTRIBUTES = REUSABLE, RMODE 24, AMODE 24,                       * 00370003
+*                 PROBLEM STATE, KEY 8                                * 00380003
+*                                                                     * 00390000
+* OPERATION = See Below                                               * 00400003
+*                                                                     * 00410000
+*        Sample invocation JCL:                                       * 00420000
+*                                                                     * 00430000
+*            //UNLOAD EXEC PGM=SYSMOVE                                * 00440000
+*            //SYSPRINT DD SYSOUT=*                                   * 00450000
+*            //SYSUT1   DD DSN=INPUT.PDS,DISP=SHR                     * 00460000
+*            //SYSUT2   DD DSN=OUTPUT.FLAT,DISP=(,CATLG),             * 00470000
+*            // UNIT=SYSDA,SPACE=(TRK,(50,50),RLSE)                   * 00480000
+*                                                                     * 00490000
+*        Notes:                                                       * 00500000
+*                                                                     * 00510000
+*          1. SYSMOVE is fully compatible with SMS (which is not the  * 00520000
+*             case with IEHMOVE).                                     * 00530000
+*                                                                     * 00540000
+*          2. SYSMOVE imposes no restriction on the BLKSIZE of SYSUT2 * 00550000
+*             which can be any multiple of 80 you choose.  However,   * 00560000
+*             in order for IEHMOVE to reload it successfully, the     * 00570000
+*             BLKSIZE of the unloaded data set must be 800.           * 00580000
+*                                                                     * 00590000
+*          3. SYSMOVE does not support NOTE lists (as created by the  * 00600000
+*             linkage editor for load-modules in overlay format).     * 00610000
+*                                                                     * 00620000
+*          4. SYSMOVE can unload a full PDS or a single member.       * 00630003
+*             If you want to unload several PDS's and/or selected     * 00640003
+*             members, use the merge/selection capabilities of        * 00650003
+*             IEBCOPY to create a temporary PDS, then run SYSMOVE     * 00660003
+*             to unload it.                                           * 00670003
+*                                                                     * 00680000
+*          5. SYSMOVE is a convenient way to distribute a PDS         * 00690003
+*             via a network; see "usage notes", below.                * 00700003
+*                                                                     * 00710000
+*          6. SYSMOVE can be used recursively to distribute several   * 00720003
+*             PDSs as a single FB/80 file: unload each PDS with       * 00730003
+*             SYSMOVE into a temporary FB/80, unload the temporary    * 00740003
+*             PDS with SYSMOVE, and ship the resulting sequential     * 00750003
+*             data set.  The receiver can use IEBGENER to copy each   * 00760003
+*             member to a sequential data set and feed it to          * 00770003
+*             IEHMOVE to reload each of the initial PDSs.             * 00780003
+*                                                                     * 00790000
+*          7. unloaded PDS's in IEHMOVE format can be processed       * 00800003
+*             in CMS with the TAPEMAC and TAPPDS commands.            * 00810001
+*                                                                     * 00820000
+*                                                                     * 00830000
+* ABENDS:     U0013 OPEN Failed, probably because a DD is missing     * 00840003
+*                                                                     * 00850000
+* USAGE NOTES: See below                                              * 00860003
+*                                                                     * 00870000
+*    Using SYSMOVE to distribute a PDS on PC diskettes.               * 00880000
+*                                                                     * 00890000
+*        SYSMOVE provides a convenient way to distribute a PDS via    * 00900000
+*        PC diskette, using the following procedure:                  * 00910000
+*                                                                     * 00920000
+*          1. unload the PDS with SYSMOVE                             * 00930000
+*                                                                     * 00940000
+*          2. download the unloaded data set to a PC in EBCDIC        * 00950000
+*             using the "RECEIVE" command:                            * 00960000
+*                                                                     * 00970000
+*                 RECEIVE pc_file_name unloaded_data_set_name         * 00980000
+*                                                                     * 00990000
+*          3. pack the PC file with PKZIP (or equivalent)             * 01000000
+*                                                                     * 01010000
+*          4. copy the packed file to a diskette                      * 01020000
+*                                                                     * 01030000
+*          5. send the diskette out; whoever you send it to           * 01040000
+*             does not need SYSMOVE to process it.                    * 01050000
+*                                                                     * 01060000
+*       On the receiving MVS system, re-create the PDS as follows:    * 01070000
+*                                                                     * 01080000
+*          1. unpack the diskette file (if it's been packed)          * 01090000
+*                                                                     * 01100000
+*          2. upload the unpacked file in EBCDIC                      * 01110000
+*             using the "SEND" command:                               * 01120000
+*                                                                     * 01130000
+*                 SEND pc_file_name unloaded_data_set_name            * 01140000
+*                      recfm(fb) lrecl(80) blksize(800)               * 01150000
+*                                                                     * 01160000
+*          3. load the uploaded data set into a PDS                   * 01170000
+*             using IEHMOVE:                                          * 01180000
+*                                                                     * 01190000
+*             //RELOAD EXEC PGM=IEHMOVE,PARM='POWER=4',REGION=2M      * 01200000
+*             //SYSUT1 DD DISP=OLD,UNIT=SYSALLDA,VOL=SER=nonsms       * 01210000
+*             //DD1    DD DSN=GILBERT.UNLOAD,DISP=SHR   INPUT VOLUME  * 01220000
+*             //DD2    DD DISP=OLD,UNIT=SYSALLDA,VOL=SER=nonsms       * 01230000
+*             //SYSPRINT DD SYSOUT=*                                  * 01240000
+*                COPY      DSNAME=GILBERT.UNLOAD,                    X* 01250000
+*                          TO=3380=nonsms,                           X* 01260000
+*                          RENAME=GILBERT.MYPDS,                     X* 01270000
+*                          CATLG                                      * 01280000
+*                                                                     * 01290000
+*       NOTE:  You may NOT specify SMS-managed volumes for either     * 01300001
+*              SYSUT1 (work files) or the output volume (DD2 in       * 01310001
+*              this example).  IEHMOVE uses SVC 32 (REALLOC), not     * 01320001
+*              dynamic allocation, and SVC 32 does not support        * 01330001
+*              SMS-managed volumes.                                   * 01340001
+*                                                                     * 01350000
+*CHANGE ACTIVITY                                                      * 01360003
+*                                                                     * 01370000
+*401 Build DIRTABLE and process ALIAS entries like IEHMOVE:           * 01380001
+*        1. If an ALIAS has no corresponding member, turn off         * 01390001
+*           the ALIAS indicator in the directory entry                * 01400001
+*        2. Do not write the data pointed to by ALIAS entries,        * 01410001
+*           instead, write the directory entries immediately          * 01420001
+*           after the corresponding main member's data.               * 01430001
+*402 Print number of records and bytes written to SYSUT2              * 01440002
+*403 If a member name is specified on SYSUT1, unload only this member*  01450003
+*404 Change date format to yyyy-mm-dd                                 * 01460004
+*405 Zero last reference date in F1-DSCB                              * 01470005
+*********************************************************************** 01480001
+&REL     SETC  '405'                   Current version/release          01490005
+SYSMOVE  CSECT                                                          01500000
+         SAVE  (14,12),,'GSF Utilities - SYSMOVE R&REL'                 01510003
+         LR    R12,R15                                                  01520003
+         USING SYSMOVE,R12                                              01530003
+         GETMAIN R,LV=DYNAML           GET DYNAMIC STORAGE              01540000
+         ST    R13,4(,R1)                                               01550000
+         ST    R1,8(,R13)                                               01560000
+         LA    R14,72(,R1)             CLEAR WORKING STORAGE            01570000
+         LA    R15,DYNAML-72           CLEAR WORKING STORAGE            01580000
+         SLR   R1,R1                   CLEAR WORKING STORAGE            01590000
+         MVCL  R14,R0                  CLEAR WORKING STORAGE            01600000
+         LM    R13,R1,8(R13)                                            01610000
+         USING DYNAM,R13                                                01620000
+         L     R2,0(,R1)               point to PARM field              01630000
+*                                                                       01670000
+         OPEN  MF=(E,OPENLIST)         OPEN DATA SETS                   01680001
+         LTR   R15,R15                 OPEN OK?                         01690000
+         BZ    TITLE1                  YES, JUMP                        01700000
+         ABEND 13,REASON=(15)       <- OPEN failed                      01710000
+*********************************************************************** 01720000
+*                                                                     * 01730000
+*        Print the Title Line on SYSPRINT                             * 01740001
+*                                                                     * 01750000
+*********************************************************************** 01760000
+TITLE1   TIME  DEC                     get time, date                   01770003
+         STM   R0,R1,DWD               R0=HHMMSSHH,R1=00YYDDDF          01780003
+         LH    R3,0(,R2)               parm length                      01790003
+         STRING '1GSF Utilities - SYSMOVE R&REL  ',                    X01800004
+               (DWD+4,P,YYYY-MM-DD),2X,      YYYY-MM-DD                X01810004
+               (DWD+0,1,X),':',(DWD+1,1,X),  HH:MM                     X01820000
+               '  PARM=''',(2(R2),(R3)),'''',                          X01830000
+               INTO=LINE                                                01840000
+         PUT   SYSPRINT,LINE           print title line                 01850003
+*                                                                       01860000
+         LA    R0,JFCB1                JFCB IN DYNAMIC STORAGE          01870003
+         STCM  R0,B'0111',EXL1+1       UPDATE EXIT LIST                 01880003
+         RDJFCB SYSUT2                 READ THE JFCB (SYSUT2)           01890003
+         MVC   JFCB2,JFCB1             save the SYSUT2 JFCB             01900003
+*                                                                       01910000
+         RDJFCB MF=(E,OPENDIRL)        READ THE JFCB (SYSUT1)           01920003
+*                                                                       01930000
+*        Save the member name specified on the SYSUT1 DD                01940003
+*                                                                       01950000
+         MVI   UT1MBR,FF               no member                        01960003
+         TM    JFCBIND1,JFCPDS         member name specified on sysut1? 01970003
+         BNO   PASS1                   no, jump                         01980003
+         NI    JFCBIND1,FF-JFCPDS      NO MEMBER                        01990003
+         MVC   UT1MBR,JFCBELNM         SAVE MEMBER NAME                 02000003
+*********************************************************************** 02010000
+*                                                                     * 02020000
+*        READ THE DIRECTORY                                           * 02030001
+*                                                                     * 02040000
+*           1. READ SYSUT1 DIRECTORY                                  * 02050001
+*           2. COUNT DIRECTORY ENTRIES                                * 02060001
+*           3. COUNT DIRECTORY BLOCKS AFTER LOGICAL END OF DIRECTORY  * 02070001
+*                                                                     * 02080000
+*********************************************************************** 02090000
+PASS1    OPEN  MF=(E,OPENDIRL),TYPE=J  OPEN DIRECTORY                   02100003
+         USING PDS2,R6                                                  02110001
+*LOOP                                                                   02120000
+PASS1A   BAL   R9,GETDIR            <- GET DIRECTORY ENTRY              02130000
+         CLI   PDS2,FF                 LOGICAL END OF DIRECTORY?        02140001
+         BE    PASS1F                  YES, EXIT                        02150000
+         AL    R0,DIRTABLE             tally directory entry sizes      02160001
+         ST    R0,DIRTABLE             tally directory entry sizes      02170001
+         TM    PDS2INDC,PDS2ALIS       is this an alias?                02180001
+         BO    PASS1AL                 yes, jump                        02190001
+         LA    R0,1                    COUNT MEMBERS                    02200000
+         AL    R0,MEMBERS              COUNT MEMBERS                    02210000
+         ST    R0,MEMBERS              COUNT MEMBERS                    02220000
+         B     PASS1A                                                   02230000
+PASS1AL  LA    R0,1                    COUNT ALIASES                    02240001
+         AL    R0,ALIASES              COUNT ALIASES                    02250001
+         ST    R0,ALIASES              COUNT ALIASES                    02260001
+         B     PASS1A                                                   02270001
+*ENDLOOP                                                                02280000
+*LOOP                                                                   02290000
+PASS1F   GET   SYSUT1D              <- READ NEXT DIRECTORY BLOCK        02300000
+         LTR   R1,R1                   PHYSICAL END OF DIRECTORY?       02310000
+         BZ    PASS1EOD                YES, EXIT                        02320000
+         LA    R0,1                    COUNT DIRECTORY BLOCKS           02330000
+         AL    R0,DIRBLKS              COUNT DIRECTORY BLOCKS           02340000
+         ST    R0,DIRBLKS              COUNT DIRECTORY BLOCKS           02350000
+         B     PASS1F                                                   02360000
+*ENDLOOP                                                                02370000
+PASS1EOD CLOSE MF=(E,OPENDIRL)         CLOSE DIRECTORY                  02380001
+*********************************************************************** 02390000
+*                                                                     * 02400000
+*        WRITE HEADER RECORDS                                         * 02410001
+*                                                                     * 02420000
+*           1. read the JFCB and the F1-DSCB                          * 02430001
+*           2. calculate the data set size                            * 02440001
+*           3. write UNLOAD header records                            * 02450001
+*                                                                     * 02460000
+*********************************************************************** 02470000
+         LA    R0,78                   LENGTH OF HEADER RECORD          02480000
+         LA    R1,HDR1REC              ADDR OF HEADER RECORD            02490000
+         BAL   R9,WRITE                WRITE FIRST RECORD               02500000
+         MVC   DS1DSNAM,JFCBDSNM       MOVE DSNAME                      02510000
+         MVC   DS1DSSN,JFCBVOLS        MOVE VOLSER                      02520000
+         OBTAIN CAML26                 READ F1-DSCB                     02530000
+         DEVTYPE DCBDDNAM-IHADCB+SYSUT1D,DVAREA,DEVTAB                  02540000
+*                                                                       02550000
+         MVC   UNLDDIR,DIRBLKS+2       NUMBER OF DIRECTORY BLOCKS       02560000
+         MVI   UNLDFLAG,X'40'          AVG BLK                          02570000
+         SLR   R1,R1                                                    02580000
+         ICM   R1,B'0011',DS1LSTAR     LAST TRACK USED                  02590000
+         LA    R1,1(,R1)               NUMBER OF TRACKS USED            02600000
+         ST    R1,TRKSUSED             NUMBER OF TRACKS USED            02610000
+         SLR   R2,R2                                                    02620000
+         ICM   R2,B'0011',DVATRKLN     TRACK LENGTH                     02630000
+         MR    R0,R2                   TRACKS * TRKLN                   02640000
+         STCM  R1,B'1111',UNLDSIZE     STORE RESULT                     02650000
+*                                                                       02660005
+         XC    DS1REFD,DS1REFD         ZERO THE LAST REF DATE           02670005
+*                                                                       02680000
+         TM    DS1SCALO,X'80'          ALLOC IN CYLINDERS OR TRACKS?    02690000
+         BZ    HDR1DEVT                NO, SET SSIZ=0                   02700000
+         SLR   R1,R1                                                    02710000
+         ICM   R1,B'0111',DS1SCAL3     LOAD NO OF CYLS IN R1            02720000
+         TM    DS1SCALO,X'40'          AVERAGE LENGTH?                  02730000
+         BZ    HDR1SQTY                NO, JUMP                         02740000
+         MH    R1,DVATRK               MULTIPLY BY NO OF CYL PER TRK    02750000
+HDR1SQTY MR    R0,R2                   TRACKS * TRKLN                   02760000
+         STCM  R1,B'1111',UNLDSSIZ     SECONDARY SPACE IN BYTES         02770000
+*                                                                       02780000
+HDR1DEVT MVC   UNLDDEVT,DVAUCBTY       UCB TYPE                         02790000
+         LA    R0,HDR2LEN              LENGTH                           02800000
+         LA    R1,HDR2REC              BACK END                         02810000
+         BAL   R9,WRITE                WRITE RECORD SEGMENT             02820000
+*********************************************************************** 02830000
+*                                                                     * 02840000
+*        Print Characteristics of SYSUT1 & SYSUT2                     * 02850001
+*                                                                     * 02860000
+*          INPUT PDS:                                                 * 02870001
+*            DSNAME=GILBERT.LOAD,VOL=3380=SYS157                      * 02880001
+*            RECFM=U,LRECL=0,BLKSIZE=32760                            * 02890001
+*            DIRECTORY_BLOCKS=11,MEMBERS=24,ALIASES=2                 * 02900001
+*            TRACKS_USED=22,EXTENTS_ALLOCATED=2                       * 02910001
+*                                                                     * 02920000
+*          OUTPUT SDS:                                                * 02930001
+*            DSNAME=GILBERT.UNLOAD,VOL=SER=STR319                     * 02940001
+*            RECFM=FB,LRECL=80,BLKSIZE=800                            * 02950001
+*            RECORDS=100,BYTES=8000                                   * 02960002
+*                                                                     * 02970000
+*********************************************************************** 02980000
+PRT10    STRING '0INPUT PDS:',INTO=LINE                                 02990000
+         PUT   SYSPRINT,LINE           print message                    03000000
+         STRING '0  DSNAME=',(JFCBDSNM,,T),                            X03010000
+               ',VOL=SER=',(JFCBVOLS,6),                               X03020000
+               INTO=LINE                                                03030000
+         MVC   UNITNAME+8,DVAUCBTY     move device type                 03040000
+         LINK  EP=IEFEB4UV,                                            X03050000
+               PARAM=(UNITNAME,        work area                       X03060000
+               =X'0100'),              function flags  "7"             X03070000
+               MF=(E,DWD),VL=1                                          03080000
+         LTR   R15,R15                 OK?                              03090000
+         BNZ   PRT13                   no, jump                         03100000
+         LINK  EP=IEFEB4UV,                                            X03110000
+               PARAM=(UNITNAME,        work area                       X03120000
+               =X'2000'),              function flags  "2"             X03130000
+               MF=(E,DWD),VL=1                                          03140000
+         LTR   R15,R15                 OK?                              03150000
+         BNZ   PRT13                   no, jump                         03160000
+         STRING '0  DSNAME=',(JFCBDSNM,,T),                            X03170000
+               ',VOL=',(UNITNAME,,T),'=',(JFCBVOLS,6),                 X03180000
+               INTO=LINE                                                03190000
+PRT13    PUT   SYSPRINT,LINE           print message                    03200000
+         LA    R1,RECFM                RECFM for SYSUT1                 03210000
+         BAL   R14,#RECFM1             B'11111111' -> C'VBSA'           03220000
+         STRING '   RECFM=',(RECFM,,T),                                X03230000
+               ',LRECL=',(DS1LRECL,H,L),                               X03240000
+               ',BLKSIZE=',(DS1BLKL,H,L),                              X03250000
+               INTO=LINE                                                03260000
+         PUT   SYSPRINT,LINE           print message                    03270000
+         STRING '   Directory_blocks=',(DIRBLKS,F,L),                  X03280002
+               ',Members=',(MEMBERS,F,L),                              X03290002
+               ',Aliases=',(ALIASES,F,L),                              X03300002
+               INTO=LINE                                                03310000
+         PUT   SYSPRINT,LINE           print message                    03320000
+         STRING '   Tracks_used=',(TRKSUSED,F,L),                      X03330002
+               ',Extents_allocated=',(DS1NOEPV,FL1,L),                 X03340002
+               INTO=LINE                                                03350000
+         PUT   SYSPRINT,LINE           print message                    03360000
+*                                                                       03370000
+         STRING '0OUTPUT SDS:',INTO=LINE                                03380000
+         PUT   SYSPRINT,LINE           print message                    03390000
+         STRING '0  DSNAME=',(JFCBDSNM-INFMJFCB+JFCB2,,L),             X03400000
+               ',VOL=SER=',(JFCBVOLS-INFMJFCB+JFCB2,,L),               X03410000
+               INTO=LINE                                                03420000
+         PUT   SYSPRINT,LINE           print message                    03430000
+         LA    R1,RECFM                RECFM for SYSUT1                 03440000
+         BAL   R14,#RECFM1             B'11111111' -> C'VBSA'           03450000
+         STRING '   RECFM=FB,LRECL=80',                                X03460000
+               ',BLKSIZE=',(DCBBLKSI-IHADCB+SYSUT2,H,L),               X03470000
+               INTO=LINE                                                03480000
+         PUT   SYSPRINT,LINE           print message                    03490000
+*********************************************************************** 03500001
+*                                                                     * 03510000
+*        BUILD TABLE OF DIRECTORY ENTRIES                             * 03520001
+*                                                                     * 03530000
+*********************************************************************** 03540001
+         LA    R0,1                    Room for X'FF' at end of table   03550001
+         AL    R0,DIRTABLE             SIZE OF DIRECTORY ENTRIES        03560001
+         GETMAIN RU,LV=(0),BNDRY=PAGE  GET STORAGE FOR DIRECTRY ENTRIES 03570001
+         STM   R0,R1,DIRTABLE          len/addr of dir entries          03580001
+         LR    R4,R1                   point to start of table          03590001
+         OPEN  MF=(E,OPENDIRL)         re-open DIRECTORY                03600001
+         MVI   DIRENTRY,FF             FIRST TIME SWITCH FOR "GETDIR"   03610001
+*LOOP                                                                   03620001
+BLDTBL1  BAL   R9,GETDIR            <- GET DIRECTORY ENTRY              03630001
+         CLI   PDS2,FF                 LOGICAL END OF DIRECTORY?        03640001
+         BE    BLDTBL9                 YES, EXIT                        03650001
+         CLI   UT1MBR,FF               select a member ?                03660003
+         BE    BLDTBL6                 no, jump                         03670003
+         CLC   PDS2NAME,JFCBELNM       IS IT MY MEMBER?                 03680003
+         BE    BLDTBL6                 yes, jump                        03690003
+BLDTBL5  ALR   R6,R0                   ignore this mbr                  03700003
+         B     BLDTBL1                 next directory entry             03710003
+BLDTBL6  LR    R5,R0                   size of dir entry                03720003
+         LR    R7,R0                   size of dir entry                03730001
+         MVCL  R4,R6                   move directory entry to table    03740001
+         B     BLDTBL1                 next directory entry             03750001
+*ENDLOOP                                                                03760001
+BLDTBL9  MVI   0(R4),FF                mark end of table                03770001
+         CLOSE MF=(E,OPENDIRL)         CLOSE DIRECTORY                  03780001
+         FREEPOOL SYSUT1D              FREE BUFFERS                     03790001
+         CL    R4,DIRTABLE+4           any member selected?             03800003
+         BE    EOJ                     no, exit                         03810003
+*********************************************************************** 03820001
+*                                                                     * 03830000
+*        Turn off ALIAS indicator in directory entries                * 03840001
+*        for which no main member is present.                         * 03850001
+*                                                                     * 03860000
+*********************************************************************** 03870001
+UNALIAS  ICM   R0,B'1111',ALIASES      any ALIAS?                       03880001
+         BZ    GETMBR                  no, exit                         03890001
+         L     R6,DIRTABLE+4           first directory entry            03900001
+*LOOP                                                                   03910001
+UNALIAS1 TM    PDS2INDC,PDS2ALIS       is this an alias?                03920001
+         BNO   UNALIAS8                no, ignore it                    03930001
+         L     R7,DIRTABLE+4           first directory entry            03940001
+         USING PDS2,R7                                                  03950001
+*--loop                                                                 03960001
+UNALIAS2 TM    PDS2INDC,PDS2ALIS       is this an alias?                03970001
+         BO    UNALIAS3                yes, ignore it                   03980001
+         CLC   PDS2TTRP,PDS2TTRP-PDS2(R6)   main mbr of my alias?       03990001
+         BE    UNALIAS8                yes, exit inner loop             04000001
+UNALIAS3 LA    R14,PDS2LUSR            MASK                             04010001
+         N     R14,PDS2TTRP            SIZE OF USER DATA                04020001
+         ALR   R14,R14                 size of user data in bytes       04030001
+         LA    R7,PDS2USRD(R14)        NEXT DIRECTORY ENTRY             04040001
+         CLI   PDS2,FF                 LOGICAL END OF DIRECTORY?        04050001
+         BNE   UNALIAS2                NO, NEXT MEMBER                  04060001
+*--endloop                                                              04070001
+         DROP  R7                      was PDS2 (local only)            04080001
+         NI    PDS2INDC,FF-PDS2ALIS    turn off ALIAS indicator         04090001
+*                                                                       04100000
+UNALIAS8 LA    R14,PDS2LUSR            MASK                             04110001
+         N     R14,PDS2TTRP            size of user data in half-words  04120001
+         ALR   R14,R14                 size of user data in bytes       04130001
+         LA    R6,PDS2USRD(R14)        NEXT DIRECTORY ENTRY             04140001
+         CLI   PDS2,FF                 LOGICAL END OF DIRECTORY?        04150001
+         BNE   UNALIAS1                NO, NEXT MEMBER                  04160001
+*ENDLOOP                                                                04170001
+*********************************************************************** 04180000
+*                                                                     * 04190000
+*        PROCESS DIRECTORY ENTRIES AND MEMBER DATA                    * 04200001
+*                                                                     * 04210000
+*          1.  READ DIRECTORY ENTRIES FROM "DIRTABLE"                 * 04220001
+*          2.  READ MEMBERS FROM DDN=SYSUT1 USING BPAM                * 04230001
+*          3.  PASS RECORDS TO "WRITE" ROUTINE                        * 04240001
+*          4.  Write ALIAS entry after corresponding main member      * 04250001
+*                                                                     * 04260000
+*********************************************************************** 04270000
+GETMBR   GETBUF SYSUT1M,(R3)           GET ADDR OF A BUFFER             04280001
+         ST    R3,DECB1+12             UPDATE BUFFER ADDR IN DECB       04290000
+         L     R6,DIRTABLE+4           first directory entry            04300001
+*LOOP                                                                   04310000
+GETMBR1  LA    R14,PDS2LUSR            MASK                             04320001
+         N     R14,PDS2TTRP            SIZE OF USER DATA                04330001
+         LA    R0,12(R14,R14)          SIZE OF DIRECTORY ENTRY          04340001
+         TM    PDS2INDC,PDS2ALIS       is this an alias?                04350001
+         BO    GETMBR9                 yes, ignore it                   04360001
+         STH   R0,DWD                  SIZE OF DIRECTORY ENTRY          04370000
+         MVI   DWD+2,X'C8'             THIS IS A DIRECTORY ENTRY        04380000
+         MVC   DWD+3(3),TTRN           TTRN OF PREVIOUS BLOCK           04390000
+         LA    R0,2+1+3                LENGTH,FLAGS,TTR                 04400000
+         LA    R1,DWD                  002A,C8,00000A                   04410000
+         BAL   R9,WRITE                WRITE RECORD SEGMENT             04420000
+         LH    R0,DWD                  SIZE OF DIRECTORY ENTRY          04430000
+         LA    R1,PDS2                 ADDR OF DIRECTORY ENTRY          04440001
+         BAL   R9,WRITE                WRITE RECORD SEGMENT             04450000
+         MVC   TTRN(3),8(R6)           TTR                              04460000
+         FIND  SYSUT1M,TTRN,C          POINT TO MEMBER                  04470000
+*--LOOP                                                                 04480000
+GETMBR2  READ  DECB1,SF,SYSUT1M,*-*,'S'                                 04490000
+         CHECK DECB1                                                    04500000
+         MVC   DWD(2),DCBLRECL-IHADCB+SYSUT1M                           04510000
+         MVI   DWD+2,X'E0'             DATA RECORD                      04520000
+         NOTE  SYSUT1M                 GET TTR                          04530000
+         STCM  R1,B'1110',DWD+3        SAVE TTR                         04540000
+         LA    R0,2+1+3                LENGTH,FLAGS,TTR                 04550000
+         LA    R1,DWD                  TTR                              04560000
+         BAL   R9,WRITE                WRITE RECORD SEGMENT             04570000
+         LH    R0,DCBLRECL-IHADCB+SYSUT1M                               04580000
+         L     R1,DECB1+12             BUFFER ADDR IN DECB              04590000
+         BAL   R9,WRITE                WRITE DATA                       04600000
+         B     GETMBR2                 NEXT BLOCK                       04610000
+*--ENDLOOP                                                              04620000
+*                                                                       04630000
+*        Write ALIAS directory entries corresponding to the member      04640001
+*        just written                                                   04650001
+*                                                                       04660000
+GETMBR8  ICM   R0,B'1111',ALIASES      any ALIAS?                       04670001
+         BZ    GETMBR9                 no, jump                         04680001
+         L     R7,DIRTABLE+4           first directory entry            04690001
+         USING PDS2,R7                                                  04700001
+*--LOOP                                                                 04710001
+GETMBR8B LA    R14,PDS2LUSR            MASK                             04720001
+         N     R14,PDS2TTRP            SIZE OF USER DATA                04730001
+         LA    R0,12(R14,R14)          SIZE OF DIRECTORY ENTRY          04740001
+         TM    PDS2INDC,PDS2ALIS       is this an alias?                04750001
+         BNO   GETMBR8N                no, ignore it                    04760001
+         CLC   TTRN(3),PDS2TTRP        alias of member just written?    04770001
+         BNE   GETMBR8N                no, ignore it                    04780001
+         STH   R0,DWD                  SIZE OF DIRECTORY ENTRY          04790001
+         MVI   DWD+2,X'C8'             THIS IS A DIRECTORY ENTRY        04800001
+         MVC   DWD+3(3),TTRN           TTRN OF PREVIOUS BLOCK           04810001
+         LA    R0,2+1+3                LENGTH,FLAGS,TTR                 04820001
+         LA    R1,DWD                  002A,C8,00000A                   04830001
+         BAL   R9,WRITE                WRITE RECORD SEGMENT             04840001
+         LH    R0,DWD                  SIZE OF DIRECTORY ENTRY          04850001
+         LA    R1,PDS2                 ADDR OF DIRECTORY ENTRY          04860001
+         BAL   R9,WRITE                WRITE RECORD SEGMENT             04870001
+         LH    R0,DWD                  SIZE OF DIRECTORY ENTRY          04880001
+GETMBR8N ALR   R7,R0                   NEXT DIRECTORY ENTRY             04890001
+         CLI   PDS2,FF                 LOGICAL END OF DIRECTORY?        04900001
+         BNE   GETMBR8B                NO, NEXT MEMBER                  04910001
+*--ENDLOOP                                                              04920001
+         DROP  R7                      was PDS2 (local only)            04930001
+*                                                                       04940000
+GETMBR9  LA    R14,PDS2LUSR            MASK                             04950001
+         N     R14,PDS2TTRP            size of user data in half-words  04960001
+         ALR   R14,R14                 size of user data in bytes       04970001
+         LA    R6,PDS2USRD(R14)        NEXT DIRECTORY ENTRY             04980001
+         CLI   PDS2,FF                 LOGICAL END OF DIRECTORY?        04990001
+         BNE   GETMBR1                 NO, NEXT MEMBER                  05000001
+*ENDLOOP                                                                05010000
+*********************************************************************** 05020000
+*                                                                     * 05030000
+*        END OF DIRECTORY                                             * 05040001
+*                                                                     * 05050000
+*          1.  WRITE AN EOF RECORD                                    * 05060001
+*          2.  CLOSE THE FILES                                        * 05070001
+*          3.  CLEAN UP                                               * 05080001
+*          4.  GOBACK                                                 * 05090001
+*                                                                     * 05100000
+*********************************************************************** 05110000
+EOJ      LA    R0,3                    L'TTR                            05120000
+         LA    R1,=X'0000,01'          LENGTH=0                         05130000
+         BAL   R9,WRITE                WRITE EOF RECORD                 05140000
+         LM    R4,R5,CURRENT           CURRENT ADDR & REMAINING LENGTH  05150000
+         SLR   R15,R15                 PADDING TO X'00'                 05160000
+         MVCL  R4,R14                  PAD LAST RECORD                  05170000
+*                                                                       05180000
+LASTMSG  LA    R1,80                   LRECL of SYSUT2 data set         05190003
+         M     R0,SEQNO                calculate number of bytes        05200002
+         STRING '   Records=',(SEQNO,F,L),',Bytes=',((R1),,L),INTO=LINE 05210002
+         PUT   SYSPRINT,LINE           print message                    05220002
+*                                                                       05230000
+CLOSEALL CLOSE MF=(E,OPENLIST)         CLOSE ALL DATA SETS              05240003
+         FREEPOOL SYSUT1M              FREE BUFFERS                     05250000
+         FREEPOOL SYSUT2               FREE BUFFERS                     05260000
+         FREEPOOL SYSPRINT             FREE BUFFERS                     05270000
+*                                                                       05280000
+         LM    R0,R1,DIRTABLE          len/addr of dir entries          05290001
+         FREEMAIN RU,LV=(0),A=(1)      free directory entry table       05300001
+*                                                                       05310000
+GOBACK   LR    R1,R13                                                   05320000
+         L     R13,4(,R13)                                              05330000
+         FREEMAIN R,LV=DYNAML,A=(1)    FREE DYNAMIC STORAGE             05340000
+         RETURN (14,12),RC=00          GOBACK                           05350000
+*---------------------------------------------------------------------* 05360000
+*                                                                     * 05370000
+*        Read Directory Blocks from SYSUT1D and un-block them         * 05380000
+*                                                                     * 05390000
+*        Returns:                                                     * 05400000
+*                                                                     * 05410000
+*          R0 Length of the directory entry                           * 05420000
+*          R6 Address of the directory entry (8X'FF' at EOF)          * 05430001
+*                                                                     * 05440000
+*---------------------------------------------------------------------* 05450000
+GETDIR   ICM   R6,B'1111',DIRENTRY     CURRENT DIRECTORY ENTRY          05460001
+         BP    GETDIR4                 NOT FIRST TIME, JUMP             05470000
+*LOOP                                                                   05480000
+GETDIR1  GET   SYSUT1D                 READ DIRECTORY BLOCK             05490000
+         LA    R0,1                    COUNT DIRECTORY BLOCKS           05500000
+         AL    R0,DIRBLKS              COUNT DIRECTORY BLOCKS           05510000
+         ST    R0,DIRBLKS              COUNT DIRECTORY BLOCKS           05520000
+         LA    R6,2(,R1)               FIRST ENTRY IN THIS BLOCK        05530001
+         B     GETDIR9                 EXIT                             05540000
+*--LOOP                                                                 05550000
+GETDIR4  LA    R14,PDS2LUSR            MASK                             05560001
+         N     R14,PDS2TTRP            SIZE OF USER DATA                05570001
+         LA    R14,12(R14,R14)         SIZE OF DIRECTORY ENTRY          05580000
+         L     R15,DCBRECAD-IHADCB+SYSUT1D  1ST BYTE OF CURR DIR BLK    05590000
+         AH    R15,0(,R15)             LENGTH OF CURR DIR BLK           05600000
+         BCTR  R15,0                   LIMIT FOR BXH                    05610000
+         BXH   R6,R14,GETDIR1          SIZE                             05620001
+*--ENDLOOP                                                              05630000
+GETDIR9  ST    R6,DIRENTRY             SAVE ADDR OF CURR DIR ENTRY      05640001
+         LA    R14,PDS2LUSR            MASK                             05650001
+         N     R14,PDS2TTRP            SIZE OF USER DATA                05660001
+         LA    R0,12(R14,R14)          SIZE OF DIRECTORY ENTRY          05670000
+         BR    R9                                                       05680000
+*---------------------------------------------------------------------* 05690000
+*                                                                     * 05700000
+*        Write Records to SYSUT2 in IEHMOVE format                    * 05710000
+*                                                                     * 05720000
+*---------------------------------------------------------------------* 05730000
+WRITE    LR    R2,R1                   ADDRESS                          05740000
+         LR    R3,R0                   LENGTH                           05750000
+         LM    R4,R5,CURRENT           CURRENT ADDR & REMAINING LENGTH  05760000
+*LOOP                                                                   05770000
+WRITE1   LTR   R5,R5                   ANY SPACE LEFT IN PREVIOUS RCD?  05780000
+         BP    WRITE2                  YES, JUMP                        05790000
+         PUT   SYSUT2                  NO, LOCATE ANOTHER               05800000
+         LA    R0,1                    BUMP SEQNO                       05810000
+         AL    R0,SEQNO                BUMP SEQNO                       05820000
+         ST    R0,SEQNO                BUMP SEQNO                       05830000
+         STH   R0,0(,R1)               BUMP SEQNO                       05840000
+         LA    R4,2(,R1)               ADDRESS                          05850000
+         LA    R5,78                   LENGTH                           05860000
+WRITE2   LR    R14,R4                  "TO" ADDR                        05870000
+         LR    R15,R5                  "TO" ADDR                        05880000
+         CLR   R15,R3                  INREC TOO BIG?                   05890000
+         BL    WRITE3                  NO, JUMP                         05900000
+         LR    R15,R3                  YES, TRUNCATE                    05910000
+WRITE3   ALR   R4,R15                  BUMP ADDR                        05920000
+         SLR   R5,R15                  DECREASE LENGTH                  05930000
+         MVCL  R14,R2                  FILL IN RECORD                   05940000
+         LTR   R3,R3                   INPUT RECORD ALL MOVED?          05950000
+         BP    WRITE1                  NOT YET, KEEP ON MOVING          05960000
+*ENDLOOP                                                                05970000
+         STM   R4,R5,CURRENT           CURRENT ADDR & REMAINING LENGTH  05980000
+WRITE99  BR    R9                                                       05990000
+*---------------------------------------------------------------------* 06000001
+*                                                                     * 06010000
+*        RECFM Edit Routine                                           * 06020001
+*                                                                     * 06030000
+*---------------------------------------------------------------------* 06040001
+#RECFM1  MVC   RECFM,BLANKS            INITIALIZE RECFM AREA            06050001
+         MVI   0(R1),C'U'                                               06060001
+         TM    DS1RECFM,DS1RECFU       RECFM=U?                         06070000
+         BO    #RECFM2                 YES, JUMP                        06080000
+         MVI   0(R1),C'F'                                               06090000
+         TM    DS1RECFM,DS1RECFF       RECFM=F?                         06100000
+         BO    #RECFM2                 YES, JUMP                        06110000
+         MVI   0(R1),C'V'                                               06120000
+#RECFM2  TM    DS1RECFM,DS1RECFB       RECFM=.B ?                       06130000
+         BNO   #RECFM3                 NO, JUMP                         06140000
+         MVI   1(R1),C'B'              .B                               06150000
+         LA    R1,1(,R1)                                                06160000
+#RECFM3  TM    DS1RECFM,DS1RECFS       RECFM=..S ?                      06170000
+         BNO   #RECFM4                 NO, JUMP                         06180000
+         MVI   1(R1),C'S'              ..S                              06190000
+         LA    R1,1(,R1)                                                06200000
+#RECFM4  TM    DS1RECFM,DS1RECFA       RECFM=...A ?                     06210000
+         BNO   #RECFM5                 NO, JUMP                         06220000
+         MVI   1(R1),C'A'              ...A                             06230000
+#RECFM5  TM    DS1RECFM,DS1RECMC       RECFM=...M ?                     06240000
+         BNO   #RECFM6                 NO, JUMP                         06250001
+         MVI   1(R1),C'M'              ...M                             06260000
+#RECFM6  TM    DS1RECFM,DS1RECFT       RECFM=...T ?                     06270001
+         BNOR  R14                     NO, JUMP                         06280001
+         MVI   1(R1),C'T'              ...T                             06290001
+         BR    R14                                                      06300000
+*********************************************************************** 06310001
+*                                                                     * 06320000
+*        DATA AREAS                                                   * 06330001
+*                                                                     * 06340000
+*********************************************************************** 06350001
+OPENLIST OPEN  (SYSUT1M,,SYSUT2,OUTPUT,SYSPRINT,OUTPUT),MF=L            06360001
+OPENDIRL OPEN  (SYSUT1D),MF=L                                           06370001
+SYSUT1D  DCB   DSORG=PS,MACRF=GL,DDNAME=SYSUT1,EODAD=ENDOFDIR,         X06380000
+               EXLST=EXL1,RECFM=U,BLKSIZE=256                           06390000
+EXL1     DC    A(X'87000000')          DCB EXIT LIST (SYSUT1)           06400000
+ENDOFDIR SLR   R1,R1                                                    06410000
+         BR    R14                                                      06420000
+SYSUT1M  DCB   DSORG=PO,MACRF=R,DDNAME=SYSUT1,EODAD=GETMBR8,           X06430001
+               RECFM=U,BUFNO=1                                          06440000
+SYSUT2   DCB   DSORG=PS,MACRF=PL,DDNAME=SYSUT2,                        X06450000
+               EXLST=EXL1,RECFM=FB,LRECL=80                             06460000
+SYSPRINT DCB   DSORG=PS,MACRF=PM,DDNAME=SYSPRINT,                      X06470000
+               RECFM=FBA,LRECL=121                                      06480000
+CAML26   CAMLST SEARCH,DS1DSNAM,DS1DSSN,DS1FMTID                        06490000
+BLANKS   DC    CL(L'RECFM)' '                                           06500001
+FF       EQU   X'FF'                                                    06510001
+*                                                                       06520000
+*        HEADER RECORDS (IEHMVSSX/IEHMVSXY)                             06530000
+*                                                                       06540000
+HDR1REC  DC    H'75',X'0E'             HEADER RECORD                    06550000
+         DC    C'THIS IS AN UNLOADED DATA SET PRODUCED BY',X'80'        06560000
+         DC    C'THE IBM UTILITY, SYSMOVE.'                             06570000
+         DC    C'OMMBRLDWB'            WHATEVER                         06580000
+*                                                                       06590000
+HDR2REC  DC    AL2(HDR2LEN-3)          L'DSCB1 + 57                     06600000
+         DC    X'00'                   NO FLAGS                         06610000
+         IECSDSL1 1                    F1-DSCB                          06620000
+UNLDDIR  DS    XL2                     DIRECTORY QUANTITY               06630000
+UNLDFLAG DS    XL1                     UNLOAD CONTROL FLAG              06640000
+UNLDSIZE DS    XL4                     PRIM ALLOC OF DS (IN BYTES)      06650000
+UNLDSSIZ DS    XL4                     SEC ALLOCATION OF DS (IN BYTES)  06660000
+UNLDSPAR DS    XL42                    UNUSED SPARE BYTES               06670000
+UNLDDEVT DS    XL4                     FROM DEVICE TYPE                 06680000
+HDR2LEN  EQU   *-HDR2REC                                                06690000
+*---------------------------------------------------------------------* 06700004
+*                                                                     * 06710004
+*        DYNAMIC STORAGE AREA                                         * 06720004
+*                                                                     * 06730004
+*---------------------------------------------------------------------* 06740004
+DYNAM    DSECT                                                          06750000
+         DS    18F                     SAVE AREA                        06760000
+UT1MBR   DS    CL8                     SYSUT1 member                    06770003
+DWD      DS    D                                                        06780000
+UNITNAME DS    CL8,XL4,XL4,XL4,XL8     IEFEB4UV                         06790000
+DIRENTRY DS    A                       DIRECTORY ENTRY                  06800000
+DIRBLKS  DS    F                       NUMBER OF DIRECTORY BLOCKS       06810000
+MEMBERS  DS    F                       NUMBER OF MEMBERS                06820000
+ALIASES  DS    F                       NUMBER OF ALIASES                06830001
+DIRTABLE DS    F,A                     addr/size of dir entry table     06840001
+TRKSUSED DS    F                       NUMBER OF tracks used            06850000
+CURRENT  DS    A,F                     OUTPUT ADDR, LENGTH              06860000
+TTRN     DS    F                       TTRN OF FIRST/CURRENT BLOCK      06870000
+SEQNO    DS    F                       SYSUT2 RECORD SEQUENCE NUMBER    06880000
+RECFM    DS    C'VBSAMT'               Record Format                    06890001
+LINE     DS    CL121                   print line                       06900000
+         DS    0F                      ALIGN DVAREA                     06910000
+         IHADVA DSECT=NO               DEVTYPE AREA                     06920000
+         ORG   ,                       ALIGN DVAREA                     06930000
+JFCB1    DS    0F                      First JFCB for SYSUT1            06940000
+         IEFJFCBN                      JFCB for SYSUT1                  06950000
+JFCB2    DS    XL(*-JFCB1)             JFCB for SYSUT2                  06960000
+DYNAML   EQU   *-DYNAM                                                  06970000
+*                                                                       06980000
+         DCBD  DSORG=PS,DEVD=DA                                         06990000
+*@@      IHAPDS DSECT=YES,PDSBLDL=NO                                    07000001
+PDS2     DSECT                                                          07010001
+PDS2NAME DS    CL8                     member name                      07020001
+PDS2TTRP DS    XL3                     TTR                              07030001
+PDS2INDC DS    X                       flags, length of user data       07040001
+PDS2ALIS EQU   X'80'                   ALIAS entry                      07050001
+PDS2LUSR EQU   X'1F'                   len of user data in half-words   07060001
+PDS2USRD DS    0C                      start of user data               07070001
+         YREGS                                                          07080000
+         STRING GENERATE               generate literals, routine       07090000
+*---------------------------------------------------------------------* 07100004
+*                                                                     * 07110004
+*        FORMAT OF IEHMOVE UNLOAD RECORDS (IEHMVSRA)                  * 07120004
+*                                                                     * 07130004
+*    (FOR DOCUMENTATION ONLY, THIS DSECT IS NOT USED IN THE PROGRAM)  * 07140004
+*                                                                     * 07150004
+*---------------------------------------------------------------------* 07160004
+BUFFER   DSECT                                                          07170000
+         DC    H'1'                    RECORD SEQUENCE NUMBER           07180000
+RECLEN   DC    H'75'                   RECORD LENGTH                    07190000
+RECTYPE  DC    X'0E'                   RECORD TYPE                      07200000
+RTYP_TTR   EQU X'80'                   3-BYTE TTR FOLLOWS               07210000
+RTYP_PDS   EQU X'40'                   INPUT DATA SET IS A PDS          07220000
+RTYP_DATA  EQU X'20'                   MEMBER DATA                      07230000
+RTYP_NOTE  EQU X'10'                   NOTE LIST                        07240000
+RTYP_DIR   EQU X'08'                   DIRECTORY ENTRY                  07250000
+RTYP_DMY   EQU X'04'                   DUMMY RECORD                     07260000
+RTYP_HDR   EQU X'02'                   HEADER RECORD                    07270000
+RTYP_EOF   EQU X'01'                   EOF RECORD                       07280000
+RECTTR   DS    XL3                     TTR OF THIS RECORD               07290000
+RECDATA  DS    XL(BUFFER+800-*)        DATA                             07300000
+         END                                                            07310000
+//SYSPRINT DD SYSOUT=*                                                  07320000
+//SYSLIB   DD DSN=SYS1.MACLIB,DISP=SHR                                  07340000
+//         DD DSN=CBTTAPE.FILE183.PDS(STRING),DISP=SHR                  07350004
+//SYSUT1   DD UNIT=VIO,SPACE=(CYL,1)                                    07360000
+//SYSLIN   DD UNIT=VIO,SPACE=(TRK,1),DISP=(,PASS),DCB=BLKSIZE=3200      07370000
+//*                                                                     07380003
+//LKED    EXEC PGM=HEWL,PARM=REUS                                       07390003
+//SYSLIN   DD DSN=*.HLASM.SYSLIN,DISP=(OLD,DELETE)                      07400004
+//SYSLMOD  DD DSN=CBTTAPE.FILE183.LOAD(SYSMOVE),DISP=SHR                07410004
+//SYSPRINT DD SYSOUT=*                                                  07420003
+//                                                                      07430003
+//                                                                      07440003
+//GO      EXEC PGM=LOADER,PARM=NOPRINT                                  07450000
+//STEPLIB  DD DSN=CBTTAPE.FILE183.LOAD,DISP=SHR                         07460004
+//SYSLIN   DD DSN=*.HLASM.SYSLIN,DISP=(OLD,PASS)                        07470004
+//SYSPRINT DD SYSOUT=*                                                  07480000
+//SYSUT1   DD DSN=GILBERT.LOAD(BLK0),DISP=SHR                           07490003
+//SYSUT2   DD DSN=GILBERT.X80,BLKSIZE=800,DISP=SHR                      07520003
+//SYSUDUMP DD SYSOUT=*                                                  07560000
+//                                                                      07570001
+//*---------------------                                                07580000
+//DEL12 EXEC PGM=IEFBR14                                                07590000
+//DEL12 DD DSN=GILBERT.IEB12,DISP=(MOD,DELETE),SPACE=(1,0)              07600000
+//DEL12 DD DSN=GILBERT.IEB12,DISP=(OLD,DELETE),VOL=REF=SYS1.PARMLIB     07610000
+//RELOAD EXEC PGM=IEHMOVE,PARM='POWER=4'                                07620000
+//SYSUT1 DD DSN=SYS1.PARMLIB,DISP=SHR                                   07630000
+//DD1    DD DSN=GILBERT.X80,DISP=SHR                                    07640000
+//DD2    DD DSN=SYS1.PARMLIB,DISP=SHR                                   07650000
+//SYSPRINT DD SYSOUT=*                                                  07660000
+     COPY      DSNAME=GILBERT.X80,                                     X07670004
+               TO=3380=TEST01,                                         X07680003
+               RENAME=GILBERT.IEB12,                                   X07690004
+               CATLG                                                    07700000
+/*                                                                      07710000
+//*---------------------                                                07720000
+//CMPR    EXEC PGM=COMPAREX                                             07730000
+//SYSUT1   DD DSN=GILBERT.IEB11,DISP=SHR                                07740000
+//SYSUT2   DD DSN=GILBERT.X80,DISP=SHR                                  07750000
+//SYSPRINT DD SYSOUT=*                                                  07760000
+//SYSIN    DD DUMMY                                                     07770000

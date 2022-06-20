@@ -1,0 +1,167 @@
+//GILBERTJ JOB (ACCT#),JOBRLSE,                                         00010000
+// NOTIFY=&SYSUID,                                                      00020000
+//*RESTART=EXEC,                                                        00030000
+// CLASS=A,MSGCLASS=H,COND=(0,NE)                                       00040000
+//*                                                                     00050000
+//HLASM EXEC PGM=ASMA90,PARM=(OBJECT,NODECK,NOESD,NORLD,NOXREF)         00060000
+*PROCESS BATCH,USING(NOMAP,WARN(8))                                     00070000
+*********************************************************************** 00080000
+*                                                                     * 00090000
+*                       JOB RELEASE (JES2)                            * 00100000
+*                                                                     * 00110000
+*********************************************************************** 00120000
+*                                                                     * 00130000
+*        THIS PROGRAM ALLOWS YOU TO ISSUE A $A COMMAND TO RELEASE     * 00140000
+*        A JOB PREVIOUSLY SUBMITTED WITH "TYPRUN=HOLD".               * 00150000
+*                                                                     * 00160000
+*        TO PREVENT "MULTIPLE JOBS FOUND" PROBLEMS, THIS PROGRAM      * 00170000
+*        USES THE SUB-SYSTEM INTERFACE TO INQUIRE ABOUT THE STATUS    * 00180000
+*        OF HOMONYM JOBS.  IT THEN ISSUES A $A COMMAND WITH THE JOB   * 00190000
+*        NUMBER (FOR EXAMPLE: $A JOB01234) OF THE FIRST JOB FOUND     * 00200000
+*        IN THE INPUT QUEUE IN HELD STATUS.                           * 00210000
+*                                                                     * 00220000
+*        SAMPLE EXECUTION JCL:                                        * 00230000
+*                                                                     * 00240000
+*          //RLSENEXT EXEC PGM=JOBRLSE,PARM=JOBNAME                   * 00250000
+*                                                                     * 00260000
+*        WARNING !!! THIS PROGRAM MUST BE APF-AUTHORIZED.             * 00270000
+*                                                                     * 00280000
+*********************************************************************** 00290000
+JOBRLSE  CSECT                                                          00300000
+JOBRLSE  RMODE ANY                                                      00310000
+MAXJOBS  EQU   200                     MAX NUMBER OF HOMONYM JOBS       00320000
+         SAVE  (14,12),,'GSF UTILITIES - JOBRLSE R100'                  00330000
+         LR    R12,R15                                                  00340000
+         USING JOBRLSE,R12                                              00350000
+         ST    R13,SAVEAREA+4                                           00360000
+         LA    R13,SAVEAREA                                             00370000
+*                                                                       00380000
+*        VALIDATE JCL PARM                                              00390000
+*                                                                       00400000
+         L     R2,0(,R1)               JCL PARM ADDRESS                 00410000
+         LH    R3,0(,R2)               PICK UP LENGTH                   00420000
+         LTR   R3,R3                                                    00430000
+         BNP   RETURN16                INVALID PARM LENGTH              00440000
+         CH    R3,=H'8'                                                 00450000
+         BH    RETURN16                INVALID PARM LENGTH              00460000
+*                                                                       00470000
+*        ALLOCATE A SSOB AND BUILD IT.                                  00480000
+*                                                                       00490000
+         LA    R0,SSOBHSIZ+SSCSELSZ*MAXJOBS+256                         00500000
+         GETMAIN RU,LV=(0)                                              00510000
+         ST    R1,SSOBPTR1                                              00520000
+         OI    SSOBPTR1,X'80'                                           00530000
+         LR    R11,R1                                                   00540000
+         USING SSOB,R11                                                 00550000
+         XC    SSOB(SSOBHSIZ),SSOB     BUILD THE SSOB                   00560000
+         LA    R0,SSOBHSIZ                                              00570000
+         STH   R0,SSOBLEN                                               00580000
+         MVC   SSOBID,=C'SSOB'                                          00590000
+         LA    R0,SSOBSTAT                                              00600000
+         STH   R0,SSOBFUNC             FUNCTION CODE: CANCEL/STATUS     00610000
+         LA    R0,SSOBGN                                                00620000
+         ST    R0,SSOBINDV                                              00630000
+         LA    R0,SSCSIZE                                               00640000
+         STH   R0,SSCSLEN                                               00650000
+         MVI   SSCSFLGS,0                                               00660000
+         MVI   SSCSULEN,0                                               00670000
+         MVC   SSCSJOBN,SPACES         INITIALIZE THE FIELD             00680000
+         BCTR  R3,0                                                     00690000
+         EX    R3,*+4                                                   00700000
+         MVC   SSCSJOBN(*-*),2(R2)     MOVE JOBNAME FROM PARM           00710000
+         MVC   SSCSJOBI,SPACES         JOB ID                           00720000
+         LA    R0,SSCSELSZ*MAXJOBS                                      00730000
+         STH   R0,SSCSDIMP                                              00740000
+*                                                                       00750000
+*        CALL JES2 VIA THE SUBSYSTEM INTERFACE                          00760000
+*                                                                       00770000
+         MODESET KEY=ZERO,MODE=SUP                                      00780000
+         LA    R1,SSOBPTR1                                              00790000
+         IEFSSREQ  ,                   <==== CALL JES2                  00800000
+         LTR   R2,R15                  COPY/TEST RETURN CODE            00810000
+         BZ    MODESET2                RC=0, CONTINUE                   00820000
+         ABEND 2001,DUMP,REASON=(15)   IEFSSREQ ERROR                   00830000
+MODESET2 MODESET KEY=NZERO,MODE=PROB                                    00840000
+         ICM   R15,B'1111',SSOBRETN    PICK UP RETURN-CODE              00850000
+         BZ    LOOKUP                  RC=0, CONTINUE                   00860000
+         ABEND 2002,DUMP,REASON=(15)   RETURNED LENGTH IS ZERO          00870000
+*                                                                       00880000
+*        LOOK UP JOB ID                                                 00890000
+*                                                                       00900000
+LOOKUP   LA    R3,SSCSARBG             START OF ARRAY                   00910000
+         LA    R4,SSCSELSZ             ELEMENT SIZE                     00920000
+         LH    R5,SSCSDIMR             LENGTH OF ARRAY (IN BYTES)       00930000
+         BCTR  R5,0                                                     00940000
+         ALR   R5,R3                   END OF ARRAY                     00950000
+         SLR   R3,R4                   1ST ENTRY                        00960000
+         USING SSCSARAY,R3                                              00970000
+*LOOP                                                                   00980000
+LOOP1    BXH   R3,R4,RETURN04          SCAN JOB NAMES                   00990000
+         TM    SSCSFLG1,SSCSEXCQ+SSCSHOLD                               01000000
+         BNO   LOOP1                   TRY NEXT JOB                     01010000
+*ENDLOOP                                                                01020000
+         MVC   CMDJOBI,SSCSARID        JOB NUMBER: 'JOB01234'           01030000
+         MODESET KEY=ZERO,MODE=SUP                                      01040000
+         SLR   R0,R0                   CONSOLE ID                       01050000
+         MGCR  CMD                     ISSUE 'RELEASE' COMMAND          01060000
+         MODESET KEY=NZERO,MODE=PROB                                    01070000
+         SLR   R2,R2                   RC=00                            01080000
+         B     FREEMAIN                                                 01090000
+*                                                                       01100000
+*        CLEAN UP, RETURN                                               01110000
+*                                                                       01120000
+RETURN04 LA    R2,0004(0)              NO JOB FOUND: RC=04              01130000
+*                                                                       01140000
+FREEMAIN LA    R0,SSOBHSIZ+SSCSELSZ*MAXJOBS+256                         01150000
+         FREEMAIN RU,LV=(0),A=(R11)    FREE DYNAMIC AREA                01160000
+         LR    R15,R2                  PASS RETURN CODE                 01170000
+         B     RETURN20                                                 01180000
+*                                                                       01190000
+RETURN16 LA    R15,0016                PARM ERROR: RC16                 01200000
+RETURN20 L     R13,4(,R13)                                              01210000
+         RETURN (14,12),RC=(15)        GOBACK TO SYSTEM                 01220000
+*---------------------------------------------------------------------- 01230000
+*                                                                       01240000
+*        WORK AREA                                                      01250000
+*                                                                       01260000
+*---------------------------------------------------------------------- 01270000
+SPACES   DC    CL8' '                                                   01280000
+CMD      DC    Y(CMDL,0),C'$A '                                         01290000
+CMDJOBI  DS    CL8' '                                                   01300000
+CMDL     EQU   *-CMD                                                    01310000
+SSOBPTR1 DS    A                                                        01320000
+SAVEAREA DS    18A                                                      01330000
+*---------------------------------------------------------------------- 01340000
+*                                                                       01350000
+*        CONTROL BLOCK DEFINITIONS                                      01360000
+*                                                                       01370000
+*---------------------------------------------------------------------- 01380000
+         IEFJSSOB CS                                                    01390000
+         CVT   DSECT=YES,PREFIX=NO                                      01400000
+         IEFJESCT                                                       01410000
+         YREGS                                                          01420000
+         END                                                            01430000
+//SYSLIB   DD DSN=SYS1.MACLIB,DISP=SHR                                  01440000
+//         DD DSN=SYS1.MODGEN,DISP=SHR                                  01450000
+//SYSUT1   DD UNIT=VIO,SPACE=(CYL,5)                                    01460000
+//SYSLIN   DD UNIT=VIO,SPACE=(TRK,1),DISP=(,PASS),DCB=BLKSIZE=3200      01470000
+//SYSPRINT DD SYSOUT=*                                                  01480000
+//*                                                                     01490000
+//LKED    EXEC PGM=IEWL,PARM='MAP,REUS,AC=1'                            01500000
+//SYSLIN   DD DSN=*.HLASM.SYSLIN,DISP=(OLD,DELETE)                      01510000
+//SYSPRINT DD SYSOUT=*                                                  01520000
+//SYSLMOD  DD DSN=GILBERT.LOAD(JOBRLSE),DISP=SHR    <== APF LOADLIB     01530000
+//*                                                                     01540000
+//*       TEST STEP                                                     01550000
+//*                                                                     01560000
+//EXEC    EXEC PGM=JOBRLSE,PARM=GILBERTH                                01570000
+//STEPLIB  DD DSN=*.LKED.SYSLMOD,DISP=SHR                               01580000
+//EXEC    EXEC PGM=JOBRLSE,PARM=GILBERTH                                01590000
+//STEPLIB  DD DSN=*.LKED.SYSLMOD,DISP=SHR                               01600000
+//EXEC    EXEC PGM=JOBRLSE,PARM=GILBERTH                                01610000
+//STEPLIB  DD DSN=*.LKED.SYSLMOD,DISP=SHR                               01620000
+//SYSUDUMP DD SYSOUT=*                                                  01630000
+//                                                                      01640000
+//GILBERTH JOB (ACCT#),GILBERT,TYPRUN=HOLD,       TARGET JOB            01650000
+// CLASS=A,MSGCLASS=H                             TARGET JOB            01660000
+//TGT EXEC PGM=IEFBR14                            TARGET JOB            01670000

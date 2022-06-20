@@ -1,0 +1,163 @@
+/*************************************************************** REXX */00010000
+/*                                                                    */00020000
+/* Module Name: OBEYFILE                                              */00030000
+/*                                                                    */00040000
+/* Descriptive Name:  OBEYFILE EDIT macro for ISPF and MVS TCP/IP.    */00050000
+/*                                                                    */00060000
+/* Status: R100                                                       */00070000
+/*                                                                    */00080000
+/* Function: This ISPF EDIT macro allows the TCP/IP administrator     */00090000
+/*           to use the data being edited as input to the TSO         */00100000
+/*           OBEYFILE command without having to SAVE it.              */00110000
+/*                                                                    */00120000
+/*           This EDIT macro writes the data being edited to the ISPF */00130000
+/*           control data set and issues the TSO OBEYFILE command.    */00140000
+/*                                                                    */00150000
+/*           The user can use the C, Cnn or CC/CC line command to     */00160000
+/*           select a range of lines to be passed to OBEYFILE.        */00170000
+/*                                                                    */00180000
+/*           This EDIT macro is a convenient way to test changes      */00190000
+/*           to the TCP/IP profile data set without having to         */00200000
+/*           actually save the modifications into the profile         */00210000
+/*           or another data set.                                     */00220000
+/*                                                                    */00230000
+/* Author: Gilbert Saint-Flour <carlos@gsf-soft.com>                  */00240000
+/*                                                                    */00250000
+/* Environment: ISPF/PDF V3                                           */00260000
+/*              TCP/IP for MVS                                        */00270000
+/*                                                                    */00280000
+/* Operation: OBEYFILE must be invoked as an EDIT macro without       */00290000
+/*            any parameter.  A range selection line command such     */00300000
+/*            as C, Cnn or CC/CC can be specified.                    */00310000
+/*                                                                    */00320000
+/* Change Activity:                                                   */00330000
+/*                                                                    */00340000
+/**********************************************************************/00350000
+                                                                        00360000
+ADDRESS ISPEXEC                                                         00370000
+"CONTROL ERRORS RETURN"                                                 00380000
+"ISREDIT MACRO (parm) NOPROCESS"                                        00390000
+IF rc>0 THEN SIGNAL Not_an_EDIT_macro                                   00400000
+IF parm\='' THEN SIGNAL No_Parms_allowed                                00410000
+                                                                        00420000
+/**********************************************************************/00430000
+/*                                                                    */00440000
+/*          Determine what temporary data set to use.                 */00450000
+/*                                                                    */00460000
+/*  1. If the current ISPF control data set is non-temporary          */00470000
+/*     (ztempf=userid.SPFTEMPn.CNTL), use it.                         */00480000
+/*                                                                    */00490000
+/*  2. If the control data set is preallocated to DD(ISPCTLn),        */00500000
+/*     allocate userid.SPFTEMPn.CNTL and use it.                      */00510000
+/*                                                                    */00520000
+/**********************************************************************/00530000
+                                                                        00540000
+"VGET (ZTEMPF ZTEMPN ZSCREEN ZUSER)"                                    00550000
+IF ztempn = 'ISPCTL' || zscreen then DO                                 00560000
+  ztempn = 'OBEYFILE'                                                   00570000
+  rc=LISTDSI(ztempn FILE)                                               00580000
+  IF rc=0 THEN                                                          00590000
+    ztempf = "'" || sysdsname || "'"                                    00600000
+  ELSE DO                                                               00610000
+    ztempf = "'" || zuser || ".SPFTEMP" || zscreen || ".CNTL'"          00620000
+    rc=LISTDSI(ztempf NORECALL)                                         00630000
+    IF rc=0 THEN DO                                                     00640000
+      ADDRESS TSO "ALLOCATE DD(" ztempn ") DS(" ztempf ") SHR"          00650000
+      IF rc>0 THEN EXIT rc                                              00660000
+      END                                                               00670000
+    ELSE DO                                                             00680000
+      IF sysreason = 9 | sysreason = 26 THEN                            00690000
+        "HDELETE" ztempf "WAIT"                                         00700000
+      ADDRESS TSO "ALLOCATE DD(" ztempn ") DS(" ztempf ") NEW CATALOG", 00710000
+                  "SPACE (1 1) TRACKS UNIT(SYSALLDA)",                  00720000
+                  "DSORG(PS) RECFM(F B) LRECL(80)"                      00730000
+      END                                                               00740000
+    END                                                                 00750000
+  END                                                                   00760000
+ELSE                                                                    00770000
+  ztempf = "'" || ztempf || "'"                                         00780000
+                                                                        00790000
+/**********************************************************************/00800000
+/*                                                                    */00810000
+/*   If the user selected a range by entering a line command such     */00820000
+/*   as C, Cnn or C/CC, set line1 and line2 to the first and last     */00830000
+/*   line numbers, respectively.  Otherwise, set line1 to 1 and       */00840000
+/*   line2 to the last line of the data set.                          */00850000
+/*                                                                    */00860000
+/**********************************************************************/00870000
+                                                                        00880000
+'ISREDIT PROCESS RANGE C'                                               00890000
+SELECT                                                                  00900000
+  WHEN rc=0 THEN DO                                                     00910000
+    "ISREDIT (LINE1) = LINENUM .ZFRANGE"         /* First line  */      00920000
+    "ISREDIT (LINE2) = LINENUM .ZLRANGE"         /* Last line   */      00930000
+    END                                                                 00940000
+  WHEN rc=4 THEN DO                                                     00950000
+    Line1=1                                    /*   DEFAULTS  */        00960000
+    "ISREDIT (LINE2) = LINENUM .ZLAST"         /*   DEFAULTS  */        00970000
+    END                                                                 00980000
+  WHEN rc=20 THEN                       /* All lines deleted        */  00990000
+    SIGNAL Empty_dataset                /* No lines to ROUTE        */  01000000
+  OTHERWISE DO                          /* Line command conflict    */  01010000
+    Pgmrc=rc                            /* Save ISREDIT Return code */  01020000
+    IF zerrmsg\='' THEN                                                 01030000
+      'SETMSG MSG('zerrmsg')'           /* Edit has created message */  01040000
+    EXIT Pgmrc                                                          01050000
+    END                                                                 01060000
+END                                                                     01070000
+                                                                        01080000
+/**********************************************************************/01090000
+/*                                                                    */01100000
+/*  QUEUE the data lines to the stack and write them out to &ztempf   */01110000
+/*                                                                    */01120000
+/**********************************************************************/01130000
+                                                                        01140000
+DO line1=line1 TO line2                                                 01150000
+  "ISREDIT (LINE) = LINE" Line1               /* GET CURRENT LINE */    01160000
+  QUEUE Line                                                            01170000
+  END                                                                   01180000
+QUEUE ''                                      /* end of file      */    01190000
+                                                                        01200000
+ADDRESS TSO                                                             01210000
+"EXECIO * DISKW" ztempn "(FINIS"                                        01220000
+                                                                        01230000
+/**********************************************************************/01240000
+/*                                                                    */01250000
+/*       Reallocate &ztempf with DISP(SHR) to prevent error 8538      */01260000
+/*                                                                    */01270000
+/**********************************************************************/01280000
+                                                                        01290000
+"FREE DD(" ztempn ") KEEP"                                              01300000
+IF rc>0 THEN EXIT rc                                                    01310000
+"ALLOCATE DD(" ztempn ") DS(" ztempf ")" SHR                            01320000
+IF rc>0 THEN EXIT rc                                                    01330000
+                                                                        01340000
+/**********************************************************************/01350000
+/*                                                                    */01360000
+/*             Execute the TCP/IP OBEYFILE command                    */01370000
+/*                                                                    */01380000
+/**********************************************************************/01390000
+                                                                        01400000
+"OBEYFILE" ztempf                                                       01410000
+EXIT rc                                                                 01420000
+                                                                        01430000
+/**********************************************************************/01440000
+/*                      Exception Routines                            */01450000
+/**********************************************************************/01460000
+Not_an_EDIT_macro:                                                      01470000
+  Zedsmsg = "EDIT Macro Only"                  /* Short message    */   01480000
+  Zedlmsg = "OBEYFILE may only be invoked as an EDIT macro"             01490000
+  "SETMSG MSG(ISRZ001)"                        /* send the message */   01500000
+  EXIT 8                                                                01510000
+No_Parms_allowed:                                                       01520000
+  Zedsmsg = "No parms allowed"                 /* Short message    */   01530000
+  Zedlmsg = "The OBEYFILE EDIT macro does not accept any parameters",   01540000
+            "other than a range selection line command such as",        01550000
+            "C, Cnn or CC/CC"                                           01560000
+  "SETMSG MSG(ISRZ001)"                        /* send the message */   01570000
+  EXIT 8                                                                01580000
+Empty_dataset:                                                          01590000
+  zedsmsg='Empty data set'                                              01600000
+  zedlmsg='There are no lines to print'                                 01610000
+  'SETMSG MSG(ISRZ001)'                                                 01620000
+  EXIT 12                                                               01630000

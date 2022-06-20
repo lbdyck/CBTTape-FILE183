@@ -1,0 +1,116 @@
+//GILBERTC JOB (ACCT#),CANMSGCL,                                        00010000
+// NOTIFY=&SYSUID,                                                      00020000
+// CLASS=A,MSGCLASS=H,COND=(0,NE)                                       00030000
+//ASMH EXEC PGM=IEV90,PARM=(OBJECT,NODECK,NOESD,NORLD,NOXREF)           00040000
+*********************************************************************** 00050000
+*                                                                     * 00060000
+*              CANCEL JOB'S MSGCLASS AFTER NN HOURS                   * 00070000
+*                                                                     * 00080000
+*********************************************************************** 00090000
+*                                                                     * 00100000
+*        THIS PROGRAM ALLOWS YOU TO PURGE THE OUTPUT ASSOCIATED       * 00110000
+*        WITH THE MSGCLASS OF THE JOB AFTER A CERTAIN NUMBER OF       * 00120000
+*        HOURS THAT YOU SPECIFY IN THE PARM FIELD OF THE EXEC         * 00130000
+*        STATEMENT.                                                   * 00140000
+*                                                                     * 00150000
+*        EXAMPLE:                                                     * 00160000
+*                                                                     * 00170000
+*            //MYJOB    JOB ACCT#,CLASS=A,MSGCLASS=H                  * 00180000
+*            //COPY1   EXEC PGM=IEBCOPY                               * 00190000
+*            //...      DD   ...                                      * 00200000
+*            //CONDPURG EXEC PGM=CANMSGCL,PARM=2,COND=(0,NE,COPY1)    * 00210000
+*                                                                     * 00220000
+*        IF THE 'COPY1' STEP ENDS AT 10:28 AM WITH A RETURN CODE      * 00230000
+*        EQUAL TO ZERO, THE 'CONDPURG' STEP EXECUTES AND ISSUES       * 00240000
+*        THE FOLLOWING COMMAND:                                       * 00250000
+*                                                                     * 00260000
+*               $TA,T=12.28,'$OJ01234,Q=X,CANCEL'                     * 00270002
+*                                                                     * 00280000
+*        NOTES:                                                       * 00290000
+*                                                                     * 00300000
+*           1. THE PROGRAM MUST BE APF-AUTHORIZED.                    * 00310000
+*                                                                     * 00320000
+*           2. THE MSGCLASS MUST BE HELD.                             * 00330000
+*                                                                     * 00340000
+*           3. THE NUMBER OF OUTSTANDING AUTOMATIC COMMANDS IS        * 00350000
+*              LIMITED BY THE 'AUTOCMD' PARAMETER IN JES2PARM.        * 00360000
+*              IF EXCEEDED, THE COMMAND IS IGNORED.                   * 00370000
+*                                                                     * 00380002
+*           4. THE PROGRAM WORKS WITH 5-DIGIT JOB NUMBERS.            * 00390002
+*                                                                     * 00400000
+*********************************************************************** 00410000
+CANMSGCL CSECT                                                          00420000
+         SAVE  (14,12),,'GSF UTILITIES - CANMSGCL R103'                 00430003
+         LR    R12,R15                                                  00440003
+         USING CANMSGCL,R12                                             00450003
+         L     R2,0(,R1)               PARM ADDRESS                     00460000
+         LH    R14,0(,R2)              PARM LENGTH                      00470000
+         BCTR  R14,0                                                    00480000
+         PACK  DELAY,2(*-*,R2)         PACK NUMBER OF HOURS             00490000
+         EX    R14,*-6                 EXECUTE PACK INSTRUCTION         00500000
+*                                                                       00510000
+*        GET JOB NUMBER FROM SSIB                                       00520000
+*                                                                       00530000
+         L     R4,540(,0)              PSATOLD                          00540003
+         L     R5,TCBJSCB-TCB(,R4)     PTR TO JSCB                      00550001
+         USING IEZJSCB,R5                                               00560001
+         L     R6,JSCBSSIB             PTR TO SSIB                      00570001
+         USING SSIB,R6                                                  00580001
+         MVC   JOBID+0(1),SSIBJBID+0   J                                00590000
+         MVC   JOBID+1(5),SSIBJBID+3    01234                           00600002
+         L     R8,JSCBJCT              PTR TO JCT                       00610001
+         USING JCT,R8                                                   00620001
+         MVC   MSGCLASS,JCTJMGPO       MSGCLASS                         00630000
+         DROP  R5,R6,R8                JSCB, SSIB, JCT                  00640001
+*                                                                       00650000
+*        GET CURRENT TIME, MOVE IT TO "HHMM" FIELD                      00660000
+*                                                                       00670000
+         TIME  DEC                     HHMMSS00                         00680000
+         SRL   R0,12(0)                000HHMM0                         00690000
+         ST    R0,SYSTIME              000HHMM0                         00700000
+         OI    SYSTIME+3,15            000HHMMF                         00710000
+         UNPK  HHMM+3(2),SYSTIME+2(2)  MOVE MM                          00720000
+         OI    SYSTIME+2,15            000HHF??                         00730000
+         AP    SYSTIME+1(2),DELAY      ADD HOURS FROM PARM              00740000
+         OI    SYSTIME+2,15            000HHF??                         00750000
+         UNPK  HHMM+0(2),SYSTIME+1(2)  MOVE HH                          00760000
+         MVI   HHMM+2,C'.'             HH.MM                            00770000
+         MODESET KEY=ZERO,MODE=SUP                                      00780000
+         SLR   R0,R0                   DUMMY CONSOLE ID                 00790000
+         MGCR  MGCR1L                  ISSUE COMMAND                    00800000
+         RETURN  (14,12),RC=00         GO BACK TO SYSTEM                00810000
+*                                                                       00820000
+MGCR1L   WTO   '$TA,T=HH.MM,''$OJ01234,Q=$,CANCEL''',MF=L               00830002
+HHMM     EQU   MGCR1L+10               HH.MM                            00840000
+JOBID    EQU   MGCR1L+19,6             JOB ID                           00850002
+MSGCLASS EQU   MGCR1L+28,1             MESSAGE CLASS                    00860002
+DELAY    DS    P'24'                   NUMBER OF HOURS, FROM PARM       00870000
+SYSTIME  DS    F                       CURRENT SYSTEM TIME              00880000
+*                                                                       00890000
+         YREGS                                                          00900003
+*                                                                       00910000
+         IKJTCB LIST=NO                TCB DSECT                        00920000
+*                                                                       00930000
+         IEZJSCB                       JSCB DSECT                       00940000
+*                                                                       00950000
+JCT      DSECT                                                          00960000
+         DS    4F                      JCT PREFIX                       00970000
+         IEFAJCTB                      JCT DSECT                        00980000
+*                                                                       00990000
+         IEFJSSIB                      SSIB DSECT                       01000000
+         END                                                            01010000
+//SYSLIB   DD DSN=SYS1.MACLIB,DISP=SHR                                  01020003
+//         DD DSN=SYS1.MODGEN,DISP=SHR                                  01030003
+//SYSUT1   DD UNIT=VIO,SPACE=(CYL,2)                                    01040003
+//SYSPRINT DD SYSOUT=*                                                  01050003
+//SYSLIN   DD UNIT=VIO,SPACE=(TRK,1),DISP=(,PASS),DCB=BLKSIZE=3200      01060003
+//*                                                                     01070000
+//LKED    EXEC PGM=HEWL,PARM='MAP,REUS,AC=1'                            01080003
+//SYSLIN   DD DSN=*.ASMH.SYSLIN,DISP=(OLD,DELETE)                       01090003
+//SYSPRINT DD SYSOUT=*                                                  01100003
+//SYSLMOD  DD DSN=SYS2.AUTHLIB(CANMSGCL),DISP=SHR                       01110003
+//*                                                                     01120000
+//GO      EXEC PGM=CANMSGCL,PARM=2                                      01130003
+//STEPLIB  DD DSN=SYS2.AUTHLIB,DISP=SHR                                 01140003
+//SYSUDUMP DD SYSOUT=*                                                  01150000
+//ABNLNODP DD DUMMY                                                     01160000

@@ -1,0 +1,366 @@
+//GILBERTA JOB (ACCT#),UNITAFF,                                         00010000
+// NOTIFY=&SYSUID,                                                      00020000
+//*RESTART=UNITAFF,                                                     00030000
+// CLASS=A,MSGCLASS=H,COND=(0,NE)                                       00040000
+//HLASM EXEC PGM=ASMA90,PARM=(OBJECT,NODECK,NOESD,NORLD,NOXREF)         00050000
+*********************************************************************** 00060000
+*                                                                     * 00070000
+* MODULE NAME = UNITAFF                                               * 00080000
+*                                                                     * 00090000
+* DESCRIPTIVE NAME = Dynamically set UNIT=AFF for input tape files    * 00100000
+*                                                                     * 00110000
+* FUNCTION = This program was originally designed to reduce the       * 00120000
+*            number of tape drives used by user-submitted SAS jobs.   * 00130000
+*            It scans the SWA of the next step and changes some of    * 00140000
+*            the SIOT pointers to force all input tape data sets to   * 00150000
+*            use the same drive.                                      * 00160000
+*                                                                     * 00170000
+* STATUS = R101                                                       * 00180000
+*                                                                     * 00190000
+* AUTHOR = Gilbert Saint-Flour <carlos@gsf-soft.com>                  * 00200000
+*                                                                     * 00210000
+* DEPENDENCIES = MVS/XA, MVS/ESA, OS/390, z/OS                        * 00220000
+*                                                                     * 00230000
+* AUTHORIZATION = APF                                                 * 00240000
+*                                                                     * 00250000
+* MODULE TYPE = PROCEDURE, (BATCH PROGRAM)                            * 00260000
+*                                                                     * 00270000
+*    PROCESSOR = IBM OS/ASSEMBLER H VERSION 2 OR                      * 00280000
+*                IBM HIGH LEVEL ASSEMBLER/MVS                         * 00290000
+*                                                                     * 00300000
+*    MODULE SIZE = 3K                                                 * 00310000
+*                                                                     * 00320000
+*    ATTRIBUTES = NOREUS, RMODE ANY, AMODE 31,                        * 00330000
+*                 PROBLEM STATE, KEY ZERO                             * 00340000
+*                                                                     * 00350000
+* OPERATION = UNITAFF must be executed immediately before the step    * 00360000
+*             to process (SAS, SORT, or any other program that reads  * 00370000
+*             a variable number of tape files, one at a time).        * 00380000
+*                                                                     * 00390000
+*             Sample JCL:                                             * 00400000
+*                                                                     * 00410000
+*               //UNITAFF EXEC PGM=UNITAFF                            * 00420000
+*               //STEPLIB  DD DSN=SYS2.AUTHLIB,DISP=SHR               * 00430000
+*               //*                                                   * 00440000
+*               //STEP53  EXEC PGM=SAS                                * 00450000
+*               //OSIN     DD DSN=USER1.X,DISP=SHR                    * 00460000
+*               //         DD DSN=UPQE.DQE40530(-1),DISP=SHR          * 00470000
+*               //OSIN2    DD DSN=UPQR.DQR02150(0),DISP=SHR           * 00480000
+*               //OSIN3    DD DSN=USER1.X,DISP=SHR                    * 00490000
+*               //         DD DSN=UPBG.DBGA0240(-1),DISP=SHR          * 00500000
+*               //OSIN4    DD DSN=USER1.X,DISP=SHR                    * 00510000
+*               //         DD DSN=USER1.YY,DISP=SHR                   * 00520000
+*               //         DD DSN=UPQR.DQR02140(-1),DISP=SHR          * 00530000
+*                                                                     * 00540000
+*             This program only supports cataloged data sets;         * 00550000
+*             relative generation numbers are handled                 * 00560000
+*             correctly via the GDGNT.                                * 00570000
+*                                                                     * 00580000
+*             No distinction is made between 3420 and 3480 types,     * 00590000
+*             which will cause incorrect results if the input to      * 00600000
+*             a step is mixed.                                        * 00610000
+*                                                                     * 00620000
+*Changes:                                                             * 00630001
+* 101 Fix SWA=BELOW bug                                               * 00640001
+*********************************************************************** 00650000
+UNITAFF  CSECT                                                          00660000
+UNITAFF  RMODE ANY                                                      00670001
+         SAVE  (14,12),,'GSF UTILITIES - UNITAFF R101'                  00680001
+         LR    R12,R15                 base reg                         00690001
+         USING UNITAFF,R12                                              00700001
+         LA    R0,DYNL                                                  00710000
+         GETMAIN R,LV=(0)                                               00720000
+         ST    R13,4(,R1)              CHAIN SAVE AREA                  00730000
+         LR    R13,R1                  DYN ADDRESS                      00740000
+         USING DYN,R13                                                  00750000
+         LA    R0,DYN+72               CLEAR WORKING STORAGE TO X'00'   00760000
+         LA    R1,DYNL-72              CLEAR WORKING STORAGE TO X'00'   00770000
+         SLR   R15,R15                 CLEAR WORKING STORAGE TO X'00'   00780000
+         MVCL  R0,R14                  CLEAR WORKING STORAGE TO X'00'   00790000
+*********************************************************************** 00800000
+*                                                                     * 00810000
+*        LOCATE TCB, JSCB, GDGNT.                                     * 00820000
+*        LOCATE SCT AND 1ST SIOT FOR NEXT STEP.                       * 00830000
+*                                                                     * 00840000
+*********************************************************************** 00850000
+         L     R1,540(,0)              PSATOLD                          00860001
+         L     R3,TCBJSCB-TCB(,R1)     GET THE ADDRESS OF MY JSCB       00870000
+         USING IEZJSCB,R3                                               00880000
+         L     R4,JSCBJCT              Address of JCT prefix            00890001
+         USING INJMJCT-16,R4                                            00900001
+         ICM   R1,B'0111',JCTGDGNT     3-BYTE SVA OF GDG NAME TABLE     00910000
+         BZ    NOGDGNT                 JUMP IF THERE IS NO GDGN TABLE   00920000
+         BAL   R9,SWAREQ               CONVERT SVA TO 31-BIT ADDRESS    00930000
+         ST    R1,GDGNTPTR             KEEP ADDRESS OF GDG NAMES TABLE  00940000
+*                                                                       00950000
+NOGDGNT  ICM   R1,B'0111',JSCSCTP      3-BYTE SVA OF CURRENT STEP'S SCT 00960000
+         BAL   R9,SWAREQ               CONVERT SVA TO 31-BIT ADDRESS    00970000
+         LR    R5,R1                   CURRENT STEP'S SCT ADDRESS       00980000
+         USING SCT,R5                                                   00990000
+*                                                                       01000000
+NEXTSTEP ICM   R1,B'0111',SCTANSCT     LOAD 3-BYTE SVA OF NEXT SCT      01010000
+         BZ    RETURN                  RETURN IF THERE IS NO NEXT STEP  01020000
+         BAL   R9,SWAREQ               CONVERT SVA TO 31-BIT ADDRESS    01030000
+         LR    R5,R1                   ADDRESS OF NEXT STEP'S SCT       01040000
+         ICM   R1,B'0111',SCTFSIOT     LOAD 3-BYTE SVA OF 1ST SIOT      01050000
+         BZ    RETURN                  NO DD CARDS, RETURN              01060000
+*********************************************************************** 01070000
+*                                                                     * 01080000
+*        LOOP THRU THE SIOT BLOCKS                                    * 01090000
+*                                                                     * 01100000
+*********************************************************************** 01110000
+LOOPSIOT BAL   R9,SWAREQ               CONVERT SVA TO 31-BIT ADDRESS    01120000
+         LR    R6,R1                   ADDRESS OF SIOT                  01130000
+         USING SIOT,R6                                                  01140000
+         AP    SEQ#,=P'1'              INCREMENT CURRENT SEQ#           01150000
+         TM    SCTSBYT1,SIOTCCAT       CHECK FOR CONCATENATION          01160000
+         BO    TESTDISP                JUMP IF NO DDNAME                01170000
+         MVC   DDNAME,SCTDDNAM         KEEP DDNAME                      01180000
+         SP    SEQ#,SEQ#               RESET DDSEQ                      01190000
+TESTDISP OI    SEQ#+L'SEQ#-1,X'0F'     SUPPRESS SIGN                    01200000
+         TM    SCTSBYT3,1              CHECK DISP=OLD                   01210000
+         BNO   NEXTSIOT                JUMP IF NOT DISP=OLD             01220000
+         CLI   SCTUTYPE,C' '           CHECK UNIT NAME                  01230000
+         BH    NEXTSIOT                JUMP IF THERE IS A UNIT NAME     01240000
+         TM    SCTSBYT1,SCTUNAFF       TEST UNIT=AFF BIT                01250000
+         BO    NEXTSIOT                JUMP IF UNIT=AFF ALREADY THERE   01260000
+         ICM   R1,B'0111',SCTPJFCB     LOAD 3-BYTE SVA OF JFCB          01270000
+         BAL   R9,SWAREQ               CONVERT SVA TO 31-BIT ADDRESS    01280000
+         LR    R7,R1                   ADDRESS OF JFCB                  01290000
+         USING JFCB,R7                 DSNAME FROM JFCB                 01300000
+         MVC   DSNAME,JFCBDSNM         MOVE DSN TO UNPROTECTED STORAGE  01310000
+         TM    JFCBIND1,JFCGDG         CHECK GDG INDICATOR              01320000
+         BNO   LOCATE                  JUMP IF NOT GDG                  01330000
+*--------------------------------------------------------------------*  01340000
+*        IF THE CURRENT DATA SET IS A GDG, SCAN THE GDG NAMES TABLE     01350000
+*        FOR THE CURRENT APPARENT GEN (0), IF ANY.                      01360000
+*--------------------------------------------------------------------*  01370000
+GDG000   ICM   R1,B'1111',GDGNTPTR     LOAD ADDR OF GDG NAMES TABLE     01380000
+         BZ    GDG100                  JUMP IF NO GDGNT                 01390000
+         USING GDGNTABL,R1                                              01400000
+GDG010   SLR   R14,R14                 PREPARE IC                       01410000
+         IC    R14,GDGNNO              GET NUMBER OF ENTRIES            01420000
+GDG015   CLC   GDGNGDG,DSNAME          COMPARE TABLE ENTRY W/ DSNAME    01430000
+         BNE   GDG030                  JUMP IF NOT THE SAME             01440000
+         LA    R0,GDGNGDGZ             GET PTR TO APPARENT GEN(0)       01450000
+         ST    R0,CTGWAGB              SET POINTER IN SVC 26 WORK AREA  01460000
+         OI    CTGOPTN3,CTGGDGL        SHOW CTGWAGB IS SET              01470000
+         B     GDG100                  EXIT GDGNT SCAN LOOP             01480000
+GDG030   LA    R1,GDGNGDG2             BUMP UP TO NEXT ENTRY IN BLOCK   01490000
+         BCT   R14,GDG015              LOOP UNTIL END OF BLOCK          01500000
+         ICM   R1,B'1111',GDGNNEXT     LOAD ADDR OF NEXT GDGNT BLOCK    01510000
+         BNZ   GDG010                  PROCESS NEXT BLOCK               01520000
+         NI    CTGOPTN3,255-CTGGDGL    SHOW CTGWAGB IS SET              01530000
+         DROP  R1                      GDGNTABL                         01540000
+GDG100   LA    R1,DSNAME               1ST BYTE OF DSNAME               01550000
+GDG120   LA    R1,1(,R1)               BUMP UP TO NEXT BYTE             01560000
+         CLI   0(R1),C' '              CHECK FOR A SPACE                01570000
+         BNE   GDG120                  LOOP UNTIL END OF DSNAME         01580000
+         MVI   0(R1),C'('              DSNAME(                          01590000
+         MVC   1(4,R1),JFCBELNM        DSNAME(0                         01600000
+GDG125   LA    R1,1(,R1)               BUMP UP TO NEXT BYTE             01610000
+         CLI   0(R1),C' '              CHECK FOR A SPACE                01620000
+         BNE   GDG125                  LOOP UNTIL END OF GEN. NO.       01630000
+         MVI   0(R1),C')'              DSNAME(0)                        01640000
+*--------------------------------------------------------------------*  01650000
+*        GET DEVICE TYPE INFORMATION FROM THE CATALOG.                  01660000
+*        KEEP RELATIVE DD# IF IT IS THE FIRST TAPE DD IN THE STEP.      01670000
+*--------------------------------------------------------------------*  01680000
+LOCATE   LA    R0,DSNAME               DATA SET NAME                    01690000
+         ST    R0,CTGENT               ENTRY ADDRESS                    01700000
+         OI    CTGOPTN1,CTGNAME        CTGENT POINTS TO ENTRY NAME      01710000
+         LA    R0,CTGWA                WORK AREA FOR SUPERLOCATE        01720000
+         ST    R0,CTGWKA               WORK AREA FOR SUPERLOCATE        01730000
+         OI    CTGOPTN3,CTGSUPLT       SUPER LOCATE                     01740000
+         OI    CTGOPTN3,CTGAM0         OS/VS2 CATALOG MGMT REQUEST      01750000
+         LA    R0,CTGVL                GET ADDR OF VOLUME LIST          01760000
+         ST    R0,CTGWAVL              UPDATE PTR                       01770000
+         LA    R0,CTGVLLEN             GET LENGTH OF VOLUME LIST        01780000
+         STH   R0,CTGWALV              UPDATE LENGTH                    01790000
+         LOCATE CTGPL                  ISSUE SUPERLOCATE                01800000
+         LTR   R15,R15                                                  01810000
+         BNZ   NEXTSIOT                JUMP IF DATA SET NOT CATALOGED   01820000
+         CLI   CTGVLDEV+2,X'80'        CHECK DEVICE CLASS               01830000
+         BNE   NEXTSIOT                JUMP IF NOT A TAPE               01840000
+         OC    TAPE1,TAPE1             CHECK 1ST TIME                   01850000
+         BNZ   NOTFIRST                JUMP IF NOT 1ST TIME             01860000
+         MVC   TAPE1,SCTDDINO          KEEP DD# FOR 1ST TAPE DD         01870000
+         MVC   DDNAME1,DDNAME          KEEP DDNAME                      01880000
+         UNPK  DDSEQ1,SEQ#             KEEP DDSEQ                       01890000
+         B     NEXTSIOT                JUMP IF 1ST TAPE DD              01900000
+*--------------------------------------------------------------------*  01910000
+*        UPDATE THE SIOT IF THIS IS NOT THE FIRST TAPE IN THE STEP.     01920000
+*--------------------------------------------------------------------*  01930000
+NOTFIRST MODESET KEY=ZERO                                               01940000
+         MVC   SCTUSADD,TAPE1          MOVE DD# OF 1ST TAPE DD          01950000
+         OI    SCTSBYT1,SCTUNAFF       SET UNIT=AFF BIT                 01960000
+         MODESET KEY=NZERO                                              01970000
+         UNPK  DDSEQ,SEQ#              MOVE DDSEQ                       01980000
+         WTO   MF=(E,WTO1L)            NOTIFY PROGRAMMER                01990000
+*--------------------------------------------------------------------*  02000000
+*        LOCATE NEXT SIOT BLOCK, CHECK FOR LAST ONE.                    02010000
+*--------------------------------------------------------------------*  02020000
+NEXTSIOT ICM   R1,B'0111',SCTPSIOT     SVA OF NEXT SIOT                 02030000
+         BNZ   LOOPSIOT                PROCESS NEXT DD CARD IN STEP     02040000
+         DROP  R5,R6,R7                SCT, SIOT, JFCB                  02050000
+*********************************************************************** 02060000
+*                                                                     * 02070000
+*        CLEAN-UP, RETURN TO CALLER.                                  * 02080000
+*                                                                     * 02090000
+*********************************************************************** 02100000
+RETURN   LA    R0,DYNL                                                  02110000
+         LR    R1,R13                  DYN ADDRESS                      02120000
+         L     R13,4(,R13)             CALLER'S SAVE AREA               02130000
+         FREEMAIN R,LV=(0),A=(1)      FREE DYNAMIC STORAGE              02140000
+         RETURN (14,12),RC=0                                            02150000
+*********************************************************************** 02160000
+*        SUB-ROUTINE TO ACCESS THE SWA MANAGER                        * 02170000
+*********************************************************************** 02180000
+SWAREQ   LA    R2,CTGVL                WORK AREA                        02190001
+         ST    R2,EPAPTR               STORE POINTER                    02200000
+         USING ZB505,R2                                                 02210000
+         XC    SWAEPAX,SWAEPAX         CLEAR 32 BYTES                   02220001
+         STCM  R1,B'0111',SWVA         STORE 3-BYTE SVA                 02230000
+         MODESET MODE=SUP              SWITCH TO SUPERVISOR MODE        02240000
+         SWAREQ FCODE=RL,EPA=EPAPTR,MF=(E,SWAREQL1)                     02250000
+         MODESET MODE=PROB             SWITCH BACK TO PROBLEM PGM MODE  02260000
+         L     R1,SWBLKPTR             LOAD SWA CONTROL BLOCK ADDRESS   02270000
+         BR    R9                                                       02280000
+         DROP  R2                      WAS ZB505                        02290000
+*********************************************************************** 02300000
+*        CONTROL BLOCKS FOR LOCATE & WTO.                             * 02310000
+*********************************************************************** 02320000
+&STR     SETC  (126)' '                                                 02330001
+WTO1L    WTO   '&STR',MF=L,ROUTCDE=14                                   02340000
+         ORG   WTO1L+4                                                  02350000
+         DC    C'UNITAFF: '                                             02360000
+DDNAME   DC    CL8' ',C' +'            DDNAME FOR CURRENT TAPE DD       02370000
+DDSEQ    DS    C'000'                  DD SEQ# FOR CURRENT TAPE DD      02380000
+         DC    C' USES SAME UNIT AS '  DDNAME FOR 1ST TAPE DD           02390000
+DDNAME1  DC    CL8' ',C' +'            DDNAME FOR 1ST TAPE DD           02400000
+DDSEQ1   DC    C'000'                  DD SEQ# FOR 1ST TAPE DD          02410000
+         ORG   ,                                                        02420000
+SEQ#     DC    P'000'                  SEQ#                             02430000
+*---------------------------------------------------------------------  02440000
+*        DYNAMIC STORAGE AREA, BASED BY R13.                            02450000
+*---------------------------------------------------------------------  02460000
+DYN      DSECT                                                          02470000
+         DS    18F                                                      02480000
+SWAREQL1 SWAREQ MF=L                   PARM LIST FOR SWAREQ             02490000
+EPAPTR   DS    F                       POINTER TO EPA (ZB505)           02500000
+GDGNTPTR DS    F                       POINTER TO GDG NAMES TABLE       02510000
+TAPE1    DS    XL2                     INTERNAL DD# FOR 1ST TAPE DD     02520000
+DSNAME   DS    CL44                    MODIFIABLE DSNAME                02530000
+*---------------------------------------------------------------------* 02540000
+*        CATALOG PARAMETER LIST                                         02550000
+*---------------------------------------------------------------------* 02560000
+CTGPL    DS    0D                                                       02570000
+CTGOPTN1 DS    B              FIRST OPTION BYTE:                        02580000
+CTGNAME  EQU   X'04' .... .1..  CTGENT CONTAINS DSNAME OR SERIAL ADDR   02590000
+CTGOPTN2 DS    B              SECOND OPTION BYTE                        02600000
+CTGOPTN3 DS    B     XXX. ....  SPECIFIES THE CALLER-REQUESTED FUNCTION 02610000
+CTGSUPLT EQU   X'10' ...1 ....  SUPERLOCATE FUNCTION                    02620000
+CTGGDGL  EQU   X'08' .... 1...  GDG LOCATE - CALLER SUPPLIED BASE LEVEL 02630000
+CTGAM0   EQU   X'01' .... ...1  OS/VS2 CATALOG MANAGMENT REQUEST        02640000
+CTGOPTN4 DS    B              FOURTH OPTION BYTE                        02650000
+CTGLBASE EQU   X'80' 1... ....  LOCATE BASE LEVEL (SUPERLOCATE GDG)     02660000
+CTGENT   DS    A              ADDRESS OF CATALOG RECORD IDENTIFIER      02670000
+CTGCAT   DS    A              ADDRESS OF CATALOG DSNAME OR ACB          02680000
+CTGWKA   DS    A              ADDRESS OF CALLER'S WORK AREA             02690000
+CTGOPTNS DS    B              CATALOG MANAGMENT SERVICES REQUEST OPTION 02700000
+         DS    B              RESERVED                                  02710000
+CTGTYPE  DS    C              TYPE OF CATALOG RECORD                    02720000
+CTGNOFLD DS    FL1            NUMBER OF ENTRIES IN CTGFIELD             02730000
+CTGFDBK  DS    XL2            FEEDBACK AREA (IF NOT SUPERLOCATE)        02740000
+CTGFBFLG DS    B              FLAGS (SUPERLOCATE)                       02750000
+CTGPAR   EQU   X'80' 1... ....  PARALLEL MOUNT                          02760000
+CTGKEEP  EQU   X'40' .1.. ....  FORCED KEEP                             02770000
+CTGGDGB  EQU   X'20' ..1. ....  GDG BASE LOCATED                        02780000
+CTGNGDSN EQU   X'10' ...1 ....  GDG DSNAME GENERATED (DSNAME.GXXXXVYY)  02790000
+         DS    B              RESERVED (SUPERLOCATE)                    02800000
+CTGPSWD  DS    A              ADDRESS OF CALLER-SUPPLIED PASSWORD       02810000
+*---------------------------------------------------------------------* 02820000
+*        CATALOG WORK AREA                                              02830000
+*---------------------------------------------------------------------* 02840000
+CTGWA    DS    0D                                                       02850000
+CTGWAVL  DS    A                       PTR TO CTGVL (VOLUME LIST)       02860000
+CTGWALV  DS    H                       LENGTH OF THE VOLUME LIST        02870000
+CTGWAVCT DS    H                       # OF VOLSERS RETURNED IN VL      02880000
+CTGWAUCT DS    H                       MINIMUM # OF VOLS TO BE MOUNTED  02890000
+CTGWAGCT DS    H                       # OF GENERATIONS CATALOGED       02900000
+CTGWAGB  DS    A                       PTR TO APPARENT GEN(0)           02910000
+*---------------------------------------------------------------------* 02920000
+*        CATALOG VOLUME LIST                                            02930000
+*---------------------------------------------------------------------* 02940000
+CTGVL    DS    0D                                                       02950000
+CTGVLVOL DS    CL6                     VOLUME SERIAL                    02960000
+CTGVLDEV DS    XL4                     DEVICE TYPE                      02970000
+CTGVLSEQ DS    H                       FILE SEQ#                        02980000
+CTGVLX   DS    19XL12                  VOLUME LIST EXTENSION            02990000
+CTGVLLEN EQU   *-CTGVL                 LENGTH OF VOLUME LIST            03000000
+DYNL     EQU   *-DYN                                                    03010000
+*---------------------------------------------------------------------  03020000
+*        GDG NAMES TABLE MAPPING (USING IEFZB902 AS A MODEL)            03030000
+*---------------------------------------------------------------------  03040000
+**       SYS1.MODGEN(IEFZB429)                                          03050001
+GDGNTABL DSECT                                                          03060000
+GDGNQSVA DS    XL3                     SVA OF NEXT GDGNT RECORD         03070001
+GDGNTID  DS    X'23'                   GDGNT ID X'23'                   03080000
+GDGNNEXT DS    A                       IN-CORE ADDRESS OF NEXT RECORD   03090001
+GDGNGDG  DS    CL35                    GDG BASE                         03100000
+GDGNGDGZ DS    C'1234'                 APPARENT (0) GENERATION          03110000
+GDGNGDG2 DS    CL35,C'1234'            2ND GDG NAME                     03120000
+         DS    CL35,C'1234'            3RD GDG NAME                     03130000
+         DS    CL35,C'1234'            4TH GDG NAME                     03140000
+GDGNNO   DS    FL1                     NUMBER OF ENTRIES                03150000
+         DS    XL15                    FILLER                           03160000
+GDGNLEN  EQU   GDGNTABL+176                                             03170000
+*---------------------------------------------------------------------  03180000
+*        MAPPING MACROS FROM SYS1.MACLIB                                03190000
+*---------------------------------------------------------------------  03200000
+         YREGS                         REGISTER EQUATES                 03210000
+         IEFZB505 LOCEPAX=YES          EPA MAPPING FOR SWAREQ           03220001
+         EJECT                                                          03230000
+         IEFJESCT TYPE=DSECT           JES CONTROL TABLE                03240000
+         EJECT                                                          03250000
+*---------------------------------------------------------------------  03260000
+*        MAPPING MACROS FROM SYS1.MODGEN                                03270000
+*---------------------------------------------------------------------  03280000
+         IKJTCB LIST=YES               TASK CONTROL BLOCK               03290000
+         EJECT                                                          03300000
+         IEZJSCB ,                     JOB STEP CONTROL BLOCK           03310000
+         EJECT                                                          03320000
+JCT      DSECT                                                          03330000
+         IEFAJCTB ,                    JOB CONTROL BLOCK                03340000
+*JCTSWAUP EQU 1                        X'01' IN JCTSTAT2, FOR MVS/370   03350000
+         EJECT                                                          03360000
+SCT      DSECT                                                          03370000
+         IEFASCTB ,                    STEP CONTROL BLOCK               03380000
+         EJECT                                                          03390000
+SIOT     DSECT                                                          03400000
+         IEFASIOT ,                    STEP I/O TABLE                   03410000
+         EJECT                                                          03420000
+JFCB     DSECT                                                          03430000
+         IEFJFCBN LIST=YES             JOB FILE CONTROL BLOCK           03440000
+         EJECT                                                          03450000
+         CVT   LIST=NO,DSECT=YES       COMMUNICATION VECTOR TABLE       03460000
+         END                                                            03470000
+//SYSPRINT DD SYSOUT=*                                                  03480000
+//SYSLIB   DD DSN=SYS1.MODGEN,DISP=SHR                                  03490000
+//         DD DSN=SYS1.MACLIB,DISP=SHR                                  03500000
+//SYSLIN   DD UNIT=VIO,SPACE=(TRK,1),DISP=(,PASS),BLKSIZE=3200          03510000
+//SYSUT1   DD UNIT=VIO,SPACE=(CYL,5)                                    03520000
+//*                                                                     03530000
+//LKED    EXEC PGM=HEWL,PARM='MAP,AC=1'                                 03540000
+//SYSPRINT DD SYSOUT=*                                                  03550000
+//SYSLIN   DD DSN=*.HLASM.SYSLIN,DISP=(OLD,DELETE)                      03560000
+//SYSLMOD  DD DSN=GILBERT.LOAD(UNITAFF),DISP=SHR                        03570000
+//*                                                                     03580000
+//UNITAFF EXEC PGM=UNITAFF                                              03590001
+//STEPLIB  DD DSN=GILBERT.LOAD,DISP=SHR                                 03600001
+//SYSUDUMP DD SYSOUT=*                                                  03610001
+//OSIN     DD DSN=GILBERT.UNITAFF1,DISP=SHR                             03620001
+//*                                                                     03630000
+//STEP53  EXEC PGM=IEFBR14                                              03640001
+//OSIN     DD DSN=GILBERT.UNITAFF1,DISP=SHR                             03650001
+//         DD DSN=GILBERT.UNITAFF2,DISP=SHR                             03660001

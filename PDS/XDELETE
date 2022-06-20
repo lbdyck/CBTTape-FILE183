@@ -1,0 +1,280 @@
+/*************************************************************** REXX */00010000
+/*                                                                    */00020000
+/* MODULE NAME = XDELETE                                              */00030000
+/*                                                                    */00040000
+/* DESCRIPTIVE NAME = Delete data sets using generic name             */00050000
+/*                                                                    */00060000
+/* STATUS = R205                                                      */00070005
+/*                                                                    */00080000
+/* FUNCTION = The XDELETE command scans the catalog for data set      */00090000
+/*            names that match a filter (such as USERID.*.C%K*.**)    */00100000
+/*            then issues a DELETE command for each disk data set     */00110000
+/*            or a DELETE NOSCRATCH for each tape data set.           */00120000
+/*                                                                    */00130000
+/* AUTHOR   =  Gilbert Saint-Flour <carlos@gsf-soft.com>              */00140003
+/*             http://gsf-soft.com/Freeware/                          */00150004
+/*                                                                    */00160000
+/* DEPENDENCIES = TSO/E V2                                            */00170000
+/*                DFP 3.2.0                                           */00180000
+/*                Catalog Search Interface                            */00190000
+/*                                                                    */00200000
+/* SYNTAX   =  XDELETE                                                */00210000
+/*                generic_name      generic name specification        */00220000
+/*                EXECUTE           indicates that DELETE commands    */00230000
+/*                                  will actually be issued for       */00240000
+/*                                  selected data sets.               */00250000
+/*                                  DELETE commands are only          */00260000
+/*                                  displayed otherwise.              */00270000
+/*                                                                    */00280000
+/* SPECIFYING THE GENERIC NAME                                        */00290000
+/*                                                                    */00300000
+/* The generic name defines the level qualifiers for the data set     */00310000
+/* names to be included in the list.  Qualifiers can be specified     */00320000
+/* fully, partially or defaulted.  For data sets that are cataloged   */00330000
+/* in CVOL or VSAM catalogs, the high level qualifier must be         */00340000
+/* specified fully.  For ICF catalogs, at least one qualifier must    */00350000
+/* be partially specified.  A Dsname Level of '*' or '**' or any      */00360000
+/* combination of '*' and '**' qualifiers is invalid.                 */00370000
+/*                                                                    */00380000
+/* The following examples are valid for generic_name:                 */00390000
+/*                                                                    */00400000
+/*  DSNAME LEVEL              Data Set List                           */00410000
+/* ------------------------------------------------------------------ */00420000
+/*  SYS1.PARMLIB         One data set name.                           */00430000
+/*                                                                    */00440000
+/*  SYS1.*               All data set names with SYS1 as the first    */00450000
+/*                       qualifier and one more qualifier.            */00460000
+/*                                                                    */00470000
+/*  SYS1 or SYS1.**      All data set names with SYS1 as the first    */00480000
+/*                       qualifier.                                   */00490000
+/*                                                                    */00500000
+/*  **.LIST              All data set names with a qualifier of LIST. */00510000
+/*                                                                    */00520000
+/*  AAA%*.B*%%%B         All data sets that start with AAA, have at   */00530000
+/*                       least one more character in the high level   */00540000
+/*                       qualifier and have a second qualifier that   */00550000
+/*                       begins and ends in B with at least three     */00560000
+/*                       letters between the Bs.                      */00570000
+/*                                                                    */00580000
+/* Data set name qualifiers can be partially specified using asterisks*/00590000
+/* as global file-name characters and percent signs as placeholders:  */00600000
+/*      *  A single asterisk by itself indicates that at least one    */00610000
+/*         qualifier is needed to occupy that position.  A single     */00620000
+/*         asterisk within a qualifier indicates that zero or more    */00630000
+/*         characters can occupy that position.                       */00640000
+/*     **  A double asterisk indicates that zero or more qualifiers   */00650000
+/*         can occupy that position.  A double asterisk within a      */00660000
+/*         qualifier is invalid.                                      */00670000
+/*      %  A single percent sign indicates that any one single        */00680000
+/*         alphameric or national character can occupy that position. */00690000
+/*  %%...  One to eight percent signs can be specified in each        */00700000
+/*         qualifier.                                                 */00710000
+/*                                                                    */00720000
+/* INSTALLATION = XDELETE can be installed in a library concatenated  */00730000
+/*                to SYSEXEC, SYSPROC, or any private library         */00740000
+/*                accessible to the EXEC command.                     */00750000
+/*                                                                    */00760000
+/*                The CSI module (IGGCSI00) must be available at      */00770000
+/*                execution time.  IGGCSI00 is available with         */00780000
+/*                DFSMS/MVS V1R4 or the CSI PRPQ (5799-CSI).          */00790000
+/*                                                                    */00800000
+/*                Recent MVS systems also contain a copy of IGGCSI00  */00810000
+/*                in the following distribution libraries:            */00820000
+/*                                                                    */00830000
+/*                      1. SYS1.AOS28(ARCCSI)                         */00840000
+/*                      2. SYS1.AAPPMOD2(APPCSI00)                    */00850000
+/*                                                                    */00860003
+/* EXECUTION = XDELETE is invoked as a TSO command, either on-line    */00870003
+/*          or in batch, as shown in the following example.           */00880003
+/*                                                                    */00890003
+/*          //XDELETE EXEC PGM=IKJEFT01                               */00900003
+/*          //SYSEXEC  DD DSN=GSFSOFT.FILE183.PDS,DISP=SHR            */00910003
+/*          //SYSTSPRT DD SYSOUT=*                                    */00920003
+/*          //SYSTSIN  DD *                                           */00930003
+/*          %XDELETE  ABC*.D%%FG*.**  EXEC                            */00940003
+            /*                                                        */00950004
+/*                                                                    */00960000
+/* DOCUMENTATION = The documentation for the CSI can be found in      */00970000
+/*                 DFSMS/MVS V1R4 Managing Catalogs (Appendix D)      */00980000
+/*                 and on the Web at:                                 */00990000
+/*                                                                    */01000000
+/* ppdbooks.pok.ibm.com/cgi-bin/bookmgr/bookmgr.cmd/BOOKS/DGT1C104/D.0*/01010000
+/*                                                                    */01020000
+/* CHANGE ACTIVITY                                                    */01030000
+/*                                                                    */01040000
+/*  101   EXIT with maxcc=12 if DELETE fails                          */01050000
+/*  200   Rewrite much of the code to make it more generic            */01060000
+/*  201   Remove erroneous apostrophes in VALUE() function            */01070001
+/*  202   Check devtyp=disk instead of devtyp\=tape for SCRATCH       */01080002
+/*  203   Check type for VSAM entries                                 */01090003
+/*        Check syntax and issue message if invalid                   */01100003
+/*  204   Display creation date (DSCRDT2) on DELETE commands          */01110004
+/*  205   TRANSLATE(STRIP(execute))                                   */01120005
+/*                                                                    */01130000
+/**********************************************************************/01140000
+ARG filter execute                  /*   GET FILTER KEY              */ 01150003
+IF filter='' THEN DO                                                    01160003
+  SAY 'Syntax: XDELETE filter <EXECute>'                                01170003
+  EXIT 12                           /*   filter is missing           */ 01180003
+  END                                                                   01190003
+execute=TRANSLATE(STRIP(execute))                                       01200005
+IF execute\='' THEN                                                     01210000
+  IF ABBREV('EXECUTE',execute,4) THEN                                   01220000
+    execute='EXECUTE'                                                   01230000
+  ELSE DO                                                               01240003
+    SAY 'The second operand is invalid'                                 01250003
+    SAY 'Syntax: XDELETE filter EXECute'                                01260003
+    EXIT 12                         /*   filter is missing           */ 01270003
+    END                                                                 01280003
+ /*------------------------------------------------------------------*/ 01290000
+ /*                                                                  */ 01300000
+ /*  Initialize the parm list and the work variables                 */ 01310000
+ /*                                                                  */ 01320000
+ /*------------------------------------------------------------------*/ 01330000
+csifiltk = STRIP(filter,'BOTH',"'") /*  FILTER KEY                  */  01340003
+csicatnm = ''                       /*  CLEAR CATALOG NAME          */  01350000
+csiresnm = ''                       /*  CLEAR RESUME NAME           */  01360000
+csidtyps = 'ACH'                    /*  NVSAM, CLUSTER, GDS         */  01370000
+csicldi  = 'Y'                      /*  RETURN DATA & INDEX         */  01380000
+csicldi  = ' '                      /*  Do not return Data & Index  */  01390000
+csiresum = ' '                      /*  CLEAR RESUME FLAG           */  01400000
+csis1cat = 'Y'                      /*  Search only one catalog     */  01410000
+csis1cat = ' '                      /*  SEARCH ALL CATALOGS         */  01420000
+                                                                        01430000
+csifldno = 3                        /*  NUMBER OF FIELDS            */  01440004
+fldnm.1  = 'DEVTYP'                 /*    field name                */  01450000
+fldnm.2  = 'VOLSER'                 /*    field name                */  01460000
+fldnm.3  = 'DSCRDT2'                /*    field name                */  01470004
+                                                                        01480000
+csiopts  = csicldi || csiresum || csis1cat || ' '                       01490000
+csifield = LEFT(csifiltk,44) || LEFT(csicatnm,44) || LEFT(csiresnm,44), 01500000
+        || LEFT(CSIDTYPS,16) || CSIOPTS  || D2C(csifldno,2)             01510000
+DO i=1 to csifldno                                                      01520000
+  csifield = csifield || left(fldnm.i,8)                                01530000
+END                                                                     01540000
+                                                                        01550000
+modrsnrc = COPIES(' ',4)            /*  CLEAR MODULE/RETURN/REASON  */  01560000
+worklen = 256*1024                  /*  Size of work-area in bytes  */  01570000
+worka = LEFT(D2C(worklen,4),worklen,'00'X)                              01580000
+maxcc=0                             /*  Init highest return-code    */  01590000
+                                                                        01600000
+ /********************************************************************/ 01610000
+ /*                                                                  */ 01620000
+ /*  Main CSI Loop Until csiresum=' '                                */ 01630000
+ /*                                                                  */ 01640000
+ /********************************************************************/ 01650000
+DO FOREVER                                                              01660000
+   /*--------------------------------------------------------------*\   01670000
+   |           Issue LINK to the Catalog Search Interface           |   01680000
+   \*--------------------------------------------------------------*/   01690000
+  ADDRESS LINKPGM 'IGGCSI00 MODRSNRC CSIFIELD worka'                    01700000
+  IF RC>0 THEN DO                                                       01710000
+    rtn=C2D(SUBSTR(modrsnrc,4,1))      /* Return Code                */ 01720000
+    rsn=C2D(SUBSTR(modrsnrc,3,1))      /* Reason Code                */ 01730000
+    IF LEFT(modrsnrc,2)='FFFF'X THEN DO                                 01740000
+      SAY 'IGGCSI00 Error - RC='rtn 'RSN='rsn                           01750000
+      IF RC>4 THEN                     /* Severe Error, QUIT         */ 01760000
+        EXIT rc                                                         01770000
+      END                                                               01780000
+    ELSE DO                                                             01790000
+      SAY 'IDC3009I VSAM CATALOG RETURN CODE IS' rtn,                   01800000
+          '- REASON CODE IS IGG0CLA' || LEFT(modrsnrc,2) '-' rsn        01810000
+      END                                                               01820000
+    END                                                                 01830000
+  csiresnm = SUBSTR(CSIFIELD,89,44) /* GET RESUME name FOR NEXT LOOP */ 01840000
+  csiresum = SUBSTR(CSIFIELD,150,1) /* GET RESUME FLAG FOR NEXT LOOP */ 01850000
+  usedlen = C2D(SUBSTR(worka,9,4))  /* GET AMOUNT OF WORK AREA USED  */ 01860000
+  pos1=15                           /* STARTING POSITION             */ 01870000
+   /*--------------------------------------------------------------*\   01880000
+   |              Process Data Returned in Work Area                |   01890000
+   \*--------------------------------------------------------------*/   01900000
+  DO WHILE pos1 < usedlen           /* DO UNTIL ALL DATA IS PROCESSED*/ 01910000
+                                                                        01920000
+    flag  = SUBSTR(worka,pos1+0,1)     /* EXTRACT FLAG               */ 01930000
+    type = SUBSTR(worka,pos1+1,1)      /* EXTRACT ENTRY TYPE         */ 01940000
+    dsname = SUBSTR(worka,pos1+2,44)   /* EXTRACT ENTRY NAME         */ 01950000
+    IF type='0' THEN DO                /* CATALOG                    */ 01960000
+      catname=dsname                   /* Save catalog name          */ 01970000
+      dlen=50                          /* Length of Catalog entry    */ 01980000
+      END                                                               01990000
+    ELSE DO                                                             02000000
+      pos1 = pos1 + 46                 /* skip flag, type, name      */ 02010000
+      csieretn=''                                                       02020000
+      csienter='40'X                   /* Error Indicator            */ 02030000
+      IF csienter=BITAND(flag,csienter) THEN DO                         02040000
+        csieretn= SUBSTR(worka,pos1,4) /* error codes: mod,rsn,rtn   */ 02050000
+        rtn=C2D(SUBSTR(csieretn,4,1))  /* Return Code                */ 02060000
+        rsn=C2D(SUBSTR(csieretn,3,1))  /* Reason Code                */ 02070000
+        SAY '**Error Processing catalog entry - Name='STRIP(dsname),    02080000
+            'Type='type 'Flag='C2X(flag) 'CAT='STRIP(catname)           02090000
+        SAY 'IDC3009I VSAM CATALOG RETURN CODE IS' rtn,                 02100000
+            '- REASON CODE IS IGG0CLA' || LEFT(csieretn,2) '-' rsn      02110000
+        dlen=4                         /* Length of Error Info       */ 02120000
+        maxcc=12                       /* Remember we had an error   */ 02130000
+        END                                                             02140000
+      ELSE DO                                                           02150000
+        dlen = C2D(SUBSTR(worka,pos1,2)) /* length of data           */ 02160000
+        CALL Process_Catalog_Entry       /* Process current entry    */ 02170000
+        END                                                             02180000
+      END                                                               02190000
+    pos1 = pos1 + dlen                   /* next catalog entry       */ 02200000
+  END    /* DO WHILE pos1 < usedlen */                                  02210000
+  IF csiresum\='Y' THEN LEAVE                                           02220000
+END /* RESUME = Y */                                                    02230000
+IF cmd='CMD' THEN                                                       02240000
+  SAY "No data sets deleted"                                            02250000
+EXIT maxcc                                                              02260000
+ /********************************************************************/ 02270000
+ /*                                                                  */ 02280000
+ /*  Process current catalog entry                                   */ 02290000
+ /*                                                                  */ 02300000
+ /********************************************************************/ 02310000
+Process_Catalog_Entry:                                                  02320000
+  pos2 = pos1+4                        /* start of length array    */   02330000
+  pos3 = pos2+csifldno*2               /* start of data array      */   02340000
+   /*--------------------------------------------------------------*\   02350000
+   |              Parse data into named variables                   |   02360000
+   \*--------------------------------------------------------------*/   02370000
+  DO i=1 TO csifldno                                                    02380000
+    l=C2D(SUBSTR(worka,pos2,2))        /* length of current field  */   02390000
+    x=VALUE(fldnm.i,SUBSTR(worka,pos3,l)) /* move value            */   02400001
+    pos2=pos2+2                        /* next length              */   02410000
+    pos3=pos3+l                        /* next data                */   02420000
+    END                                                                 02430000
+   /*--------------------------------------------------------------*\   02440000
+   |              Generate DELETE/HDELETE commands                  |   02450000
+   \*--------------------------------------------------------------*/   02460000
+  IF cmd='CMD' & execute\='EXECUTE' THEN                                02470000
+    SAY "EXECUTE option not specified; Data sets will NOT be deleted."  02480000
+  dsname = "'" || STRIP(dsname) || "'"  /* Enclose dsname in quotes  */ 02490000
+                                                                        02500004
+        /* Convert DSCRDT2 to YYYY.DDD */                               02510004
+                                                                        02520004
+  credt = RIGHT(C2X(dscrdt2),2) || LEFT(C2X(dscrdt2),5)                 02530004
+  credt = LEFT(1900000+credt,4) || '.' || RIGHT(credt,3)                02540004
+    /* SAY dsname type C2X(devtyp) credt /* DATE('U',credt,'J') */*/    02550004
+  credt = "/*" credt                    /* Display date on DEL cmd   */ 02560004
+   /*                                                                   02570004
+  credt = " "                           /* Do not display date       */ 02580004
+   */                                                                   02590004
+                                                                        02600000
+  IF volser='MIGRAT' THEN                                               02610000
+    cmd="HDELETE" dsname                /* Migrated data set         */ 02620000
+  ELSE                                                                  02630000
+    IF type='A' | type='H' THEN                                         02640003
+      IF SUBSTR(devtyp,3,1) = '20'x THEN  /* DEVICE CLASS = DISK ? */   02650003
+        cmd="DELETE" dsname "SCRATCH" credt             /* DISK */      02660004
+      ELSE                                                              02670003
+        cmd="DELETE" dsname "NOSCRATCH" credt           /* TAPE */      02680004
+    ELSE                                                                02690003
+      cmd="DELETE" dsname credt                         /* VSAM */      02700004
+   /*--------------------------------------------------------------*\   02710000
+   |               Execute DELETE/HDELETE commands                  |   02720000
+   \*--------------------------------------------------------------*/   02730000
+  IF execute='EXECUTE' THEN DO          /* EXECUTE option specified? */ 02740000
+    cmd                                 /*   YES, issue DELETE cmd   */ 02750000
+    IF rc>0 THEN maxcc=12               /*  remember we had an error */ 02760000
+    END                                                                 02770000
+  ELSE                                                                  02780000
+    SAY cmd                             /*   NO, display command     */ 02790000
+  RETURN                                                                02800000

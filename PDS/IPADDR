@@ -1,0 +1,142 @@
+/*************************************************************** REXX *\00010000
+|*                                                                    *|00020000
+|* Module Name: IPADDR                                                *|00030000
+|*                                                                    *|00040000
+|* Descriptive Name:  Retrieve IP address from Telnet server          *|00050000
+|*                                                                    *|00060000
+|* Status: R300                                                       *|00070000
+|*                                                                    *|00080000
+|* Function: This REXX program uses the NETSTAT command to            *|00090000
+|*           retrieve the IP address which corresponds to the         *|00100000
+|*           current TSO/E session.                                   *|00110000
+|*                                                                    *|00120000
+|* Author: Gilbert Saint-Flour <carlos@gsf-soft.com>                  *|00130000
+|*                                                                    *|00140000
+|* Environment: TSO/E V2                                              *|00150000
+|*              TCP/IP for MVS 3.1 & 3.2                              *|00160000
+|*              OS/390 eNetwork IP V2R5 (TCP/IP 3.5)                  *|00170000
+|*                                                                    *|00180000
+|* Operation: see below                                               *|00190000
+|*                                                                    *|00200000
+|*        IPADDR can be invoked as a command, a sub-routine,          *|00210000
+|*        a function, or an ISPF EDIT macro.  When invoked as         *|00220000
+|*        a command or EDIT macro, IPADDR displays the IP             *|00230000
+|*        address; when invoked as a sub-routine or function,         *|00240000
+|*        IPADDR returns the IP address to the invoker using          *|00250000
+|*        the RETURN instruction.                                     *|00260000
+|*                                                                    *|00270000
+|* Syntax: IPADDR <jobname> <terminal>                                *|00280000
+|*           or                                                       *|00290000
+|*         CALL IPADDR <jobname> <terminal>                           *|00300000
+|*           or                                                       *|00310000
+|*         rc=IPADDR(<jobname>,<terminal>)                            *|00320000
+|*                                                                    *|00330000
+|*          jobname is the jobname of the TCP/IP address space,       *|00340000
+|*            which defaults to the standard TCP/IP default name.     *|00350000
+|*            Specifying an asterisk indicates the default job name.  *|00360000
+|*                                                                    *|00370000
+|*          terminal is the name of the terminal; the default is the  *|00380000
+|*            terminal associated to the current TSO session.         *|00390000
+|*                                                                    *|00400000
+|* Change Activity:                                                   *|00410000
+|*                                                                    *|00420000
+|* 300 Support for OS/390 eNetwork IP V2R5 (TCP/IP 3.5)               *|00430000
+|*                                                                    *|00440000
+\**********************************************************************/00450000
+ARG jobname,termid                     /*  ipaddr(tcpip4,term22)   */   00460000
+IF WORDS(jobname)>1 THEN                                                00470000
+  ARG jobname termid                   /*  ipaddr(tcpip4 term22)   */   00480000
+IF jobname || termid = '' THEN                                          00490000
+  IF SYSVAR(SYSISPF)='ACTIVE' THEN                                      00500000
+    "ISREDIT MACRO (jobname termid)"   /*  EDIT macro              */   00510000
+IF jobname='*' THEN                                                     00520000
+  jobname=''                           /*  Default IP Stack        */   00530000
+UPPER jobname termid                                                    00540000
+  /*----------------------------------------------------------------*\  00550000
+  |*              Retrieve TCP/IP Version                           *|  00560000
+  \*----------------------------------------------------------------*/  00570000
+cvt = C2D(STORAGE(10,4))                 /*  CVTPTR                 */  00580000
+ecvt = C2D(STORAGE(D2X(cvt+140),4))      /*  CVTECVT                */  00590000
+tsab = C2D(STORAGE(D2X(ecvt+176),4))     /*  ECVTTCP                */  00600000
+IF tsab>0 THEN DO                                                       00610000
+  tseb=tsab+64                           /*  1st TSEB               */  00620000
+  tsebname=STORAGE(D2X(tseb+16),8)       /*  TSEB_TCPIP_NAME        */  00630000
+  version=C2X(STORAGE(D2X(tseb+26),2))   /*  TSEB_TCPIP_VERSION     */  00640000
+  END                                                                   00650000
+ELSE DO                                                                 00660000
+  tsebname='TCPIP'                       /*  TSEB_TCPIP_NAME        */  00670000
+  version=0301                           /*  TSEB_TCPIP_VERSION     */  00680000
+  END                                                                   00690000
+IF termid='' THEN termid = SYSVAR(SYSTERMID)                            00700000
+IF jobname='' THEN                                                      00710000
+  SAY 'Terminal:' termid ' TCP/IP name:' tsebname ' Version:' version   00720000
+ELSE                                                                    00730000
+  SAY 'Terminal:' termid ' TCP/IP name:' jobname ' Version:' version    00740000
+                                                                        00750000
+IF jobname='' & tsebname \= 'TCPIP' THEN DO                             00760000
+  IF LISTDSI('SYSTCPD' 'FILE') = 16 THEN                                00770000
+    jobname = tsebname                                                  00780000
+  END                                                                   00790000
+IF jobname\='' THEN jobname='TCP' jobname                               00800000
+                                                                        00810000
+addr='';port=''                        /* init IP address and port */   00820000
+IF version>0302 THEN                                                    00830000
+  CALL OS390_STACK                     /* OS/390 STACK */               00840000
+ELSE                                                                    00850000
+  CALL MVS_STACK                       /* version=0301 or 0302 */       00860000
+PARSE SOURCE . env .                                                    00870000
+IF env\='COMMAND' THEN                                                  00880000
+  RETURN addr                          /* FUNCTION or SUBROUTINE */     00890000
+IF addr='' THEN                                                         00900000
+  SAY 'IP address not found for terminal' termid                        00910000
+ELSE                                                                    00920000
+  SAY 'Terminal:' termid ' IP address:' addr ' Port:' port              00930000
+EXIT                                                                    00940000
+  /*----------------------------------------------------------------*\  00950000
+  |*               OS/390 eNetwork IP V2R5 (TCP/IP 3.5)             *|  00960000
+  \*----------------------------------------------------------------*/  00970000
+OS390_STACK:                                                            00980000
+  cmd="NETSTAT TELNET" jobname "(LUNAME" termid                         00990000
+  SAY SPACE(cmd,1)                     /* display NETSTAT command */    01000000
+  x=OUTTRAP('line.')                                                    01010000
+  cmd                                  /* execute NETSTAT command */    01020000
+  x=OUTTRAP('off')                                                      01030000
+  IF rc=0 THEN DO i=1 to line.0                                         01040000
+ /* EZZ2803I 014A 1.1.0.6..1797 Establsh 3761 63371 A06TSO02 SC0TCP01 */01050000
+    IF WORD(line.i,4) = 'Establsh' THEN                                 01060000
+      addrport = WORD(line.i,3)                                         01070000
+    ELSE  /* 014A 1.1.0.6..1797 Establsh 3761 63371 A06TSO02 SC0TCP01 */01080000
+      IF WORD(line.i,3) = 'Establsh' THEN                               01090000
+        addrport = WORD(line.i,2)                                       01100000
+    END                                                                 01110000
+  IF addrport \= 'ADDRPORT' THEN                                        01120000
+    PARSE VAR addrport addr '..' port                                   01130000
+  RETURN                                                                01140000
+  /*----------------------------------------------------------------*\  01150000
+  |*             MVS TCP/IP stack: Version 3.1 or 3.2               *|  01160000
+  \*----------------------------------------------------------------*/  01170000
+MVS_STACK:                                                              01180000
+  "NEWSTACK"                                                            01190000
+  "NETSTAT TELNET" jobname "STACK"                                      01200000
+  DO QUEUED()                                                           01210000
+    PULL line                                                           01220000
+     /* EZA0093I 1000 Establshd 192.168.0.6 91 247 0001 SC0TCP01 TSO */ 01230000
+    IF LEFT(line,3) = 'EZA' THEN DO                                     01240000
+      IF WORD(line,1) = 'EZA0216E' THEN SIGNAL EZA0216E                 01250000
+      IF termid = WORD(line,8) THEN DO                                  01260000
+        addr = WORD(line,4)                                             01270000
+        LEAVE                                                           01280000
+        END                                                             01290000
+      END                                                               01300000
+    ELSE DO   /* 1000 Establshd 192.168.0.6 91 247 0001 SC0TCP01 TSO */ 01310000
+      IF WORD(line,1) = 'CANNOT' THEN SIGNAL EZA0216E                   01320000
+      IF termid = WORD(line,7) THEN DO                                  01330000
+        addr = WORD(line,3)                                             01340000
+        LEAVE                                                           01350000
+        END                                                             01360000
+      END                                                               01370000
+  END                                                                   01380000
+  "DELSTACK"                                                            01390000
+  RETURN                                                                01400000
+/*EZA0216E CANNOT USE TCP/IP: FATAL INTER-ADDRESS COMMUNICATIONS ERROR*/01410000
+  EZA0216E: SAY line; "DELSTACK"; EXIT 16                               01420000

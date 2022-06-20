@@ -1,0 +1,22 @@
+//GILBERTZ JOB (ACCT#),ZAP.XMIT,                                        00010000
+// NOTIFY=&SYSUID,                                                      00020000
+// CLASS=A,MSGCLASS=H,COND=(0,NE)                                       00030000
+//*--------------------------------------------------------------------*00040000
+//*       REMOVE BLKSIZE=3120 IN TRANSMIT OUTDS() COMMAND              *00050000
+//*                 REFRESH LLA TO ACTIVATE                            *00060000
+//*--------------------------------------------------------------------*00070000
+//ZAPXMIT EXEC PGM=AMASPZAP                                             00080000
+//SYSPRINT DD SYSOUT=*                                                  00090000
+//SYSLIB   DD DSN=SYS1.LINKLIB,DISP=SHR                                 00100000
+ NAME INMXM                                                             00110002
+  VER 1A64 00000C30                                Z/OS R11             00120002
+  REP 1A64 00000000                                                     00130002
+/*        REFRESH LLA TO ACTIVATE                                       00140002
+ NAME INMXM                                                             00150001
+  VER 19FC 00000C30                                HTE7708              00160001
+  REP 19FC 00000000                                                     00170001
+/*        REFRESH LLA TO ACTIVATE                                       00180001
+ NAME INMXM                                                             00190000
+  VER 19B4 00000C30                                HTE26D2              00200000
+  REP 19B4 00000000                                                     00210000
+/*        REFRESH LLA TO ACTIVATE                                       00220000

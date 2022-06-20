@@ -1,0 +1,134 @@
+//GILBERTJ JOB (ACCT#),COB2JOB,                                         00010000
+// NOTIFY=&SYSUID,                                                      00020000
+// CLASS=A,MSGCLASS=H,COND=(0,NE)                                       00030000
+//*                                                                     00040000
+//COB2 EXEC PGM=IGYCRCTL                                                00050000
+ CBL NOLIB,APOST,NODECK,OBJECT,NOSEQ,BUF(10000),NONAME                  00070000
+ CBL NOMAP,NOLIST,NOOFFSET,NOXREF                                       00080000
+       Identification Division.                                         00090000
+         Program-ID. Cob2Job.                                           00100000
+         Author. Gilbert Saint-Flour <carlos@gsf-soft.com>.             00110000
+      *----------------------------------------------------------------*00120000
+      *                                                                *00130000
+      *    This program retrieves specific job-related data from MVS   *00140000
+      *    control blocks and moves it to Working-storage.             *00150000
+      *                                                                *00160000
+      *    The name of the control-block is indicated in pos 1-6 of    *00170000
+      *    the Procedure Division lines.                               *00180000
+      *    The layout of the MVS control blocks is described in the    *00190000
+      *    MVS Data Areas manuals, which can be found on any MVS or    *00200000
+      *    OS/390 CD collection or viewed on-line by going to:         *00210000
+      *        http://www.s390.ibm.com/bookmgr-cgi/bookmgr.cmd/library *00220000
+      *    and searching for:                                          *00230000
+      *        MVS DATA AREAS                                          *00240000
+      *                                                                *00250000
+      *    Origin = http://gsf-soft.com/Freeware/                      *00260002
+      *                                                                *00270000
+      *----------------------------------------------------------------*00280000
+       Data Division.                                                   00290000
+        Working-Storage Section.                                        00300000
+         01 Results.                                                    00310000
+           05 job-name Pic x(8).                                        00320000
+           05 proc-step Pic x(8).                                       00330000
+           05 step-name Pic x(8).                                       00340000
+           05 program-name Pic x(8).                                    00350000
+           05 program-name2 Pic x(8).                                   00360000
+           05 job-number Pic x(8).                                      00370000
+           05 job-class Pic x.                                          00380000
+           05 msg-class Pic x.                                          00390000
+           05 programmer-name Pic x(20).                                00400000
+           05 acct1 Pic x(32).                                          00410001
+           05 user-id Pic x(8).                                         00420000
+           05 group-name Pic x(8).                                      00430000
+           05 user-name Pic x(20).                                      00440000
+           05 batch-or-cics Pic x(5).                                   00450000
+              88 Batch Value 'BATCH'.                                   00460000
+              88 CICS  Value 'CICS '.                                   00470000
+           05 micro-seconds Pic S9(15) COMP-3.                          00480000
+         01 four-bytes.                                                 00490002
+           05 full-word Pic s9(8) Binary.                               00500002
+           05 ptr4      Redefines full-word Pointer.                    00510000
+         01 eight-bytes.                                                00520002
+           05 double-word Pic s9(18) Binary.                            00530002
+        Linkage Section.                                                00540000
+         01 cb1.  05 ptr1 Pointer Occurs 256.                           00550000
+         01 cb2.  05 ptr2 Pointer Occurs 256.                           00560000
+                                                                        00570000
+       Procedure Division.                                              00580000
+ PSA       SET Address of cb1 to NULL                                   00590000
+ TCB       SET Address of cb1 to ptr1(136)                              00600000
+           MOVE cb1(317:8) to eight-bytes                               00610002
+           COMPUTE micro-seconds = double-word / 4096                   00620002
+ TIOT      SET Address of cb2 to ptr1(4)                                00630000
+           MOVE cb2(1:8) to job-name                                    00640000
+           MOVE cb2(9:8) to proc-step                                   00650000
+           MOVE cb2(17:8) to step-name                                  00660000
+ JSCB      SET Address of cb2 to ptr1(46)                               00670000
+           MOVE cb2(361:8) to program-name                              00680000
+ SSIB      SET Address of cb2 to ptr2(80)                               00690000
+           MOVE cb2(13:8) to job-number                                 00700000
+ PRB       SET Address of cb2 to ptr1(1)                                00710000
+           MOVE cb2(97:8) to program-name2                              00720000
+ JSCB      SET Address of cb2 to ptr1(46)                               00730000
+ JCT       SET Address of cb2 to ptr2(66)                               00740000
+           MOVE cb2(48:1) to job-class                                  00750000
+           MOVE cb2(23:1) to msg-class                                  00760000
+ ACT       MOVE zero to full-word                                       00770000
+           MOVE cb2(57:3) to four-bytes(2:3)                            00780000
+           SET Address of cb2 to ptr4                                   00790000
+           MOVE cb2(25:20) to programmer-name                           00800000
+           MOVE zero to full-word                                       00810001
+           MOVE cb2(49:1) to four-bytes(4:1)                            00820001
+           MOVE cb2(50:full-word) to acct1                              00830001
+ EXT2      SET Address of cb2 to ptr1(53)                               00840000
+ CAUF      IF cb2(21:4) = low-values THEN                               00850000
+             SET Batch to TRUE                                          00860000
+           ELSE                                                         00870000
+             SET CICS to TRUE                                           00880000
+           END-IF                                                       00890000
+ PSA       SET Address of cb1 to NULL                                   00900000
+ ASCB      SET Address of cb1 to ptr1(138)                              00910000
+ ASXB      SET Address of cb2 to ptr1(28)                               00920000
+           MOVE cb2(193:8) to user-id                                   00930000
+ ACEE      SET Address of cb2 to ptr2(51)                               00940000
+           MOVE cb2(31:8) to group-name                                 00950000
+ UNAM      SET Address of cb1 to ptr2(26)                               00960000
+           MOVE zero to full-word                                       00970000
+           MOVE cb1(1:1) to four-bytes(4:1)                             00980000
+           MOVE cb1(2:full-word) to user-name                           00990000
+           DISPLAY job-name ' '                                         01000000
+                   proc-step ' '                                        01010000
+                   step-name ' '                                        01020000
+                   program-name ' '                                     01030000
+                   program-name2 ' '                                    01040000
+                   job-number ' '                                       01050000
+                   job-class ' '                                        01060000
+                   msg-class ' '                                        01070000
+                   micro-seconds ' '                                    01080000
+           DISPLAY quote programmer-name quote ' '                      01090001
+                   quote acct1 quote ' '                                01100001
+                   batch-or-cics ' '                                    01110000
+                   user-id ' '                                          01120000
+                   group-name ' '                                       01130001
+                   quote user-name quote ' '                            01140001
+           GOBACK.                                                      01150000
+/*                                                                      01160000
+//SYSPRINT DD SYSOUT=*                                                  01170000
+//SYSUT1 DD UNIT=VIO,SPACE=(TRK,1)                                      01180000
+//SYSUT2 DD UNIT=VIO,SPACE=(TRK,1)                                      01190000
+//SYSUT3 DD UNIT=VIO,SPACE=(TRK,1)                                      01200000
+//SYSUT4 DD UNIT=VIO,SPACE=(TRK,1)                                      01210000
+//SYSUT5 DD UNIT=VIO,SPACE=(TRK,1)                                      01220000
+//SYSUT6 DD UNIT=VIO,SPACE=(TRK,1)                                      01230000
+//SYSUT7 DD UNIT=VIO,SPACE=(TRK,1)                                      01240000
+//SYSLIN DD UNIT=VIO,SPACE=(TRK,1),DISP=(,PASS),BLKSIZE=3200            01250000
+//*                                                                     01260000
+//GOPROC PROC                                                           01270000
+//GO    EXEC PGM=LOADER,PARM=PRINT                                      01280000
+//SYSLIN DD DSN=*.COB2.SYSLIN,DISP=(OLD,PASS)                           01300000
+//SYSLIB DD DSN=CEE.SCEELKED,DISP=SHR                                   01330000
+//SYSLOUT DD SYSOUT=*                                                   01340000
+//SYSOUT DD SYSOUT=*                                                    01350000
+//GOPROC PEND                                                           01360000
+//*                                                                     01370000
+//GOPROC EXEC GOPROC                                                    01380000

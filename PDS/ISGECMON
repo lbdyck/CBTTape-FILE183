@@ -1,0 +1,27 @@
+//GILBERTE JOB (ACCT#),ISGECMON,                                        00010000
+// NOTIFY=&SYSUID,                                                      00020000
+//*RESTART=GO,                                                          00030000
+// CLASS=A,MSGCLASS=H,COND=(0,NE)                                       00040000
+//*                                                                     00050000
+//* ASSEMBLE THE ENQ MONITOR IN SYS1.SAMPLIB(ISGECMON)                  00060000
+//*                                                                     00070000
+//ASMH EXEC PGM=IEV90,PARM=(OBJECT,NODECK,NOESD,NORLD,NOXREF)           00080000
+//SYSIN    DD *                                                         00090000
+         MACRO                                                          00100000
+         MODID &BR=NO                                                   00110000
+         B    *+28                                                      00120000
+&YYMMDD  SETC '&SYSDATE'(7,2)'/'.'&SYSDATE'(1,5)                        00130000
+         DC   CL24'&SYSECT &YYMMDD &SYSTIME '                           00140000
+         MEND                                                           00150000
+//         DD DSN=SYS1.SAMPLIB(ISGECMON),DISP=SHR                       00160000
+//SYSLIB   DD DSN=SYS1.MACLIB,DISP=SHR                                  00170000
+//         DD DSN=SYS1.MODGEN,DISP=SHR                                  00180000
+//SYSUT1   DD UNIT=VIO,SPACE=(CYL,1)                                    00190000
+//SYSPRINT DD SYSOUT=*                                                  00200000
+//SYSLIN   DD UNIT=VIO,SPACE=(TRK,1),DISP=(,PASS),DCB=BLKSIZE=3200      00210000
+//*                                                                     00220000
+//LKED    EXEC PGM=LINKLLA,PARM='RENT,AC=1'                             00230000
+//SYSLIN   DD DSN=*.ASMH.SYSLIN,DISP=(OLD,PASS)                         00240000
+//SYSLMOD  DD DSN=SYS2.ADP.LOADLIB(ISGECMON),DISP=SHR                   00250000
+//SYSPRINT DD SYSOUT=*                                                  00260000
+//                                                                      00270000

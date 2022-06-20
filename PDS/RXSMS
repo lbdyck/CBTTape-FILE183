@@ -1,0 +1,688 @@
+//GILBERTR JOB (ACCT#),RXSMS,                                           00010000
+//*RESTART=TMP,                                                         00020000
+// NOTIFY=&SYSUID,                                                      00030000
+// CLASS=A,MSGCLASS=H,COND=(0,NE)                                       00040000
+//HLASM EXEC PGM=ASMA90,                                                00050000
+// PARM='OBJECT,NODECK,NOESD,NORLD,NOXREF,USING(WARN(8))'               00060000
+*********************************************************************** 00070000
+*                                                                     * 00080000
+*            COPYRIGHT (C) 1993-1999 GILBERT SAINT-FLOUR              * 00090000
+*                       ALL RIGHTS RESERVED                           * 00100000
+*                                                                     * 00110000
+* MODULE NAME = RXSMS                                                 * 00120000
+*                                                                     * 00130000
+* DESCRIPTIVE NAME = Retrieve SMS Information in a REXX exec          * 00140000
+*                                                                     * 00150000
+* STATUS = R100                                                       * 00160000
+*                                                                     * 00170000
+* FUNCTION = This assembler sub-routine can be invoked in a REXX      * 00180000
+*            exec to retrieve information from the SMS sub-system     * 00190000
+*            or from a volume's VTOC.                                 * 00200000
+*                                                                     * 00210000
+* AUTHOR = Gilbert Saint-Flour <carlos@gsf-soft.com>                  * 00220000
+*          http://gsf-soft.com/Freeware/                              * 00230000
+*                                                                     * 00240000
+* ENVIRONMENT = SEE BELOW                                             * 00250000
+*                                                                     * 00260000
+*    DEPENDENCIES: MVS/ESA 4.3 (or above) or OS/390 or z/OS           * 00270000
+*                  STRING macro                                       * 00280000
+*                                                                     * 00290000
+* MODULE TYPE = PROCEDURE, (CSECT TYPE)                               * 00300000
+*                                                                     * 00310000
+*    PROCESSOR = IBM HIGH LEVEL ASSEMBLER/MVS                         * 00320000
+*                                                                     * 00330000
+*    MODULE SIZE = 2K                                                 * 00340000
+*                                                                     * 00350000
+*    ATTRIBUTES = REENTERABLE, RMODE ANY, AMODE 31,                   * 00360000
+*                 PROBLEM STATE, KEY 8                                * 00370000
+*                 APF AUTHORIZATION: NONE                             * 00380000
+*                                                                     * 00390000
+* SYNTAX  =  See below                                                * 00400000
+*                                                                     * 00410000
+*    CALL RXSMS     function,                                         * 00420000
+*                   stemname                                          * 00430000
+*                   <,search argument>                                * 00440000
+*      or                                                             * 00450000
+*                                                                     * 00460000
+*    rc=RXSMS(function,stemname<,search argument>)                    * 00470000
+*                                                                     * 00480000
+*    Arguments:                                                       * 00490000
+*                                                                     * 00500000
+*         function  This argument is a 3-character function code      * 00510000
+*                   which indicates the type of information that      * 00520000
+*                   is to be retrieved from SMS.  The following       * 00530000
+*                   values are supported:                             * 00540000
+*                                                                     * 00550000
+*                     AVL   All volumes in current configuration      * 00560000
+*                     SGL   List of all Storage Groups                * 00570000
+*                     SGV   Volser list for a given Storage Group     * 00580000
+*                     VSG   Storage Group for a given volser          * 00590000
+*                     VOL   Volume definition for a given volser      * 00600000
+*                     DCL   List of all Data Classes                  * 00610000
+*                     SCL   List of all Storage Classes               * 00620000
+*                     MCL   List of all Management Classes            * 00630000
+*                     LSP   LSPACE                                    * 00640000
+*                                                                     * 00650000
+*         stemname  the stem of the family of variables which         * 00660000
+*                   are set to the returned data.                     * 00670000
+*                                                                     * 00680000
+*         search arg  is the volser or SG name for which data is      * 00690000
+*                     to be retrieved from SMS.  This argument        * 00700000
+*                     is mandatory for the SGV, VSG and VOL           * 00710000
+*                     functions and must be omitted for all           * 00720000
+*                     other function.                                 * 00730000
+*                                                                     * 00740000
+*    Examples:                                                        * 00750000
+*                                                                     * 00760000
+*         Retrieve a list of all of the Data Classes currently        * 00770000
+*         defined in the SMS configuration into the "dc." variable.   * 00780000
+*                                                                     * 00790000
+*            CALL RXSMS 'DCL','dc.'                                   * 00800000
+*            IF rc=0 THEN DO i=1 TO dc.0                              * 00810000
+*              SAY i 'SC =' sc.i                                      * 00820000
+*            END                                                      * 00830000
+*                                                                     * 00840000
+*         Retrieve the Storage Group to which the VOL123 volume       * 00850000
+*         belongs into the sg.1 variable:                             * 00860000
+*                                                                     * 00870000
+*            IF RXSMS('VSG','sg.','VOL123') THEN                      * 00880000
+*              SAY 'volume VOL123 belongs to SG=' sg.1                * 00890000
+*                                                                     * 00900000
+*         Retrieve all the volumes that belong to the "SGPROD2"       * 00910000
+*         Storage Group into the "vol." variables:                    * 00920000
+*                                                                     * 00930000
+*            IF RXSMS('SGV','vol.') = 0 THEN                          * 00940000
+*              DO i=1 TO vol.0                                        * 00950000
+*               SAY i 'VOL:' vol.i                                    * 00960000
+*              END                                                    * 00970000
+*                                                                     * 00980000
+* Format of the Data Returned                                         * 00990000
+*                                                                     * 01000000
+*         RXSMS returns three types of data:                          * 01010000
+*                                                                     * 01020000
+*         1. a return-code in the RC variable;                        * 01030000
+*            see "return-codes" below.                                * 01040000
+*                                                                     * 01050000
+*         2. the number of objects returned, in the stem.0            * 01060000
+*            variable.  For example, if CALL RXSMS 'SGL','sg.'        * 01070000
+*            is issued, the number of Storage Groups is returned      * 01080000
+*            in the sg.0 variable.                                    * 01090000
+*                                                                     * 01100000
+*         3. the objects requested are returned in var.1 through      * 01110000
+*            var.n, where n=var.0                                     * 01120000
+*                                                                     * 01130000
+*            The format of the data returned depends on the type      * 01140000
+*            of object it represents.  The following table shows      * 01150000
+*            the format of the data for each of the supported         * 01160000
+*            function codes:                                          * 01170000
+*                                                                     * 01180000
+*              AVL   Volume record (12 words)                         * 01190000
+*              SGL   Storage Group record (10 words)                  * 01200000
+*              SGV   Volume record (12 words)                         * 01210000
+*              VSG   Storage Group record (10 words)                  * 01220000
+*              VOL   Volume record (12 words)                         * 01230000
+*              DCL   Data Class name (1 to 30 characters)             * 01240000
+*              SCL   Storage Class name (1 to 30 characters)          * 01250000
+*              MCL   Management Class name (1 to 30 characters)       * 01260000
+*              LSPACE Data returned by the LSPACE macro               * 01270000
+*                                                                     * 01280000
+*    The Volume record is made up of 12 words (see example below).    * 01290000
+*                                                                     * 01300000
+*      1   volume serial number                                       * 01310000
+*      2   name of storage group                                      * 01320000
+*      3   user-ID of last updater                                    * 01330000
+*      4   date of last update                                        * 01340000
+*      5   time of last update                                        * 01350000
+*      6   track capacity (bytes)                                     * 01360000
+*      7   ucb address (or zero if the device is off-line)            * 01370000
+*      8   total space (MB)                                           * 01380000
+*      9   free space (MB)                                            * 01390000
+*     10   largest free extent (MB)                                   * 01400000
+*     11   flags (VLDFLAGS)                                           * 01410000
+*     12   status in storage group (VLDSGST)                          * 01420000
+*                                                                     * 01430000
+*    Example of a volume record, as returned from RXSMS:              * 01440000
+*                                                                     * 01450000
+*      PRIM10 SG2 JIM 1997/03/27 16:03 56664 F49F00 2042 179 67 00 01 * 01460000
+*                                                                     * 01470000
+*    The Storage Group record is made up of 10 words.                 * 01480000
+*                                                                     * 01490000
+*      1   name of storage group                                      * 01500000
+*      2   user-ID of last updater                                    * 01510000
+*      3   date of last update                                        * 01520000
+*      4   time of last update                                        * 01530000
+*      5   flags (SDGFLAGS)                                           * 01540000
+*      6   SG type (0=pool, 1=VIO)                                    * 01550000
+*      7   VIO max size (MB)                                          * 01560000
+*      8   VIO unit type                                              * 01570000
+*      9   high threshold (0-99%)                                     * 01580000
+*     10   low threshold (0-99%)                                      * 01590000
+*     11   description (max 30 characters)                            * 01600000
+*                                                                     * 01610000
+*    Example of a storege group record, as returned from RXSMS:       * 01620000
+*                                                                     * 01630000
+*       SG2 JIM 1996/06/03 20:57 10 0 0 ? 99 0 DEFAULT STORAGE GROUP  * 01640000
+*                                                                     * 01650000
+*    The LSPACE record is made up of 19 words.                        * 01660000
+*                                                                     * 01670000
+*      1   volume serial                                              * 01680000
+*      2   LSPACE return area status byte                             * 01690000
+*      3   LSPACE volume status byte                                  * 01700000
+*      4   Number of free extents                                     * 01710000
+*      5   total free cylinders                                       * 01720000
+*      6   total additional free tracks                               * 01730000
+*      7   number of cylinders in largest free extent                 * 01740000
+*      8   number of additional tracks in largest free extent         * 01750000
+*      9   format-0 count                                             * 01760000
+*     10   free VIR count                                             * 01770000
+*     11   fragmentation index                                        * 01780000
+*     12   VTOC index (DS4VTOCI)                                      * 01790000
+*     13   Volume's SMS attributes (DS4SMSFG)                         * 01800000
+*     14   available DSCBs (DS4DSREC)                                 * 01810000
+*     15   Number of Cylinders (DS4DEVSZ)                             * 01820000
+*     16   Tracks per Cylinders (DS4DEVSZ)                            * 01830000
+*     17   Track Size (DS4DEVTK)                                      * 01840000
+*     18   DSCBs per track (DS4DEVDT)                                 * 01850000
+*     19   Directory Blocks per track (DS4DEVDB)                      * 01860000
+*                                                                     * 01870000
+*    Example of a LSPACE record, as returned from RXSMS:              * 01880000
+*                                                                     * 01890000
+*     SYSCAT E0 C0 2 0 4 0 2 235 14 1000 81 00 262 100 15 47968 53 46 * 01900000
+*                                                                     * 01910000
+* RETURN-CODES = See below                                            * 01920000
+*                                                                     * 01930000
+*         The RXSMS function returns a return code that indicates     * 01940000
+*         whether information was successfully retrieved.  The        * 01950000
+*         return-code is stored into the RC special variable.         * 01960000
+*                                                                     * 01970000
+*         The following RXSMS return code values are possible:        * 01980000
+*                                                                     * 01990000
+*         0    Data was retrieved into the specified stem variable.   * 02000000
+*              var.0 is set to the number of objects retrieved.       * 02010000
+*                                                                     * 02020000
+*         4    No data was retrieved; var.0 is set to 0.              * 02030000
+*                                                                     * 02040000
+*         nnnn   Error retrieving the data, nnnn is the SSSA          * 02050000
+*                reason code (see IEFSSSA macro).                     * 02060000
+*                                                                     * 02070000
+*         1nn    UCBSCAN macro failed with R15=nn (LSPACE only)       * 02080000
+*                                                                     * 02090000
+*         2nn    LSPACE macro failed with R15=nn (LSPACE only)        * 02100000
+*                                                                     * 02110000
+*   Error in Argument List                                            * 02120000
+*                                                                     * 02130000
+*         12   Invalid Service requested.                             * 02140000
+*                                                                     * 02150000
+* CHANGE ACTIVITY                                                     * 02160000
+*                                                                     * 02170000
+* 100 Initial release                                                 * 02180000
+*                                                                     * 02190000
+&REL     SETC  'R100'                                                 * 02200000
+*********************************************************************** 02210000
+RXSMS    CSECT                                                          02220000
+RXSMS    RMODE ANY                                                      02230000
+         SAVE  (14,12),,'GSF Utilities - RXSMS &REL'                    02240000
+         LR    R12,R15                                                  02250000
+         USING RXSMS,R12                                                02260000
+*---------------------------------------------------------------------* 02270000
+*                                                                     * 02280000
+*        ALLOCATE DYNAMIC STORAGE                                     * 02290000
+*                                                                     * 02300000
+*---------------------------------------------------------------------* 02310000
+         GETMAIN R,LV=DYNAML                                            02320000
+         ST    R13,4(,R1)                                               02330000
+         ST    R1,8(,R13)                                               02340000
+         LA    R14,72(,R1)             CLEAR WORKING STORAGE            02350000
+         LA    R15,DYNAML-72           CLEAR WORKING STORAGE            02360000
+         SLR   R1,R1                   CLEAR WORKING STORAGE            02370000
+         MVCL  R14,R0                  CLEAR WORKING STORAGE            02380000
+         LM    R13,R1,8(R13)           SET R13, RELOAD R14-R1           02390000
+         USING DYNAM,R13                                                02400000
+         ST    R0,ADDR_OF_ENVBLOCK     ENVIRONMENT BLOCK                02410000
+         ST    R1,ADDR_OF_EFPL         External Function Parm List      02420000
+         MVI   BLANKS,C' '             a bunch of blanks                02430000
+         MVC   BLANKS+1(L'BLANKS-1),BLANKS                              02440000
+*---------------------------------------------------------------------* 02450000
+*                                                                     * 02460000
+*        BUILD THE SHVBLOCK                                           * 02470000
+*                                                                     * 02480000
+*---------------------------------------------------------------------* 02490000
+         USING SHVBLOCK,DYNAM_SHVB                                      02500000
+         MVI   SHVCODE,SHVSTORE        STORE VARIABLE                   02510000
+         LA    R0,VALUE                ADDRESS OF VALUE BUFFER          02520000
+         ST    R0,SHVVALA              ADDRESS OF VALUE BUFFER          02530000
+         LA    R0,VARNAME              ADDRESS OF VARIABLE NAME         02540000
+         ST    R0,SHVNAMA              ADDRESS OF VARIABLE NAME         02550000
+         L     R15,ADDR_OF_ENVBLOCK    Environment block                02560000
+         L     R15,ENVBLOCK_IRXEXTE-ENVBLOCK(,R15) A(IRXEXTE)           02570000
+         L     R15,IRXEXCOM-IRXEXTE(,R15)          A(IRXEXCOM)          02580000
+         L     R0,ADDR_OF_ENVBLOCK     ENVIRONMENT BLOCK                02590000
+         LA    R1,IRXEXCOM_PARM        parm list                        02600000
+         STM   R15,R1,IRXEXCOM_REGS    A(IRXEXCOM,ENVBLK,IRXPARM)       02610000
+         LA    R14,=C'IRXEXCOM'        Shared Variable Routine          02620000
+         SLR   R15,R15                 PARM2=0                          02630000
+         SLR   R0,R0                   PARM3=0                          02640000
+         LA    R1,SHVBLOCK             PARM4                            02650000
+         STM   R14,R1,IRXEXCOM_PARM    build parm list for IRXEXCOM     02660000
+         OI    IRXEXCOM_PARM+12,X'80'  VL=1                             02670000
+*---------------------------------------------------------------------* 02680000
+*                                                                     * 02690000
+*        PROCESS ARGUMENTS                                            * 02700000
+*                                                                     * 02710000
+*---------------------------------------------------------------------* 02720000
+         USING IEFSSSA,SSSA_WRK                                         02730000
+         L     R1,ADDR_OF_EFPL         External Function Parm List      02740000
+         L     R11,EFPLARG-EFPL(,R1)   ADDR OF ARG LIST                 02750000
+         LM    R2,R3,8*1-8(R11)        1st ARG (service)                02760000
+         LTR   R3,R3                   service specified?               02770000
+         BNP   ARG1N                   no, error                        02780000
+         CH    R3,=H'3'                length=3?                        02790000
+         BNE   ARG1N                   no, jump                         02800000
+         BAL   R1,ARG1L                br around table                  02810000
+         DC    AL1(SSSA1SGL),C'SGL'    SG list                          02820000
+         DC    AL1(SSSA1SGV),C'SGV'    volser list for given SG         02830000
+         DC    AL1(SSSA1AVL),C'AVL'    all volumes in config            02840000
+         DC    AL1(SSSA1VSG),C'VSG'    SG for a volser                  02850000
+         DC    AL1(SSSA1VOL),C'VOL'    return volume definition         02860000
+         DC    AL1(SSSA1DCL),C'DCL'    DC list                          02870000
+         DC    AL1(SSSA1SCL),C'SCL'    SC list                          02880000
+         DC    AL1(SSSA1MCL),C'MCL'    MC list                          02890000
+         DC    X'FF',0H'0'             end of table                     02900000
+*loop                                                                   02910000
+ARG1L    CLC   1(3,R1),0(R2)           compare function code            02920000
+         BE    ARG1T                   match, leave                     02930000
+         LA    R1,1+3(,R1)             next entry in the table          02940000
+         CLI   0(R1),X'FF'             end of table?                    02950000
+         BNE   ARG1L                   no, next entry                   02960000
+*endloop                                                                02970000
+ARG1N    EQU   *                       no service specified             02980000
+         CH    R3,=H'6'                length=6?                        02990000
+         BNE   ARG1N2                  no, error                        03000000
+         CLC   =C'LSPACE',0(R2)        FUNC=LSPACE?                     03010000
+         BNE   ARG1N2                  no, error                        03020000
+         MVI   SSSA1TYP,X'EE'          save SSSA1 function code         03030000
+         B     ARG1X                                                    03040000
+ARG1N2   EQU   *                       no service specified             03050000
+         B     EXIT12                  no service, exit with RC=12      03060000
+ARG1T    EQU   *                       no service specified             03070000
+         MVC   SSSA1TYP,0(R1)          save SSSA1 function code         03080000
+ARG1X    EQU   *                                                        03090000
+*                                                                       03100000
+         LM    R2,R3,8*2-8(R11)        2ND ARG (VAR NAME)               03110000
+         STM   R2,R3,STEMNAME          2ND ARG (VAR NAME)               03120000
+         LTR   R3,R3                   stemname specified?              03130000
+         BNP   EXIT12                  no var name, exit with RC=12     03140000
+         OI    0(R2),X'40'             convert to uppercase             03150000
+         LA    R2,1(,R2)               convert to uppercase             03160000
+         BCT   R3,*-8                  convert to uppercase             03170000
+ARG2X    EQU   *                                                        03180000
+*                                                                       03190000
+         LM    R2,R3,8*3-8(R11)        3rd ARG (search arg)             03200000
+         LTR   R3,R3                   zero length?                     03210000
+         BZ    ARG3X                   yes, jump                        03220000
+         BM    ARG9X                   eof, exit                        03230000
+         MVI   SSSA1CNT+3,1            COUNT=1                          03240000
+         STRING ((R2),(R3)),INTO=SSSA1NAM move SG/vol name              03250000
+         STH   R15,SSSA1NML            save length                      03260000
+ARG3X    EQU   *                                                        03270000
+*                                                                       03280000
+ARG9X    EQU   *                       end of arg list                  03290000
+         CLI   SSSA1TYP,X'EE'          func=LSPACE?                     03300000
+         BE    LSPACE1                 yes, go there                    03310000
+*---------------------------------------------------------------------* 03320000
+*                                                                     * 03330000
+*        BUILD SSOB                                                   * 03340000
+*                                                                     * 03350000
+*---------------------------------------------------------------------* 03360000
+         USING SSOB,SSOB_WRK                                            03370000
+         LA    R0,SSOB                 SSOB address                     03380000
+         ST    R0,SSOB_PTR             SAVE ADDRESSES                   03390000
+         OI    SSOB_PTR,X'80'          SSOB_PTR                         03400000
+         MVC   SSOBID,=C'SSOB'         CB ACRONYM                       03410000
+         LA    R0,SSOBHSIZ             LENGTH OF THE SSOB               03420000
+         STH   R0,SSOBLEN              STORE INTO SSOB                  03430000
+         LA    R0,SSOBSSMS             FUNCTION CODE 55                 03440000
+         STH   R0,SSOBFUNC             STORE INTO SSOB                  03450000
+*                                                                       03460000
+         L     R1,CVTPTR               CVT                              03470000
+         L     R1,CVTJESCT-CVTMAP(,R1) JES COMM TABLE                   03480000
+         L     R1,JESCTEXT-JESCT(,R1)  JESCT EXTENSION                  03490000
+         MVC   SSOBSSIB,JESSMSIB-JESPEXT(R1) SMS SSIB                   03500000
+*                                                                       03510000
+*        BUILD SSSA                                                     03520000
+*                                                                       03530000
+         LA    R8,SSSA_WRK             SSSA WORK AREA                   03540000
+         ST    R8,SSOBINDV             FUNCTION-DEPENDENT AREA          03550000
+         LA    R0,SSSALN+SSSA1LN+L'SSSA1NMS                             03560000
+         STH   R0,SSSALEN              LENGTH OF SSSA                   03570000
+         MVC   SSSAID,=C'SSSA'         CB ACRONYM                       03580000
+         MVI   SSSAVER+1,SSOBSSVR      VERSION                          03590000
+         MVI   SSSASFN+1,SSSAACTV      SUB-FUNCTION CODE                03600000
+         MVI   SSSAIFLG,SSSANAUT       NON-AUTHORIZED CALLER            03610000
+*                                                                       03620000
+*        ISSUE THE IEFSSREQ MACRO                                       03630000
+*                                                                       03640000
+         LA    R1,SSOB_PTR             SSOB_PTR                         03650000
+         IEFSSREQ                  <== CALL SMS                         03660000
+*                                                                       03670000
+*        PROCESS THE RETURNED DATA                                      03680000
+*                                                                       03690000
+         L     R4,SSSA1PTR             ADDR OF RETURNED DATA            03700000
+         USING IGDVLD,R4                                                03710000
+         L     R5,SSSA1ALN             LENGTH                           03720000
+         ICM   R7,B'1111',SSSARSN      reason code from sub-function    03730000
+         BNZ   SET_RC                  error, quit                      03740000
+*---------------------------------------------------------------------* 03750000
+*                                                                     * 03760000
+*        Set var.0 to number of objects returned                      * 03770000
+*                                                                     * 03780000
+*---------------------------------------------------------------------* 03790000
+         LTR   R1,R4                   any data returned?               03800000
+         BZ    *+8                     no, do not use VLDPCNT           03810000
+         L     R1,VLDPCNT              number of items returned         03820000
+         STRING ((R1),,L),INTO=VALUE   edit number of objects           03830000
+         ST    R15,SHVVALL             save length into shvblock        03840000
+         SLR   R5,R5                   var.0                            03850000
+         BAL   R14,SETVAR           <- set variable                     03860000
+         LTR   R4,R4                   any data returned?               03870000
+         BZ    GOBACK4                 no, exit                         03880000
+*---------------------------------------------------------------------* 03890000
+*                                                                     * 03900000
+*        Set stem variables                                           * 03910000
+*                                                                     * 03920000
+*---------------------------------------------------------------------* 03930000
+         LA    R5,1                    suffix for stem variable         03940000
+         LA    R6,VLDEF                first definition                 03950000
+         USING VLDEF,R6                                                 03960000
+*loop                                                                   03970000
+LOOP1    LH    R0,VLDVSLEN             length of object name            03980000
+         ST    R0,SHVVALL              save into shvblock               03990000
+         LA    R1,VLDVSER              name of object                   04000000
+         ST    R1,SHVVALA              save into shvblock               04010000
+         CLC   =CL8'IGDVLD',VLDPID     is this a VLD?                   04020000
+         BNE   LOOP5                   no, return only the object name  04030000
+         BAL   R14,VLD00            <- edit the volume definition       04040000
+         B     LOOP8                   no, return only the object name  04050000
+LOOP5    CLC   =CL8'IGDSGD',VLDPID     is this an SGD?                  04060000
+         BNE   LOOP8                   no, return only the object name  04070000
+         BAL   R14,SGD00            <- edit the storgrp definition      04080000
+LOOP8    BAL   R14,SETVAR           <- set variable                     04090000
+*@SNAP VLDFNAME,(VARNAME,12)                                            04100000
+         LA    R5,1(,R5)               next i                           04110000
+         AL    R6,VLDPLEN              next definition                  04120000
+         CL    R5,VLDPCNT              finished?                        04130000
+         BNH   LOOP1                   not yet                          04140000
+*endloop                                                                04150000
+         L     R1,SSSA1PTR             ADDR OF RETURNED DATA            04160000
+         L     R2,SSSA1ALN             LENGTH                           04170000
+         FREEMAIN RU,A=(R1),LV=(R2)    Free data area returned by SMS   04180000
+         B     GOBACK                                                   04190000
+         DROP  R4,R6                   IGDVLD,VLDEF                     04200000
+*---------------------------------------------------------------------* 04210000
+*                                                                     * 04220000
+*        FUNC=LSPACE                                                  * 04230000
+*                                                                     * 04240000
+*---------------------------------------------------------------------* 04250000
+LSPACE1  EQU   *                                                        04260000
+         LA    R4,UCBAREA48            copy of the UCB                  04270000
+         UCBSCAN COPY,                                                 X04280000
+               VOLSER=SSSA1NAM,                                        X04290000
+               UCBAREA=(R4),                                           X04300000
+               DYNAMIC=YES,                                            X04310000
+               WORKAREA=WORK256,                                       X04320000
+               MF=(E,UCBSCANL,COMPLETE)                                 04330000
+         LTR   R7,R15                                                   04340000
+         LA    R7,100(,R15)            rc=1nn                           04350000
+         BNZ   SET_RC                                                   04360000
+         MVC   LSPACEL(LSPACELL),LSPACEM                                04370000
+         LSPACE UCB=(R4),DATA=LSPACED,F4DSCB=IECSDSL4,MF=(E,LSPACEL)    04380000
+         LTR   R7,R15                                                   04390000
+         LA    R7,200(,R15)            rc=2nn                           04400000
+         BNZ   SET_RC                                                   04410000
+         USING LSPDATA,LSPACED                                          04420000
+         STRING (SSSA1NAM,,T),         VOLUME SERIAL                   X04430000
+               1X,(LSPDRETN,,X),       RETURN AREA STATUS BYTE         X04440000
+               1X,(LSPDSTAT,,X),       VOLUME STATUS BYTE              X04450000
+               1X,(LSPDNEXT,F,L),      NUMBER OF FREE EXTENTS          X04460000
+               1X,(LSPDTCYL,F,L),      TOTAL FREE CYLINDERS            X04470000
+               1X,(LSPDTTRK,F,L),      TOTAL ADDITIONAL FREE TRKS      X04480000
+               1X,(LSPDLCYL,F,L),      NUMBER OF CYLINERS IN           X04490000
+               1X,(LSPDLTRK,F,L),      NUMBER OF ADDL TRACKS IN        X04500000
+               1X,(LSPDF0S,F,L),       FORMAT 0 COUNT                  X04510000
+               1X,(LSPDVIRS,F,L),      FREE VIR COUNT                  X04520000
+               1X,(LSPDFRAG,F,L),      FRAGMENTATION INDEX             X04530000
+               1X,(DS4VTOCI,,X),       VTOC INDEX                      X04540000
+               1X,(DS4SMSFG,,X),       SMS FLAGS                       X04550000
+               1X,(DS4DSREC,FL2,L),    NUMBER OF AVAILABLE DSCBS       X04560000
+               1X,(DS4DEVSZ,FL2,L),    NUMBER OF CYLINDERS             X04570000
+               1X,(DS4DEVSZ+2,FL2,L),  NUMBER OF TRACKS PER CYLINDER   X04580000
+               1X,(DS4DEVTK,FL2,L),    TRACK CAPACITY                  X04590000
+               1X,(DS4DEVDT,FL1,L),    NO OF DSCBS PER TRACK           X04600000
+               1X,(DS4DEVDB,FL1,L),    DIR BLOCKS PER TRACK            X04610000
+               INTO=VALUE                                               04620000
+         ST    R15,SHVVALL             save length into shvblock        04630000
+         LA    R5,1                    var.1                            04640000
+         BAL   R14,SETVAR           <- set variable                     04650000
+         MVI   VALUE,C'1'              var.0=1                          04660000
+         LA    R15,1                   length=1                         04670000
+         ST    R15,SHVVALL             save length into shvblock        04680000
+         SLR   R5,R5                   var.0                            04690000
+         BAL   R14,SETVAR           <- set variable                     04700000
+*---------------------------------------------------------------------* 04710000
+*                                                                     * 04720000
+*        Set return code                                              * 04730000
+*                                                                     * 04740000
+*---------------------------------------------------------------------* 04750000
+GOBACK   SLR   R7,R7                   RC=0: OK                         04760000
+         B     SET_RC                                                   04770000
+GOBACK4  LA    R7,4                    RC=4: "no data returned"         04780000
+*---------------------------------------------------------------------* 04790000
+*                                                                     * 04800000
+*        Pass return code in RC variable                              * 04810000
+*                                                                     * 04820000
+*---------------------------------------------------------------------* 04830000
+SET_RC   EQU   *                                                        04840000
+         LA    R0,VALUE                addr of value                    04850000
+         ST    R0,SHVVALA              save addr into shvblock          04860000
+         STRING ((R7),,L),INTO=VALUE   edit RC                          04870000
+         ST    R15,SHVVALL             save length into shvblock        04880000
+         MVC   VARNAME(2),=C'RC'       variable name                    04890000
+         LA    R15,2                   LENGTH OF VARIABLE NAME          04900000
+         ST    R15,SHVNAML             LENGTH OF VARIABLE NAME          04910000
+         LM    R15,R1,IRXEXCOM_REGS    A(IRXEXCOM,ENVBLK,IRXPARM)       04920000
+         SYNCH (R15)                   CALL IRXEXCOM                    04930000
+*                                                                       04940000
+*        return RC value into EVALBLOCK                                 04950000
+*                                                                       04960000
+         L     R1,ADDR_OF_EFPL         External Function Parm List      04970000
+         L     R2,EFPLEVAL-EFPL(,R1)   addr of EVALBLOCK ptr            04980000
+         L     R4,0(,R2)               addr of EVALBLOCK                04990000
+         USING EVALBLOCK,R4                                             05000000
+         STRING ((R7),,L),INTO=(EVALBLOCK_EVDATA,8)                     05010000
+         ST    R15,EVALBLOCK_EVLEN     store length                     05020000
+         DROP  R4                      EVALBLOCK                        05030000
+*                                                                       05040000
+         SLR   R7,R7                   RC=0                             05050000
+         B     EXIT                                                     05060000
+*---------------------------------------------------------------------* 05070000
+*                                                                     * 05080000
+*        CLEAN-UP AND EXIT                                            * 05090000
+*                                                                     * 05100000
+*---------------------------------------------------------------------* 05110000
+EXIT12   LA    R7,12                   RC=12: input parameter error     05120000
+*                                                                       05130000
+EXIT     LR    R1,R13                  A(DYNAM)                         05140000
+         L     R13,4(,R13)                                              05150000
+         FREEMAIN R,LV=DYNAML,A=(R1)                                    05160000
+         LR    R15,R7                  pass return code                 05170000
+         RETURN (14,12),RC=(15)                                         05180000
+*---------------------------------------------------------------------* 05190000
+*                                                                     * 05200000
+*        Set a variable                                               * 05210000
+*                                                                     * 05220000
+*        1. build variable name by concatenating the stem name        * 05230000
+*           (such as "SG.") to the sequence number in R5              * 05240000
+*        2. pass control to IRXEXCOM                                  * 05250000
+*                                                                     * 05260000
+*---------------------------------------------------------------------* 05270000
+SETVAR   BAKR  R14,0                                                    05280000
+         LM    R2,R3,STEMNAME          2ND ARG (VAR NAME)               05290000
+         STRING ((R2),(R3)),((R5),,L),INTO=VARNAME                      05300000
+         ST    R15,SHVNAML             LENGTH OF VARIABLE NAME          05310000
+         LM    R15,R1,IRXEXCOM_REGS    A(IRXEXCOM,ENVBLK,IRXPARM)       05320000
+         SYNCH (R15)                   CALL IRXEXCOM                    05330000
+         PR                                                             05340000
+*********************************************************************** 05350000
+*                                                                     * 05360000
+*        Edit a volume definition                                     * 05370000
+*                                                                     * 05380000
+*********************************************************************** 05390000
+VLD00    BAKR  R14,0                                                    05400000
+         LA    R1,VALUE                point at string                  05410000
+         ST    R1,SHVVALA              save addr into shvblock          05420000
+         USING VLDEF,R6                                                 05430000
+         LH    R1,VLDVSLEN             length of vol ser                05440000
+         LH    R2,VLDSGLEN             length of stor grp               05450000
+         STRING (VLDVSER,(R1)),        volume serial                   X05460000
+               1X,(VLDSTGRP,(R2)),     storage group                   X05470000
+               1X,(VLDDUSER,,T),       userid of last updater          X05480000
+               1X,VLDDDATE,            date of last update             X05490000
+               1X,(VLDDTIME,,T),       time of last update             X05500000
+               1X,(VLDTRKSZ,H,L),      track capacity                  X05510000
+               1X,(VLDNUCBA,,X),       UCB address                     X05520000
+               1X,(VLDNTCPY,F,L),      total capacity in megabytes     X05530000
+               1X,(VLDNFREE,F,L),      amount free in megabytes        X05540000
+               1X,(VLDNLEXT,F,L),      largest free extent in MB       X05550000
+               1X,(VLDFLAGS,,X),       flags                           X05560000
+               1X,(VLDSGST,,X),        status on this system           X05570000
+               INTO=VALUE                                               05580000
+         ST    R15,SHVVALL             save length into shvblock        05590000
+VLD99    PR                                                             05600000
+*********************************************************************** 05610000
+*                                                                     * 05620000
+*        Edit a Storage Group Definition                              * 05630000
+*                                                                     * 05640000
+*********************************************************************** 05650000
+SGD00    BAKR  R14,0                                                    05660000
+         LA    R1,VALUE                point at string                  05670000
+         ST    R1,SHVVALA              save addr into shvblock          05680000
+         USING SGDEF,R6                                                 05690000
+         LH    R1,SGDNMLEN             length of vol ser                05700000
+         STRING (SGDFNAME,(R1)),       name of the SG                  X05710000
+               1X,(SGDFUSER,,T),       userid of last updater          X05720000
+               1X,SGDFDATE,            date of last update             X05730000
+               1X,(SGDFTIME,,T),       time of last update             X05740000
+               1X,(SGDFLAGS,,X),       flags                           X05750000
+               1X,(SGDFTYPE,FL1,L),    SG type 0=pool 1=VIO            X05760000
+               1X,(SGDFVMAX,F,L),      VIO max size                    X05770000
+               1X,(SGDFVUNT,,X),       VIO unit type                   X05780000
+               1X,(SGDFHTHR,FL1,L),    high threshold 0-99%            X05790000
+               1X,(SGDFLTHR,FL1,L),    low threshold 0-99%             X05800000
+               1X,(SGDFDESC,,T),       description                     X05810000
+               INTO=VALUE                                               05820000
+         ST    R15,SHVVALL             save length into shvblock        05830000
+SGD99    PR                                                             05840000
+LSPACEM  LSPACE MF=L                                                    05850000
+*********************************************************************** 05860000
+*                                                                     * 05870000
+*        Dynamic Storage Area                                         * 05880000
+*                                                                     * 05890000
+*********************************************************************** 05900000
+DYNAM    DSECT                                                          05910000
+         DS    18F                                                      05920000
+DWD      DS    D                       work area for CVD                05930000
+ADDR_OF_ENVBLOCK DS A(ENVBLOCK)        ENVIRONMENT BLOCK                05940000
+ADDR_OF_EFPL   DS A(EFPL)              External Function Parm List      05950000
+STEMNAME DS    A,F                     ADDR/LEN OF STEM NAME            05960000
+IRXEXCOM_REGS DS A(R15,R0,R1)          IRXEXCOM                         05970000
+IRXEXCOM_PARM DS 4A                    IRXEXCOM                         05980000
+SSOB_PTR DS    A(SSOB+X'80000000')                                      05990000
+DYNAM_SHVB DS  XL(SHVBLEN)             SHVB (IRXEXCOM)                  06000000
+SSOB_WRK DS    XL(SSOBHSIZ)            SSOB                             06010000
+SSSA_WRK DS    XL(SSSALN+SSSA1LN+L'SSSA1NMS)                            06020000
+         UCBSCAN MF=(L,UCBSCANL)                                        06030000
+UCBAREA48 DS   XL48                    returned copy of the UCB         06040000
+LSPACEL  LSPACE MF=L                                                    06050000
+LSPACELL EQU   *-LSPACEL                                                06060000
+LSPACED  LSPACE MF=(L,DATA)            LSPACE Data area                 06070000
+         IECSDSL1 4                                                     06080000
+         ORG   DYNAM+((*+256-1-DYNAM)/256)*256                          06090000
+VARNAME  DS    CL256                   variable name                    06100000
+VALUE    DS    CL255,C                                                  06110000
+BLANKS   DS    CL256                   a bunch of blanks                06120000
+WORK256  DS    XL256                   work area for UCBSCAN            06130000
+DYNAML   EQU   *-DYNAM                                                  06140000
+         PRINT NOGEN                                                    06150000
+         IRXEFPL DSECT=YES             External Function Parm List      06160000
+         IRXENVB                       Environment Block                06170000
+         IRXEXTE                       External Function Entry Points   06180000
+         IRXSHVB                       Shared REXX Variable Req Block   06190000
+         IRXEVALB                      Evaluation Block                 06200000
+*                                                                       06210000
+         CVT   DSECT=YES               CVT                              06220000
+         IEFJESCT                      JES CVT                          06230000
+         IEFJSSOB ,                    SSOB HEADER DSECT                06240000
+         IEFSSSA                       SSOB EXTENSION FOR SMS           06250000
+         IGDVLD                        VOLUME DEFINITION                06260000
+         IGDSGD                        Storage Group Definition         06270000
+LSPDATA  LSPACE MF=(D,DATA)            LSPACE DATA                      06280000
+         STRING GENERATE                                                06290000
+         YREGS                         Register Equates (R0-R15)        06300000
+         END                                                            06310000
+//SYSLIB   DD DSN=SYS1.MACLIB,DISP=SHR                                  06320000
+//         DD DSN=SYS1.MODGEN,DISP=SHR                                  06330000
+//         DD DSN=CBTTAPE.FILE183.PDS,DISP=SHR  STRING macro            06340000
+//SYSUT1   DD UNIT=VIO,SPACE=(CYL,2)                                    06350000
+//SYSPRINT DD SYSOUT=*                                                  06360000
+//SYSLIN   DD UNIT=VIO,SPACE=(TRK,1),DISP=(,PASS),BLKSIZE=3200          06370000
+//*                                                                     06380000
+//LKED    EXEC PGM=IEWL,PARM='MAP,RENT,REFR'                            06390000
+//SYSLIN   DD DSN=*.HLASM.SYSLIN,DISP=(OLD,PASS)                        06400000
+//SYSLMOD  DD DSN=CBTTAPE.FILE183.LOAD(RXSMS),DISP=SHR                  06410000
+//SYSPRINT DD SYSOUT=*                                                  06420000
+//*                                                                     06430000
+//TMP     EXEC PGM=IKJEFT01,TIME=(,5)                                   06440000
+//SYSTSPRT DD SYSOUT=*                                                  06450000
+//SYSSNAP  DD SYSOUT=*                                                  06460000
+//SYSTSIN  DD *                                                         06470000
+TSOLIB ACT DA('CBTTAPE.FILE183.LOAD')                                   06480000
+REXXTRY                                                                 06490000
+CALL RXSMS 'LSPACE','LS.','SYSCAT'                                      06500000
+SAY 'LSPACE rc='rc 'LS.0='ls.0 'LS.1='ls.1                              06510000
+/*                                                                      06520000
+SAY COPIES('-',130)                                                     06530000
+SAY RXSMS('VOL','vol.','PRIM10')                                        06540000
+SAY 'VOL rc='rc 'vol.0='vol.0 'vol.1='vol.1                             06550000
+CALL RXSMS 'AVL','avl.'                                                 06560000
+SAY 'AVL rc='rc 'avl.0='avl.0                                           06570000
+DO i=1 TO avl.0                                                         06580000
+  SAY ' ' i avl.i                                                       06590000
+END                                                                     06600000
+CALL RXSMS 'VSG','grp.','PRIM13'                                        06610000
+SAY 'VSG rc='rc 'grp.0='grp.0 'grp.1='grp.1 'vol=PRIM13'                06620000
+CALL RXSMS 'SGL','SG.'                                                  06630000
+SAY 'SGL rc='rc 'sg.0='sg.0                                             06640000
+DO i=1 TO sg.0                                                          06650000
+  SAY i 'SG='sg.i                                                       06660000
+    CALL RXSMS 'SGV','VOL.',WORD(sg.i,1)                                06670000
+    SAY 'SGV rc='rc 'vol.0='vol.0                                       06680000
+    DO j=1 TO vol.0                                                     06690000
+      SAY ' ' j vol.j                                                   06700000
+      DROP vol.j                                                        06710000
+    END                                                                 06720000
+END                                                                     06730000
+CALL RXSMS 'SCL','SC.'                                                  06740000
+SAY 'SCL rc='rc 'sc.0='sc.0                                             06750000
+DO i=1 TO sc.0                                                          06760000
+  SAY i 'SC='sc.i                                                       06770000
+END                                                                     06780000
+CALL RXSMS 'DCL','DC.'                                                  06790000
+SAY 'DCL rc='rc 'dc.0='dc.0                                             06800000
+DO i=1 TO dc.0                                                          06810000
+  SAY i 'DC='dc.i                                                       06820000
+END                                                                     06830000
+CALL RXSMS 'MCL','MC.'                                                  06840000
+SAY 'MCL rc='rc 'mc.0='mc.0                                             06850000
+DO i=1 TO mc.0                                                          06860000
+  SAY i 'MC='mc.i                                                       06870000
+END                                                                     06880000

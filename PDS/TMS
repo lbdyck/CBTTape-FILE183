@@ -1,0 +1,501 @@
+//GILBERTT JOB (ACCT#),TMS50,                                           00010006
+// NOTIFY=&SYSUID,                                                      00020000
+// CLASS=A,MSGCLASS=H,COND=(0,NE)                                       00030006
+//HLASM EXEC PGM=ASMA90,PARM=(NODECK,OBJECT,NOESD,NORLD,NOXREF)         00040007
+*********************************************************************** 00050000
+*                                                                     * 00060000
+* MODULE NAME = TMS                                                   * 00070004
+*                                                                     * 00080004
+* DESCRIPTIVE NAME = DISPLAY A TMC RECORD (CA1/TMS 5.0)               * 00090004
+*                                                                     * 00100004
+* FUNCTION = THE TMS PROGRAM READS THE TMC RECORD FOR THE FIRST       * 00110004
+*        VOLUME OF A TAPE DATA SET, FORMATS IT PRETTY MUCH LIKE       * 00120004
+*        THE CA1 TSO COMMAND, THEN INVOKES BRIF TO DISPLAY THE        * 00130004
+*        RESULT.  MAY ONLY BE USED AS A LINE COMMAND ON THE DATA      * 00140004
+*        SET LIST PANEL (OPTION 3.4 OF ISPF/PDF).                     * 00150004
+*                                                                     * 00160004
+* STATUS = R508                                                       * 00170008
+*                                                                     * 00180004
+* AUTHOR = GILBERT SAINT-FLOUR <carlos@gsf-soft.com>                  * 00190005
+*                                                                     * 00200004
+* NOTES = SEE BELOW                                                   * 00210004
+*                                                                     * 00220004
+*    DEPENDENCIES = CA1/TMS 5.0                                       * 00230004
+*                   STRING MACRO                                      * 00240004
+*                                                                     * 00250004
+*    AUTHORIZATION = NONE                                             * 00260004
+*                                                                     * 00270004
+*    RESTRICTIONS = NONE                                              * 00280004
+*                                                                     * 00290004
+* MODULE TYPE = PROCEDURE, (BATCH PROGRAM)                            * 00300004
+*                                                                     * 00310004
+*    PROCESSOR = IBM OS/ASSEMBLER H VERSION 2 OR                      * 00320004
+*                IBM HIGH LEVEL ASSEMBLER/MVS                         * 00330004
+*                                                                     * 00340004
+*    MODULE SIZE = 4K                                                 * 00350004
+*                                                                     * 00360004
+*    ATTRIBUTES = REUSABLE, RMODE 24, AMODE 24,                       * 00370004
+*                 PROBLEM STATE, KEY 8                                * 00380004
+*                                                                     * 00390005
+* CHANGE ACTIVITY                                                     * 00400005
+*                                                                     * 00410005
+*  505  REDESIGN SCREEN LAYOUT TO LOOK LIKE CA1'S                     * 00420005
+*       TRANSLATE LTYPE,DEN,TRTCH,RECFM                               * 00430005
+*       SHOW ALL DATES AS YYYY-MM-DD                                  * 00440005
+*  506  FIX TWO ERRORS IN LINE14                                      * 00450006
+*  507  CHANGED EXPIRATION DATE TO LOOK LIKE CA'S ON LINE3            * 00460007
+*       CORRECTED CLNCNT.  IT WAS LOOKING AT A HALFWORD INSTEAD       * 00470007
+*         OF A SINGLE BYTE.                                           * 00480007
+*       ADDED FLAG5, ROBTY AND ROBID.                                 * 00490007
+*       ADDED CPGM AND LPGM.                                          * 00500007
+*       MOVED LAST COLUMN OVER 1 BECAUSE CPGM WAS SLAMMING UP AGAINST * 00510007
+*         LPGM LITERAL.                                               * 00520007
+*  508  BLOCKED TMC (DAVID QUINTON)                                   * 00530008
+*                                                                     * 00540005
+&TMCDSN  SETC  'CAI.CA1.TMC'                <== TMC DSNAME            * 00550006
+*********************************************************************** 00560000
+TMS      CSECT                                                          00570000
+         SAVE  (14,12),,'GSF UTILITIES - TMS R508'                      00580008
+         LR    R12,R15                                                  00590006
+         USING TMS,R12                                                  00600006
+         GETMAIN R,LV=DYNAML           DYNAMIC STORAGE                  00610007
+         ST    R13,4(,R1)                                               00620000
+         ST    R1,8(,R13)                                               00630000
+         LR    R13,R1                                                   00640000
+         USING DYNAM,R13                                                00650000
+*                                                                       00660000
+*        DEFINE VARIABLES, GET VOLSER (&ZDLVOL)                         00670000
+*                                                                       00680000
+         CALL  ISPLINK,(VDEFINE,DSNVOL,DSNAME,FORMATL,LENL,LIST),VL     00690000
+         LTR   R15,R15                                                  00700000
+         BNZ   QUIT16                                                   00710000
+         CALL  ISPLINK,(VGET,DSNVOL),VL                                 00720000
+         LTR   R15,R15                                                  00730000
+         BNZ   QUIT16                                                   00740000
+         PACK  WK1,VOLSER              030001                           00760000
+         OI    WK1+7,15                NO SIGN                          00770000
+         UNPK  WK2(6),WK1+4(4)         GET S0C7 IF BAD                  00780000
+         CLC   WK2(6),VOLSER           NUMERIC VOLSER?                  00790000
+         BNE   QUIT16                  NO, QUIT                         00800000
+*                                                                       00810000
+*        ALLOCATE & OPEN THE TAPE MANAGEMENT CATALOG (TMC)              00820000
+*                                                                       00830000
+         LA    R1,=A(S99RB+VL)                                          00840000
+         SVC   99                      ALLOCATE THE TMC DATA SET        00850000
+**       LTR   R15,R15                                                  00860000
+**       BNZ   QUIT16                  SVC99 FAILED, QUIT               00870000
+         OPEN  MF=(E,OPENLIST)                                          00880000
+         LTR   R15,R15                                                  00890000
+         BNZ   QUIT16                                                   00900000
+*---------------------------------------------------------------------* 00910008
+*                                                                     * 00920008
+*        PROCESS SEGMENT RECORDS TO DETERMINE THE                     * 00930008
+*        BLOCK NUMBER OF MY TMCBASE RECORD                            * 00940008
+*                                                                     * 00950008
+*---------------------------------------------------------------------* 00960008
+*LOOP                                                                   00970000
+SCANSEG1 EQU   *                                                        00980008
+         LA    R0,TMCBUFF              BUFFER                           00990008
+         READ  DECB1,DI,DCB1,(R0),'S','S',BLKREF+1                      01000000
+         CHECK DECB1                   WAIT FOR COMPLETION (OR SYNAD)   01010000
+         MVC   TMSCTL#1(256),TMCBUFF   COPY RECORD BUFFER TO TMS AREA   01020008
+         MVC   TMSCTL#1+256(TMCLRECL-256),TMCBUFF+256                   01030008
+         CLC   =C'TMSCTL#1',TMSCTL#1   IS THIS THE RIGHT RECORD?        01040000
+         BNE   QUIT16                  NO, QUIT                         01050000
+         CVB   R0,WK1                  MY VOLSER                        01060000
+         LA    R1,H1VOLLOW             POINT TO 1ST VOL-SER RANGE       01070000
+         LH    R2,TMCEXTNT             MAX NUMBER OF VOL-SER RANGES     01080000
+*--LOOP                                                                 01090000
+SCANSEG4 CL    R0,000(,R1)             COMPARE TO H1VOLLOW (LOW-VOL)    01100000
+         BL    SCANSEG5                NOT IN THIS RANGE                01110000
+         CL    R0,004(,R1)             COMPARE TO H1VOLHGH (HIGH-VOL)   01120000
+         BNH   SCANSEG9                YES, EXIT LOOP                   01130000
+SCANSEG5 LA    R1,012(,R1)             NEXT RANGE                       01140000
+         BCT   R2,SCANSEG4             NEXT RANGE IN TMSCTL#1           01150000
+*--ENDLOOP                                                              01160000
+         B     QUIT16                  VOLSER NOT FOUND, QUIT           01170000
+*                                                                       01180000
+SCANSEG9 AL    R0,008(,R1)             ADJUST BLK NUMBER                01190000
+         ST    R0,BLKREF               STORE RECORD NUMBER              01200000
+         XR    R0,R0                   CLEAR EVEN REGISTER FOR DR       01210008
+         LH    R1,DECB1+6              GET TMC BLOCK SIZE               01220008
+         LA    R3,TMCLRECL             GET TMC LRECL                    01230008
+         DR    R0,R3                   DIVIDE BLKSIZE BY LRECL,         01240008
+*                                      GIVING RECORDS/BLOCK IN R1       01250008
+         LR    R3,R1                   COPY RECORDS/BLOCK               01260008
+         XR    R0,R0                   CLEAR EVEN REGISTER FOR DR       01270008
+         ICM   R1,B'1111',BLKREF       GET RECORD NUMBER                01280008
+         DR    R0,R3                   DIVIDE RECORDS BY RECORD/BLOCK   01290008
+*                                      GIVING BLOCK IN R1               01300008
+*                                      REMAINDER IN R0 - DEAL WITH      01310008
+         CL    R1,DCB1+16              IS IT TOO HIGH?                  01320008
+         BH    QUIT16                  YES, QUIT                        01330008
+         ST    R1,BLKREF               STORE BLOCK NUMBER               01340008
+         ST    R0,RECREF               STORE RECORD NUMBER              01350008
+*---------------------------------------------------------------------* 01360008
+*                                                                     * 01370008
+*        READ THE TMC RECORD FOR MY VOLSER                            * 01380008
+*                                                                     * 01390008
+*---------------------------------------------------------------------* 01400008
+         READ  DECB1,DI,MF=E           READ TMC RECORD FOR MY VOLSER    01410000
+         CHECK DECB1                   WAIT FOR COMPLETION (OR SYNAD)   01420000
+         LA    R0,TMCLRECL             GET TMC LRECL                    01430008
+         L     R1,RECREF               GET RECORD NUMBER WITHIN BLOCK   01440008
+         MR    R0,R0                   MULTIPLY BY LRECL, GIVING OFFSET 01450008
+         LA    R1,TMCBUFF(R1)          GET A(TMC RECORD) W/IN TMC BLOCK 01460008
+         MVC   TMSCTL#1(256),0(R1)     COPY RECORD BUFFER TO TMS AREA   01470008
+         MVC   TMSCTL#1+256(TMCLRECL-256),256(R1)                       01480008
+         CLOSE MF=(E,OPENLIST)                                          01490000
+*---------------------------------------------------------------------* 01500008
+*                                                                     * 01510008
+*        EDIT CONTENTS OF TMC RECORD INTO "LINES"                     * 01520008
+*                                                                     * 01530008
+*---------------------------------------------------------------------* 01540008
+         LA    R3,LINES                FIRST LINE                       01550000
+         MVI   BLANKS,C' '                                              01560000
+         MVC   BLANKS+1(L'BLANKS-1),BLANKS                              01570000
+*                                                                       01580000
+LINE1    TIME  DEC                     R1=00YYDDDF                      01590005
+         ST    R1,WK1                  00YYDDDF                         01600003
+         AP    WK1(4),=P'1900000'      1900123F                         01610005
+         STRING INTO=((R3),L'LINES),                                   X01620005
+               'VOLSER = ',TMVOLSER,                                   X01630005
+               42X,'TODAY= ',(WK1,P,YYYY-MM-DD)                         01640007
+         LA    R3,L'LINES(,R3)         NEXT LINE                        01650000
+*                                                                       01660000
+LINE2    STRING INTO=((R3),L'LINES),                                   X01670005
+               'DSN    = ',TMDSN,4X,                                   X01680007
+               'DSN17= ',TMDSN17                                        01690005
+         LA    R3,L'LINES(,R3)         NEXT LINE                        01700000
+*                                                                       01710000
+LINE3    TMMDATE OPEN,FMT='YYYY/DDD',ANCHOR=TMANCHOR,PARM=TMPARM        01720007
+         TMMDATE TO_PREFERRED,TODATE=EXPDT,FRDATE=TMEXPDT,             X01730007
+               ANCHOR=TMANCHOR,PARM=TMPARM                              01740007
+         STRING INTO=((R3),L'LINES),                                   X01750005
+               'EXPDT  = ',EXPDT,                                      X01760005
+               ' ACCT= ',TMUSER                                         01770005
+         LA    R3,L'LINES(,R3)         NEXT LINE                        01780005
+*                                                                       01790005
+LINE4    MVC   WK2,=C'(...)   '                                         01800005
+         STRING INTO=((R3),L'LINES),                                   X01810000
+               'FLAG1  = ',(TMFLAG1,1,X),' = ',WK2,35X,                X01820007
+               'BATCHID= ',(TMVABTCH,,X),' = '                          01830005
+         LA    R3,L'LINES(,R3)         NEXT LINE                        01840000
+*                                                                       01850000
+LINE5    MVC   WK1,=C'(...)   '                                         01860000
+         STRING INTO=((R3),L'LINES),                                   X01870000
+               'FLAG2  = ',(TMFLAG2,1,X),' = ',WK1,35X,                X01880007
+               'HOOKID = ',(TMVAHOOK,,X),' = '                          01890005
+         LA    R3,L'LINES(,R3)         NEXT LINE                        01900000
+*                                                                       01910000
+LINE6    MVC   WK1,=C'(...)   '                                         01920007
+         STRING INTO=((R3),L'LINES),                                   X01930000
+               'FLAG3  = ',(TMFLAG3,1,X),' = ',WK1,35X,                X01940007
+               'EDMID  = ',TMEDMID                                      01950007
+         LA    R3,L'LINES(,R3)         NEXT LINE                        01960000
+*                                                                       01970000
+LINE7    MVC   WK1,=C'(...)   '                                         01980007
+         MVC   WK2,=C'(...)   '                                         01990007
+         STRING INTO=((R3),L'LINES),                                   X02000007
+               'FLAG4  = ',(TMFLAG4,1,X),' = ',WK1,35X,                X02010007
+               'FLAG5  = ',(TMFLAG5,1,X),' = ',WK2                      02020007
+         LA    R3,L'LINES(,R3)         NEXT LINE                        02030007
+*                                                                       02040007
+LINE8    STRING INTO=((R3),L'LINES),                                   X02050007
+               'CDATE  = ',(TMCRTDT,P,YYYY-MM-DD), DATE                X02060005
+               ' CJOB   = ',TMJOBNM, CREATION JOB                      X02070005
+               '  CTIME  = ',(TMCRTTI,P,R4Z), TIME                     X02080005
+               '     CUNIT  = ',(TMCRUNI,,X)  UNIT                      02090007
+         LA    R3,L'LINES(,R3)         NEXT LINE                        02100000
+*                                                                       02110000
+LINE9    STRING INTO=((R3),L'LINES),                                   X02120007
+               'LDATE  = ',(TMLASUSD,P,YYYY-MM-DD), DATE               X02130005
+               ' LJOB   = ',TMLASUSJ,    LAST USE JOB                  X02140005
+               '  LTIME  = ',(TMLASUST,P,R4Z), TIME                    X02150005
+               '     LUNIT  = ',(TMUSUNI,,X)      UNIT                  02160007
+         LA    R3,L'LINES(,R3)         NEXT LINE                        02170000
+*                                                                       02180005
+LINE10   STRING INTO=((R3),L'LINES),                                   X02190007
+               'CSTEP  = ',TMSTPNAM,        STEP                       X02200005
+               '   CDDNAME= ',TMDDNAME,     CREATION DDNAME            X02210005
+               '  CPGM   = ',TMCPGM,        CREATION PROGRAM           X02220007
+               ' LPGM   = ',TMLPGM          LAST USE PROGRAM            02230007
+         LA    R3,L'LINES(,R3)         NEXT LINE                        02240005
+*                                                                       02250005
+LINE11   STRING INTO=((R3),L'LINES),                                   X02260007
+               'OUTDATE= ',(TMOUTDAT,P,YYYY-MM-DD), OUT-OF-AREA DATE   X02270005
+               ' OUTCODE= ',TMOUTAR, OUT-OF-AREA CODE                  X02280005
+               '      SLOT   = ',(TMSLOT,F,R6Z), SLOT                  X02290005
+               '   TWERRC = ',(TMTWERRC,H,R5Z)   WRITE ERRORS           02300007
+         LA    R3,L'LINES(,R3)         NEXT LINE                        02310005
+*                                                                       02320005
+LINE12   STRING INTO=((R3),L'LINES),                                   X02330007
+               'BTHDATE= ',(TMBTHDT,P,YYYY-MM-DD), BIRTH DATE          X02340005
+               ' VENDOR =',TMVENDOR,            VENDOR                 X02350005
+               '   COUNT  = ',(TMUCOUNT,H,R5Z), TIMES TAPE OPENED      X02360005
+               '    TRERRI = ',(TMTRERRI,H,R5Z) TEMP READ ERRORS        02370007
+         LA    R3,L'LINES(,R3)         NEXT LINE                        02380005
+*                                                                       02390005
+LINE13   STRING INTO=((R3),L'LINES),                                   X02400007
+               'DATECLN= ',(TMDATCLN,P,YYYY-MM-DD), DATE LAST CLEANED  X02410005
+               ' USECLN = ',(TMUSECLN,H,R5Z), USE CNT AT LAST CLN      X02420005
+               '     CLNCNT = ',(TMCLNCNT,FL1,R3Z), TIMES TAPE CLEANED X02430007
+               '      TWERRI = ',(TMTWERRI,H,R5Z)   WRITE ERRORS        02440007
+         LA    R3,L'LINES(,R3)         NEXT LINE                        02450005
+*                                                                       02460005
+LINE14   STRING INTO=((R3),L'LINES),                                   X02470007
+               57X,'TRERRC = ',(TMTRERRC,H,R5Z)     TEMP READ ERRORS    02480007
+         LA    R3,L'LINES(,R3)         NEXT LINE                        02490005
+*                                                                       02500005
+LINE15   STRING INTO=((R3),L'LINES),                                   X02510007
+               'VOLSEQ = ',(TMVOLSEQ,H,R4Z),                           X02520005
+               7X,'ROBTY  = ',(TMROBTY,H,R3Z),  TAPE IN ROBOT          X02530007
+               7X,'ROBID  = ',(TMROBID,H,R3Z),  ROBOT ID               X02540007
+               6X,'PRERRC = ',(TMPRERRC,H,R5Z)  PERM READ ERRORS        02550007
+         LA    R3,L'LINES(,R3)         NEXT LINE                        02560005
+*                                                                       02570005
+LINE16   STRING INTO=((R3),L'LINES),                                   X02580007
+               '1STVOL = ',TMFRSVOL, FIRST VOLSER                      X02590005
+               '     NEXTVOL= ',TMNXTVOL, NEXT VOLSER                  X02600005
+               '    PREVVOL= ',TMPRVVOL, PREVIOUS VOLSER               X02610005
+               '   PWERRC = ',(TMPWERRC,H,R5Z)          WRITE ERRORS    02620007
+         LA    R3,L'LINES(,R3)         NEXT LINE                        02630005
+*                                                                       02640005
+LINE17   STRING INTO=((R3),L'LINES),                                   X02650007
+               'NUMDSNB= ',(TM#DSNBS,H,R4Z), NUMBER OF DSNBS           X02660005
+               7X,'1STDSNB= ',(TMADSNB,F,R6Z),   FIRST DSNB            X02670005
+               '    LSTDSNB= ',(TMALDSNB,F,R6Z),   LAST DSNB           X02680005
+               '   PRERRI = ',(TMPRERRI,H,R5Z)  PERM READ ERRORS        02690007
+         LA    R3,L'LINES(,R3)         NEXT LINE                        02700005
+*                                                                       02710000
+LINE18#  BAL   R1,LINE18B                                               02720007
+         DC    X'02',C'SL '                                             02730005
+         DC    X'0A',C'SUL'                                             02740005
+         DC    X'01',C'NL '                                             02750005
+         DC    X'04',C'NSL'                                             02760005
+         DC    X'10',C'BLP'                                             02770005
+         DC    X'40',C'AL1'                                             02780005
+         DC    X'48',C'AU1'                                             02790005
+         DC    X'C0',C'AL3'                                             02800005
+         DC    X'C8',C'AU3'                                             02810005
+         DC    X'00',0H'0'                                              02820005
+LINE18B  BAL   R14,SCAN_CLI            CALL SCAN RTNE                   02830007
+         DC    Y(1+3)               0  LENGTH OF A TABLE ENTRY          02840005
+         CLI   TMLTYPE,*-*          2  TEST LABEL TYPE FLAGS            02850005
+         MVC   WK1,1(R1)            6  MOVE LABEL TYPE                  02860005
+*                                                                       02870005
+         BAL   R1,LINE18C                                               02880007
+         DC    X'83',C'800 BPI '                                        02890005
+         DC    X'C3',C'1600 BPI'                                        02900005
+         DC    X'D3',C'6250 BPI'                                        02910005
+         DC    X'E3',C'38K BPI '                                        02920005
+         DC    X'E7',C'38K BPI '                                        02930005
+         DC    X'43',C'556 BPI '                                        02940005
+         DC    X'03',C'200 BPI '                                        02950005
+         DC    X'00',0H'0'                                              02960005
+LINE18C  BAL   R14,SCAN_CLI            CALL SCAN RTNE                   02970007
+         DC    Y(1+8)               0  LENGTH OF A TABLE ENTRY          02980005
+         CLI   TMDEN,*-*            2  TEST DEN FLAGS                   02990005
+         MVC   WK2,1(R1)            6  MOVE DEN                         03000005
+*                                                                       03010005
+         BAL   R1,LINE18D                                               03020007
+         DC    X'80',C'9TK  '     NINE TRACK TAPE                       03030007
+         DC    X'C0',C'18TK '     18 TRACK (CARTRIDGE)                  03040007
+         DC    X'E0',C'36TK '     36 TRACK (CARTRIDGE)                  03050007
+         DC    X'23',C'EVEN '     EVEN PARITY                           03060005
+         DC    X'3B',C'BCD/E'     BCD/EBCDIC TRANSLATION                03070005
+         DC    X'13',C'DATAX'     DATA CONVERSION                       03080005
+         DC    X'2B',C'EVENX'     EVEN PARITY AND TRANSLATION           03090005
+         DC    X'00',0H'0'                                              03100005
+LINE18D  BAL   R14,SCAN_CLI            CALL SCAN RTNE                   03110007
+         DC    Y(1+5)               0  LENGTH OF A TABLE ENTRY          03120005
+         CLI   TMTRTCH,*-*          2  TEST TRTCH FLAGS                 03130005
+         MVC   WK3,1(R1)            6  MOVE TRTCH                       03140005
+*                                                                       03150005
+LINE18X  STRING INTO=((R3),L'LINES),                                   X03160007
+               'LABEL  = ',(WK1,3),    LABEL TYPE                      X03170005
+               8X,'DEN    = ',(WK2,8),  DENSITY                        X03180005
+               '  TRTCH  = ',(WK3,5), TRTCH                            X03190005
+               '    PWERRI = ',(TMPWERRI,H,R5Z)          WRITE ERRORS   03200007
+         LA    R3,L'LINES(,R3)         NEXT LINE                        03210000
+*                                                                       03220000
+LINE19   BAL   R14,#RECFM1             CONVERT RECFM                    03230007
+         STRING INTO=((R3),L'LINES),                                   X03240000
+               'RECFM  = ',(WK1,5),    RECORD FORMAT                   X03250005
+               '      LRECL  = ',(TMLRECL,F,L10),                      X03260005
+               'BLKSIZE= ',(TMBLKSI,F,L8),                             X03270005
+               ' BLKCNT = ',(TMBLKCNT,F,L)                              03280007
+         LA    R3,L'LINES(,R3)         NEXT LINE                        03290000
+*                                                                       03300000
+LINE20   STRING INTO=((R3),L'LINES),                                   X03310007
+               'AUDATE = ',(TMVADATE,P,YYYY-MM-DD), UPDATE DATE        X03320005
+               ' AUTIME = ',(TMVATIME,P,R4Z),     TIME                 X03330005
+               '      USERID = ',TMVAUSER         USERID                03340005
+         LA    R3,L'LINES(,R3)         NEXT LINE                        03350000
+*                                                                       03360000
+LINE21   STRING INTO=((R3),L'LINES),                                   X03370007
+               'AUCODE = ',(TMVACODE,,X),          AUDIT CODE          X03380005
+               9X,'AUFLAG1= ',(TMVAFLG1,,X),                           X03390005
+               8X,'CPUID  = ',TMVACPU              CPUID                03400005
+         LA    R3,L'LINES(,R3)         NEXT LINE                        03410000
+*---------------------------------------------------------------------* 03420008
+*                                                                     * 03430008
+*        INVOKE ISPF/PDF "BRIF" SERVICE                               * 03440008
+*                                                                     * 03450008
+*---------------------------------------------------------------------* 03460008
+         LA    R0,LINES                FIRST LINE                       03470000
+         SLR   R2,R2                                                    03480000
+         SLR   R3,R0                   LENGTH USED                      03490000
+         D     R2,MAXLRECL             NUMBER OF LINES WRITTEN          03500000
+         ST    R3,MAXRECNO             NUMBER OF LINES WRITTEN          03510000
+         ST    R13,DDATA               PARM FOR READ RTNE               03520000
+         CALL  ISPLINK,(BRIF,DSNAME,RECFM,MAXLRECL,RADDR,,DDATA),VL     03530000
+*                                                                       03540000
+QUIT00   L     R13,4(,R13)                                              03550000
+         RETURN (14,12),RC=00                                           03560000
+*                                                                       03570000
+QUIT16   CLOSE MF=(E,OPENLIST)                                          03580000
+         L     R13,4(,R13)                                              03590000
+         RETURN (14,12),RC=16                                           03600000
+*---------------------------------------------------------------------* 03610005
+*                                                                     * 03620005
+*        RECFM EDIT ROUTINE                                           * 03630005
+*                                                                     * 03640005
+*---------------------------------------------------------------------* 03650005
+#RECFM1  MVC   WK1,BLANKS              INITIALIZE RECFM AREA            03660005
+         LA    R1,WK1                  START OF WORK AREA               03670005
+         MVI   0(R1),C'U'                                               03680005
+         TM    TMRECFM,DS1RECFU        RECFM=U?                         03690005
+         BO    #RECFM2                 YES, JUMP                        03700005
+         MVI   0(R1),C'F'                                               03710005
+         TM    TMRECFM,DS1RECFF        RECFM=F?                         03720005
+         BO    #RECFM2                 YES, JUMP                        03730005
+         MVI   0(R1),C'V'                                               03740005
+#RECFM2  TM    TMRECFM,DS1RECFB        RECFM=.B ?                       03750005
+         BNO   #RECFM3                 NO, JUMP                         03760005
+         MVI   1(R1),C'B'              .B                               03770005
+         LA    R1,1(,R1)                                                03780005
+#RECFM3  TM    TMRECFM,DS1RECFS        RECFM=..S ?                      03790005
+         BNO   #RECFM4                 NO, JUMP                         03800005
+         MVI   1(R1),C'S'              ..S                              03810005
+         LA    R1,1(,R1)                                                03820005
+#RECFM4  TM    TMRECFM,DS1RECFA        RECFM=...A ?                     03830005
+         BNO   #RECFM5                 NO, JUMP                         03840005
+         MVI   1(R1),C'A'              ...A                             03850005
+#RECFM5  TM    TMRECFM,DS1RECMC        RECFM=...M ?                     03860005
+         BNO   #RECFM6                 NO, JUMP                         03870005
+         MVI   1(R1),C'M'              ...M                             03880005
+#RECFM6  TM    TMRECFM,DS1RECFT        RECFM=...T ?                     03890005
+         BNOR  R14                     NO, JUMP                         03900005
+         MVI   1(R1),C'T'              ...T                             03910005
+         BR    R14                                                      03920005
+*---------------------------------------------------------------------* 03930005
+*        TABLE SCAN ROUTINE                                           * 03940005
+*---------------------------------------------------------------------* 03950005
+*LOOP                                                                   03960005
+SCAN_CLI IC    R15,0(,R1)              PICK UP MASK FOR "TM"            03970005
+         EX    R15,2(,R14)             EXECUTE TM UNSTRUCTION           03980005
+         BE    6(,R14)                 FOUND, GOBACK                    03990005
+         AH    R1,0(,R14)              BUMP TABLE PTR                   04000005
+         CLI   0(R1),0                 END OF TABLE?                    04010005
+         BNE   SCAN_CLI                NEXT TABLE ENTRY                 04020005
+*ENDLOOP                                                                04030005
+         LA    R1,BLANKS               ALL BLANKS                       04040005
+         B     6(,R14)                 NOT FOUND, GOBACK                04050005
+*------- ISPLINK CONSTANTS -------------------------------------------  04060000
+VDEFINE  DC    C'VDEFINE '             FUNCTION                         04070000
+VGET     DC    C'VGET    '             FUNCTION                         04080000
+DSNVOL   DC    C'(ZDLDSN ZDLVOL)'                                       04090000
+FORMATL  DC   2C'CHAR    '                                              04100000
+LENL     DC    AL4(L'DSNAME,L'VOLSER)                                   04110000
+LIST     DC    C'LIST    '                                              04120000
+BRIF     DC    C'BRIF    '             FUNCTION                         04130000
+RECFM    DC    C'F '                                                    04140000
+DSNAME   DS    CL44                    ZDLDSN                           04150000
+VOLSER   DS    C'030001'               ZDLVOL                           04160000
+RADDR    DC    A(READRTN)                                               04170000
+DDATA    DS    A(DYNAM)                BASE ADDRESS                     04180000
+VL       EQU   X'80000000'                                              04190000
+*------- BLOCS POUR ALLOCATION DYNAMIQUE DES FICHIERS ----------------  04200000
+S99RB    DC    A(X'14010000',0,S99TUPL,0,0)                             04210000
+S99TUPL  DC    A(S99T1,S99T2,S99T4+VL)                                  04220000
+S99T1    DC    AL2(1,1,6),C'CAITMC'    DDNAME                           04230000
+S99T2    DC    AL2(2,1,L'TMCDSN)       DSNAME                           04240000
+TMCDSN   DC    C'&TMCDSN'              TMC DSNAME                       04250000
+S99T4    DC    AL2(4,1,1),X'08',0F'0'  DISP=SHR                         04260000
+BLKREF   DC    F'0'                    BLOCK NUMBER (TMSCTL#1)          04270000
+DS1RECFF EQU   X'80'  10.. ....    F - FIXED LENGTH                     04280005
+DS1RECFV EQU   X'40'  01.. ....    V - VARIABLE LENGTH                  04290005
+DS1RECFU EQU   X'C0'  11.. ....    U - UNDEFINED LENGTH                 04300005
+DS1RECFT EQU   X'20'  ..1. ....    T - TRACK OVERFLOW                   04310005
+DS1RECFB EQU   X'10'  ...1 ....    B - BLOCKED                          04320005
+DS1RECFS EQU   X'08'  .... 1...    FIXED LENGTH: (X'88')                04330005
+DS1RECFA EQU   X'04'  .... .10.    ANSI CONTROL CHARACTER               04340005
+DS1RECMC EQU   X'02'  .... .01.    MACHINE CONTROL CHARACTER            04350005
+         DROP                                                           04360000
+*********************************************************************** 04370000
+*                                                                     * 04380008
+*        READ ROUTINE (BRIF)                                          * 04390008
+*                                                                     * 04400008
+*********************************************************************** 04410000
+READRTN  SAVE  (14,12),,'READRTN'                                       04420000
+         LR    R11,R15                                                  04430006
+         USING READRTN,R11                                              04440006
+         LM    R4,R7,0(R1)             INPUT PARMS                      04450000
+         L     R12,0(,R7)              =A(DYNAM)                        04460005
+         USING DYNAM,R12                                                04470000
+*                                                                       04480000
+         L     R3,0(,R6)               RECORD NUMBER (FROM BROWSE)      04490000
+         C     R3,MAXRECNO             BEYOND END OF FILE?              04500000
+         BH    GOBACK8                 YES, EXIT                        04510000
+         BCTR  R3,0                    CALCULATE OFFSET                 04520000
+         M     R2,MAXLRECL             CALCULATE OFFSET                 04530000
+         LA    R3,LINES(R3)            CHANGE OFFSET TO ADDRESS         04540000
+         OC    0(L'LINES,R3),BLANKS    X'00'=>X'40'                     04550005
+         ST    R3,0(,R4)               PASS RECORD ADDRESS TO BRIF      04560000
+         RETURN (14,12),RC=00                                           04570000
+*                                                                       04580000
+GOBACK8  MVC   0(4,R6),MAXRECNO        RETURN MAX RECORD NUMBER         04590000
+         RETURN (14,12),RC=8                                            04600000
+*---------------------------------------------------------------------- 04610000
+OPENLIST OPEN  DCB1,MF=L                                                04620000
+DCB1     DCB   DSORG=DA,MACRF=RIC,OPTCD=R,DDNAME=CAITMC                 04630000
+MAXLRECL DC    A(L'LINES)                                               04640000
+*---------------------------------------------------------------------- 04650000
+DYNAM    DSECT                                                          04660000
+         DS    18F                                                      04670000
+WK1      DS    D                                                        04680000
+WK2      DS    D                                                        04690000
+WK3      DS    D                                                        04700000
+EXPDT    DS    C'YYYY-MM-DD'           EXPDT/CATALOG                    04710005
+MAXRECNO DS    F                       MAX RECORD NUMBER                04720000
+BLANKS   DS    CL(L'LINES)                                              04730000
+         TMMTMREC PREFIX=TM,DSECT=     CAI.CAIMAC                       04740000
+EXDATA   TMMDATE EXPLODED_DATA                                          04750007
+TMANCHOR TMMDATE ANCHOR                                                 04760007
+TMPARM   TMMDATE PARM                                                   04770007
+LINES    DS    32CL81                                                   04780000
+RECREF   DS    F'0'                    RECORD NUMBER                    04790008
+TMCBUFF  DS    CL32767                 BUFFER FOR TMC RECORDS           04800008
+DYNAML   EQU   *-DYNAM                                                  04810000
+         STRING GENERATE                                                04820004
+         YREGS                                                          04830000
+ISPLINK  CSECT                                                          04840000
+         USING *,R15                                                    04850000
+         ST    R1,24(,R13)                                              04860000
+         LOAD  EP=ISPLINK                                               04870000
+         LR    R15,R0                                                   04880000
+         L     R1,24(,R13)                                              04890000
+         BR    R15                                                      04900000
+         END                                                            04910000
+//SYSLIB   DD DSN=SYS1.MACLIB,DISP=SHR                                  04940000
+//         DD DSN=CAI.CA1.CAIMAC,DISP=SHR                     TMMTMREC  04950006
+//         DD DSN=CBTTAPE.FILE183.PDS,DISP=SHR                STRING    04960006
+//SYSUT1   DD UNIT=SYSDA,SPACE=(CYL,2)                                  04970006
+//SYSPRINT DD SYSOUT=*                                                  04980000
+//SYSLIN   DD UNIT=SYSDA,SPACE=(TRK,1),DISP=(,PASS),BLKSIZE=3200        04990008
+//*                                                                     05000005
+//LKED    EXEC PGM=HEWL,PARM='MAP,NOREUS'                               05010005
+//SYSLIN   DD DSN=*.HLASM.SYSLIN,DISP=(OLD,PASS)                        05020007
+//SYSLMOD  DD DSN=CBTTAPE.FILE183.LOAD(TMS),DISP=SHR                    05030007
+//SYSPRINT DD SYSOUT=*                                                  05040000

@@ -1,0 +1,451 @@
+//GILBERTD JOB (ACCT#),DCODADDR,                                        00010001
+// NOTIFY=&SYSUID,                                                      00020000
+// CLASS=A,MSGCLASS=H,COND=(0,NE)                                       00030000
+//HLASM EXEC PGM=ASMA90,PARM=(OBJECT,NODECK,NOESD,NORLD,NOXREF)         00040001
+*********************************************************************** 00060000
+*                                                                     * 00070000
+* MODULE NAME = DCODADDR                                              * 00080000
+*                                                                     * 00090000
+* DESCRIPTIVE NAME = CONVERT ADDRESS TO MODULE.CSECT+X'OFFSET'        * 00100000
+*                                                                     * 00110000
+* FUNCTION = THIS MODULE CONVERTS AN ADDRESS PASSED BY ITS INVOKER    * 00120000
+*            INTO A CHARACTER STRING THAT INDICATES WHAT MODULE,      * 00130000
+*            CSECT WITHIN THE MODULE, AND OFFSET WITHIN THE CSECT     * 00140000
+*            THE ADDRESS POINTS TO.  DCODADDR CAN BE INVOKED BY       * 00150000
+*            RECOVERY ROUTINES OR ANY OTHER MODULES.                  * 00160000
+*                                                                     * 00170000
+* STATUS = R101                                                       * 00180001
+*                                                                     * 00190000
+* AUTHOR = GILBERT SAINT-FLOUR                                        * 00200000
+*                                                                     * 00210000
+* INVOCATION = VIA CALL OR LINK                                       * 00220000
+*                                                                     * 00230000
+*          LOAD EP=DCODADDR                                           * 00240000
+*          LR   R15,R0                                                * 00250000
+*          CALL (15),((RX),WORKAREA)                                  * 00260000
+*     OR                                                              * 00270000
+*          LINK EP=DCODADDR,PARAM=((RX),WORKAREA)                     * 00280000
+*                                                                     * 00290000
+*   RX CONTAINS THE ADDRESS THAT WILL BE CONVERTED                    * 00300000
+*                                                                     * 00310000
+*   WORKAREA DESIGNATES A 32-BYTE WORK AREA INTO WHICH DCODADDR       * 00320000
+*   RETURNS THE RESULTING CHARACTER STRING.                           * 00330000
+*                                                                     * 00340000
+*                                                                     * 00350000
+* NOTES = SEE BELOW                                                   * 00360000
+*                                                                     * 00370000
+*    DEPENDENCIES = MVS/ESA V4.3, DFSMS/MVS V1                        * 00380000
+*                                                                     * 00390000
+*    AUTHORIZATION = NONE                                             * 00400000
+*                                                                     * 00410000
+* MODULE TYPE = PROCEDURE, (SUB-ROUTINE)                              * 00420000
+*                                                                     * 00430000
+*    PROCESSOR = IBM OS/ASSEMBLER H VERSION 2 OR                      * 00440000
+*                IBM HIGH LEVEL ASSEMBLER/MVS                         * 00450000
+*                                                                     * 00460000
+*    MODULE SIZE = 4K                                                 * 00470000
+*                                                                     * 00480000
+*    ATTRIBUTES = REENTERABLE, RMODE ANY, AMODE 31,                   * 00490000
+*                 PROBLEM STATE, TCB KEY                              * 00500000
+*                                                                     * 00510000
+* OPERATION = SEE DOCUMENTATION                                       * 00520000
+*                                                                     * 00530000
+* CHANGE ACTIVITY                                                     * 00540000
+*                                                                     * 00550000
+*   @100 INITIAL VERSION                                              * 00560000
+*   @101 ADD VERSION=1 TO IEWBUFF MACROS                              * 00570001
+*                                                                     * 00580000
+*   @101 (DCB,DDN=XXXXXX+002)                                         * 00590000
+*        (ACB,DDN=YYYYYY)                                             * 00600000
+*                                                                     * 00610000
+*********************************************************************** 00620000
+&REL     SETC  '101'                                                    00630001
+DCODADDR CSECT                                                          00640000
+DCODADDR RMODE ANY                                                      00650000
+         B     BEGIN-DCODADDR(,R15)                                     00660000
+         DC    C'DCODADDR - '                                           00670000
+         DC    C'CONVERT ADDR TO MODULE.CSECT+X''OFFSET'' R&REL'        00680000
+         DC    0F'0'                                                    00690000
+BEGIN    BAKR  R14,0                                                    00700000
+         LR    R11,R15                                                  00710000
+         USING DCODADDR,R11                                             00720000
+*USING GSFSUBS,R12                                                      00730000
+         LM    R3,R4,0(R1)             REFADDR,WORKAREA                 00740000
+         LA    R3,0(,R3)               CLEAR HI-ORDER BIT               00750000
+*                                                                       00760000
+         GETMAIN RU,LV=DYNAML          GET DYNAMIC STORAGE              00770000
+         LR    R13,R1                                                   00780000
+         USING DYNAM,R13                                                00790000
+         LR    R14,R1                  CLEAR STORAGE                    00800000
+         LR    R15,R0                  CLEAR STORAGE                    00810000
+         SLR   R1,R1                   CLEAR STORAGE                    00820000
+         MVCL  R14,R0                  CLEAR STORAGE                    00830000
+*                                                                       00840000
+         ST    R3,REFADDR              ADDRESS                          00850000
+         ST    R4,WORKADDR             ADDR OF WORK AREA                00860000
+         STRING '*UNKNOWN*',INTO=WORK32                                 00870000
+         MVI   MODNAME+1,8             LENGTH OF MODULE NAME            00880000
+*                                                                       00890000
+         CSVQUERY SEARCH=JPA,          SEARCH JPAQ                     +00900000
+               INADDR=REFADDR,         ADDRESS                         +00910000
+               OUTEPNM=MODNAME+2,      RETURN EP NAME                  +00920000
+               OUTLENGTH=MODLENGTH,    RETURN LENGTH                   +00930000
+               OUTLOADPT=MODLOADPT,    RETURN LOAD POINT ADDRESS       +00940000
+               OUTPDATA=PDATA,         PROVIDER DATA                   +00950000
+               OUTPID=PID,             PROVIDER ID                     +00960000
+               OUTEPTKN=MODTOKEN,      RETURN TOKEN                    +00970000
+               MF=(E,CSVQRYWK)         WORK AREA                        00980000
+         LTR   R15,R15                 CSVQUERY OK?                     00990000
+         BNZ   CSVQLPA                 NO, JUMP                         01000000
+         SL    R3,MODLOADPT            CALC OFFSET                      01010000
+         ST    R3,MODOFFSET            STORE OFFSET                     01020000
+         CLC   =C'PGMF',PID            LOADED FROM JOBLIB/STEPLIB?      01040000
+         BNE   EXIT8                   NO, EXIT                         01050000
+         CLI   PDATA+1,X'01'           LOADED FROM -LNKLST- ?           01060000
+         BE    EXIT8                   YES, PREVENT IEW2302S 1031       01070000
+         BAL   R14,SCANLOAD         <- SCAN LOAD-MODULE                 01080000
+         LTR   R15,R15                 IEWBIND OK?                      01090000
+         BNZ   EXIT8                   NO, USE MODNAME                  01100000
+         B     EXIT9                   EXIT                             01110000
+*---------------------------------------------------------------------* 01120000
+*                                                                     * 01130000
+*        LOOK FOR AN LPA MODULE                                       * 01140000
+*                                                                     * 01150000
+*---------------------------------------------------------------------* 01160000
+CSVQLPA  CSVQUERY SEARCH=LPA,          SEARCH ALPAQ/PLPAQ              +01170000
+               INADDR=REFADDR,         ADDRESS                         +01180000
+               OUTEPNM=MODNAME+2,      RETURN EP NAME                  +01190000
+               OUTLOADPT=MODLOADPT,    RETURN LOAD POINT ADDRESS       +01200000
+               MF=(E,CSVQRYWK)         WORK AREA                        01210000
+         LTR   R15,R15                 CSVQUERY OK?                     01220000
+         BZ    EXIT7                   YES, EXIT                        01230000
+*---------------------------------------------------------------------* 01240000
+*                                                                     * 01250000
+*        RETRIEVE NUCLEUS MODULE NAME AND OFFSET                      * 01260000
+*                                                                     * 01270000
+*---------------------------------------------------------------------* 01280000
+NUCLKUP  NUCLKUP BYADDR,ADDR=(R3),NAME=MODNAME+2                        01290000
+         LTR   R15,R15                 NUCLKUP OK?                      01300000
+         BNZ   VSMLOC                  NO, FIND SUB-POOL                01310000
+         ST    R0,MODLOADPT            STORE LOAD POINT ADDRESS         01320000
+*                                                                       01330000
+EXIT7    SL    R3,MODLOADPT            CALC OFFSET                      01340000
+         ST    R3,MODOFFSET            STORE OFFSET                     01350000
+*                                                                       01360000
+EXIT8    STRING (MODNAME+2,8,T),                                       X01370000
+               '+X''',(MODOFFSET+1,3,X),'''',INTO=WORK32                01380000
+         CLI   MODOFFSET+1,0           OFFSET > X'00FFFF' ?             01390000
+         BNE   EXIT9                   YES, EXIT                        01400000
+         STRING (MODNAME+2,8,T),                                       X01410000
+               '+X''',(MODOFFSET+2,2,X),'''',INTO=WORK32                01420000
+         B     EXIT9                                                    01430000
+*********************************************************************** 01440000
+*                                                                     * 01450000
+*        RETRIEVE SUB-POOL ID                                         * 01460000
+*                                                                     * 01470000
+*********************************************************************** 01480000
+VSMLOC   L     R3,REFADDR              GET REFERENCE ADDRESS            01490000
+         LA    R5,=C'PVT '                                              01500000
+         VSMLOC PVT,AREA=((R3),1)                                       01510000
+         LTR   R15,R15                 STORAGE ALLOCATED?               01520000
+         BE    VSMLOC8                 YES, JUMP                        01530000
+         LA    R5,=C'LSQA'                                              01540000
+         VSMLOC LSQA,AREA=((R3),1)                                      01550000
+         LTR   R15,R15                 STORAGE ALLOCATED?               01560000
+         BE    VSMLOC8                 YES, JUMP                        01570000
+         LA    R5,=C'CSA '                                              01580000
+         VSMLOC CSA,AREA=((R3),1)                                       01590000
+         LTR   R15,R15                 STORAGE ALLOCATED?               01600000
+         BE    VSMLOC8                 YES, JUMP                        01610000
+         LA    R5,=C'SQA '                                              01620000
+         VSMLOC SQA,AREA=((R3),1)                                       01630000
+         LTR   R15,R15                 STORAGE ALLOCATED?               01640000
+         BNZ   EXIT9                   NO, EXIT                         01650000
+VSMLOC8  LA    R1,255                  MASK NOR NR                      01660000
+         NR    R1,R0                   R1 CONTAINS SUBPOOL ID           01670000
+         STRING ((R5),4,T),' SUBPOOL ',((R1),,R3Z),INTO=WORK32          01680000
+*                                                                       01690000
+EXIT9    L     R4,WORKADDR             CALLER'S 32-BYTE WORK AREA       01700000
+         MVC   0(L'WORK32,R4),WORK32   MVC RESULT TO CALLER'S WORK AREA 01710000
+         FREEMAIN RU,LV=DYNAML,A=(R13)                                  01720000
+         PR                            GOBACK TO CALLER                 01730000
+*********************************************************************** 01740000
+*                                                                     * 01750000
+*        RETRIEVE CSECT FROM JPAQ MODULE                              * 01760000
+*                                                                     * 01770000
+*********************************************************************** 01780000
+SCANLOAD BAKR  R14,0                                                    01790000
+         IEWBIND FUNC=STARTD,          START DIALOG                    X01800000
+               DIALOG=DTOKEN,                                          X01810000
+               RETCODE=RETCODE,                                        X01820000
+               RSNCODE=RSNCODE,                                        X01830000
+               MF=(E,BINDPARM)                                          01840000
+         LTR   R15,R15                                                  01860000
+         BNZ   SCANL420                                                 01870000
+ DELETE EP=IEWBIND                                                      01880000
+*                                                                       01890000
+         IEWBIND FUNC=CREATEW,         CREATE WORKMOD                  X01900000
+               WORKMOD=WTOKEN,                                         X01910000
+               DIALOG=DTOKEN,                                          X01920000
+               INTENT=ACCESS,                                          X01930000
+               RETCODE=RETCODE,                                        X01940000
+               RSNCODE=RSNCODE,                                        X01950000
+               MF=(E,BINDPARM)                                          01960000
+         LTR   R15,R15                                                  01980000
+         BNZ   SCANL420                                                 01990000
+*                                                                       02000000
+         CLI   PDATA+1,X'02'           LOADED WITH DE PARM?             02010000
+         BE    SCANL04                 YES, PREVENT IEW2302S 1031       02020000
+         IEWBIND FUNC=INCLUDE,         INCLUDE LOAD-MODULE             X02030000
+               WORKMOD=WTOKEN,                                         X02040000
+               INTYPE=TOKEN,                                           X02050000
+               EPTOKEN=MODTOKEN,                                       X02060000
+               RETCODE=RETCODE,                                        X02070000
+               RSNCODE=RSNCODE,                                        X02080000
+               MF=(E,BINDPARM)                                          02090000
+         B     SCANL05                                                  02100000
+*                                                                       02110000
+SCANL04  MVI   DDNAME+1,8              DDNAME LENGTH                    02120000
+         MVC   DDNAME+2(8),PDATA+8     MOVE DDNAME                      02130000
+         IEWBIND FUNC=INCLUDE,         INCLUDE LOAD-MODULE             X02140000
+               WORKMOD=WTOKEN,                                         X02150000
+               INTYPE=NAME,                                            X02160000
+               DDNAME=DDNAME,                                          X02170000
+               MEMBER=MODNAME,                                         X02180000
+               RETCODE=RETCODE,                                        X02190000
+               RSNCODE=RSNCODE,                                        X02200000
+               MF=(E,BINDPARM)                                          02210000
+*                                                                       02220000
+SCANL05  EQU   *                                                        02230001
+         LTR   R15,R15                                                  02270000
+         BNZ   SCANL420                                                 02280000
+*                                                                       02290000
+         IEWBUFF FUNC=GETBUF,TYPE=NAME                                  02300000
+         IEWBUFF FUNC=INITBUF,TYPE=NAME                                 02310000
+*                                                                       02320000
+***      IEWBIND FUNC=GETN,            GET NAMES                       X02330000
+               WORKMOD=WTOKEN,                                         X02340000
+               AREA=IEWBBNL,           ?                               X02350000
+               CURSOR=CURSORN,         CURSOR                          X02360000
+               COUNT=COUNTN,           CURRENT NUMBER OF NAMES         X02370000
+               TCOUNT=TCOUNT,          TOTAL NAME COUNT                X02380000
+               NTYPE=SECTION,          RETURN SECTION NAMES            X02390000
+               RETCODE=RETCODE,                                        X02400000
+               RSNCODE=RSNCODE,                                        X02410000
+               MF=(E,BINDPARM)                                          02420000
+         IEWBIND FUNC=GETE,            GET ESD                         X02430000
+               WORKMOD=WTOKEN,                                         X02440000
+               OFFSET=MODOFFSET,       OFFSET                          X02450000
+               RECTYPE=$SD,            (SD)                            X02460000
+               AREA=IEWBBNL,           ?                               X02470000
+               CURSOR=CURSORN,         CURSOR                          X02480000
+               COUNT=COUNTN,           CURRENT NUMBER OF NAMES         X02490000
+               RETCODE=RETCODE,                                        X02500000
+               RSNCODE=RSNCODE,                                        X02510000
+               MF=(E,BINDPARM)                                          02520000
+         CH    R15,=H'4'                                                02540000
+         BH    SCANL420                                                 02550000
+*                                                                       02560000
+         IEWBUFF FUNC=GETBUF,TYPE=ESD                                   02570000
+         IEWBUFF FUNC=INITBUF,TYPE=ESD                                  02580000
+         L     R5,COUNTN               CURRENT NUMBER OF NAMES          02590000
+*LOOP                                                                   02600000
+SCANL11  DS    0H                                                       02610000
+         IEWBIND FUNC=GETD,            GET ESD                         X02620000
+               WORKMOD=WTOKEN,                                         X02630000
+               CLASS=@ESD,                                             X02640000
+               AREA=IEWBESD,                                           X02650000
+               CURSOR=CURSORD,         .                               X02660000
+               COUNT=COUNTD,                                           X02670000
+               RETCODE=RETCODE,                                        X02680000
+               RSNCODE=RSNCODE,                                        X02690000
+               MF=(E,BINDPARM)                                          02700000
+         CH    R15,=H'4'                                                02720000
+         BH    SCANL11N                                                 02730000
+         ICM   R4,B'1111',COUNTD       ANY ESD?                         02740000
+         BZ    SCANL11N                NO, IGNORE THIS NAME             02750000
+         LA    R7,ESDH_END             FIRST RECORD IN ESD BUFFER       02760000
+*--LOOP                                                                 02770000
+SCANL12  CLC   ESD_TYPE,=C'SD'         CSECT?                           02780000
+         BNE   SCANL12N                NO, IGNORE                       02790000
+         L     R0,ESD_MODULE_OFFSET    GET OFFSET OF THIS CSECT         02800000
+*L R1,ESD_NAME_PTR                                                      02810000
+*LH R14,ESD_NAME_CHARS                                                  02820000
+         CL    R0,MODOFFSET            REF ADDR IN THIS CSECT?          02840000
+         BH    SCANL12N                NO, IGNORE                       02850000
+         AL    R0,ESD_LENG             ADD CSECT LENGTH                 02860000
+         CL    R0,MODOFFSET            REF ADDR IN THIS CSECT?          02870000
+         BNH   SCANL12N                NO, IGNORE                       02880000
+         L     R0,MODOFFSET            GET REF OFFSET                   02890000
+         SL    R0,ESD_MODULE_OFFSET    GET OFFSET IN THIS CSECT         02900000
+         ST    R0,DWD                  SAVE FOR $PRINT                  02910000
+         L     R1,ESD_NAME_PTR         ADDRESS OF CSECT NAME            02920000
+         CLI   0(R1),0                 UNNAMED CSECT?                   02930000
+         BE    SCANL12N                YES, IGNORE                      02940000
+         LH    R0,ESD_NAME_CHARS       LENGTH OF CSECT NAME             02950000
+*EX 0,*                                                                 02960000
+         STRING (MODNAME+2,8,T),'.',((R1),(R0)),                       X02970000
+               '+X''',(DWD+1,3,X),'''',INTO=WORK32                      02980000
+         CLI   DWD+1,0                 OFFSET > X'00FFFF' ?             02990000
+         BNE   SCANL400                YES, EXIT                        03000000
+         STRING (MODNAME+2,8,T),'.',((R1),(R0)),                       X03010000
+               '+X''',(DWD+2,2,X),'''',INTO=WORK32                      03020000
+         B     SCANL400                                                 03030000
+SCANL12N A     R7,ESDH_ENTRY_LENG      LENGTH OF AN ESD ENTRY           03040000
+         BCT   R4,SCANL12                                               03050000
+*--ENDLOOP                                                              03060000
+SCANL11N A     R9,BNLH_ENTRY_LENG      LENGTH OF A BNL ENTRY            03070000
+         BCT   R5,SCANL11                                               03080000
+*ENDLOOP                                                                03090000
+SCANL400 IEWBUFF FUNC=FREEBUF,TYPE=ESD                                  03100000
+SCANL410 IEWBUFF FUNC=FREEBUF,TYPE=NAME                                 03110000
+*                                                                       03120000
+SCANL420 BAL   R14,SETMAXCC            SAVE RETCODE                     03130000
+         IEWBIND FUNC=DELETEW,         DELETE WORKMOD                  X03150000
+               WORKMOD=WTOKEN,                                         X03160000
+               PROTECT=YES,                                            X03170000
+               RETCODE=RETCODE,                                        X03180000
+               RSNCODE=RSNCODE,                                        X03190000
+               MF=(E,BINDPARM)                                          03200000
+*                                                                       03210000
+         IEWBIND FUNC=ENDD,            END DIALOG                      X03220000
+               DIALOG=DTOKEN,                                          X03230000
+               RETCODE=RETCODE,                                        X03240000
+               RSNCODE=RSNCODE,                                        X03250000
+               MF=(E,BINDPARM)                                          03260000
+         LH    R15,MAXCC               SAVED RETCODE                    03270000
+         PR                                                             03280000
+*                                                                       03290000
+SETMAXCC CH    R15,MAXCC                                                03300000
+         BNHR  R14                                                      03310000
+         STH   R15,MAXCC                                                03320000
+         BR    R14                                                      03330000
+*                                                                       03340000
+@ESD     DC    H'4',C'@ESD'                                             03350000
+$SD      DC    H'4',C'(SD)'                                             03360000
+         IEWBUFF FUNC=MAPBUF,                                          X03370000
+               VERSION=1,              VERSION 1 MAPPING               X03380001
+               TYPE=ESD,                                               X03390000
+               SIZE=4096,              # OF ENTRIES                    X03400000
+               HEADREG=6,              R6                              X03410000
+               ENTRYREG=7              R7                               03420000
+         IEWBUFF FUNC=MAPBUF,                                          X03430000
+               VERSION=1,              VERSION 1 MAPPING               X03440001
+               TYPE=NAME,                                              X03450000
+               SIZE=4096,              # OF ENTRIES                    X03460000
+               HEADREG=8,              R8                              X03470000
+               ENTRYREG=9              R9                               03480000
+         DS    0A(R6,R7,R8,R9)         THESE REGS USED HERE             03490000
+DYNAM    DSECT                                                          03500000
+         DS    18F                                                      03510000
+DWD      DS    D                                                        03520000
+WORKADDR DS    F                                                        03530000
+         IEWBIND MF=(L,BINDPARM)                                        03540000
+DTOKEN   DS    D                       DIALOG TOKEN                     03550000
+WTOKEN   DS    D                       WORKMOD TOKEN                    03560000
+RETCODE  DS    F                                                        03570000
+RSNCODE  DS    F                                                        03580000
+COUNTN   DS    F                       # OF NAMES                       03590000
+CURSORN  DS    F                       CURRENT NAME                     03600000
+COUNTD   DS    F                       # OF ESD                         03610000
+CURSORD  DS    F                       CURRENT ESD                      03620000
+TCOUNT   DS    F                                                        03630000
+MODNAME  DS    H'8',CL8'IEBGENER'                                       03640000
+DDNAME   DS    H'8',CL8'STEPLIB '                                       03650000
+MAXCC    DS    H                       MAXCC                            03660000
+REFADDR  DS    A                                                        03670000
+MODLENGTH DS   F                                                        03680000
+MODLOADPT DS   A                                                        03690000
+MODOFFSET DS   F                                                        03700000
+PDATA     DS   XL16                                                     03710000
+PID       DS   XL4                                                      03720000
+MODTOKEN  DS   XL8                                                      03730000
+WORK32    DS   CL32                                                     03740000
+         CSVQUERY MF=(L,CSVQRYWK),PLISTVER=2                            03760000
+DYNAML   EQU   *-DYNAM                                                  03770000
+         YREGS                                                          03780000
+         STRING GENERATE                                                03790000
+         CVT   DSECT=YES,LIST=NO                                        03800000
+         END                                                            03810000
+//SYSLIB   DD DSN=SYS1.MACLIB,DISP=SHR                                  03820000
+// DD DSN=CBTTAPE.FILE183.PDS,DISP=SHR                STRING            03830001
+//SYSUT1   DD UNIT=VIO,SPACE=(CYL,2)                                    03850000
+//SYSPRINT DD SYSOUT=*                                                  03860000
+//SYSLIN   DD UNIT=VIO,SPACE=(TRK,1),DISP=(,PASS),BLKSIZE=3200          03870000
+//*                                                                     03880000
+//LKED    EXEC PGM=HEWLKED,PARM=RENT                                    03890000
+//SYSPRINT DD SYSOUT=*                                                  03900000
+//SYSLIN   DD DSN=*.HLASM.SYSLIN,DISP=(OLD,DELETE)                      03910001
+//SYSLMOD  DD DSN=CBTTAPE.FILE183.LOAD(DCODADDR),DISP=SHR               03920000
+//*                                                                     03940000
+//HLASM2 EXEC PGM=ASMA90,PARM=(OBJECT,NODECK,NOESD,NORLD,NOXREF)        03950001
+        $ENTER                                                          03960000
+*                                                                       03970000
+         LA    R3,GSFSUBS              %GSFSUBS                         03980000
+        $CALL  DCODADDR,((R3),WORK32)                                   03990000
+        $PRINT ((R3),,X),1X,WORK32                                      04000000
+*                                                                       04010000
+         L     R3,=X'04128548'         CSA                              04020000
+        $CALL  DCODADDR,((R3),WORK32)                                   04030000
+        $PRINT ((R3),,X),1X,WORK32                                      04040000
+*                                                                       04050000
+         LR    R3,R13                  SP 000                           04060000
+        $CALL  DCODADDR,((R3),WORK32)                                   04070000
+        $PRINT ((R3),,X),1X,WORK32                                      04080000
+*                                                                       04090000
+         BALR  R3,0                                                     04100000
+        $CALL  DCODADDR,((R3),WORK32)                                   04110000
+        $PRINT ((R3),,X),1X,WORK32                                      04120000
+*                                                                       04130000
+         LOAD  EP=GSFSUBS                                               04140000
+         LR    R3,R0                                                    04150000
+         AH    R3,=H'5000'             REFERENCE ADDRESS                04160000
+        $CALL  DCODADDR,((R3),WORK32)                                   04170000
+        $PRINT ((R3),,X),1X,WORK32                                      04180000
+*                                                                       04190000
+         LOAD  EP=IDA019L1                                              04200000
+         LR    R3,R0                                                    04210000
+         AH    R3,=H'9000'             REFERENCE ADDRESS                04220000
+        $CALL  DCODADDR,((R3),WORK32)                                   04230000
+        $PRINT ((R3),,X),1X,WORK32                                      04240000
+*                                                                       04250000
+**       L     R1,16                                                    04260001
+**       L     R1,8(,R1)                                                04270001
+**       LOAD  EP=TSPEMAN,DCB=(R1)                                      04280001
+**       LR    R3,R0                                                    04290001
+**       AH    R3,=H'1000'             REFERENCE ADDRESS                04300001
+**      $CALL  DCODADDR,((R3),WORK32)                                   04310001
+**      $PRINT ((R3),,X),1X,WORK32                                      04320001
+**                                                                      04330001
+         MVI   BLDLLIST+1,1                                             04340000
+         MVI   BLDLLIST+3,74                                            04350000
+         MVC   BLDLLIST+4(8),=C'SHOWMVS '                               04360000
+         BLDL  0,BLDLLIST                                               04370000
+         LOAD  DE=BLDLLIST+4                                            04380000
+         LR    R3,R0                                                    04390000
+         AH    R3,=H'1000'             REFERENCE ADDRESS                04400000
+        $CALL  DCODADDR,((R3),WORK32)                                   04410000
+        $PRINT ((R3),,X),1X,WORK32                                      04420000
+*                                                                       04430000
+         L     R3,16                   CVTPTR                           04440000
+        $CALL  DCODADDR,((R3),WORK32)                                   04450000
+        $PRINT ((R3),,X),1X,WORK32                                      04460000
+*                                                                       04470000
+        $EXIT                                                           04480000
+        $SUBS                                                           04490000
+WORK32   DS    CL32                                                     04500000
+BLDLLIST DS    Y(1,74),74X                                              04510000
+         END                                                            04520000
+//SYSLIB   DD DSN=GSFSOFT.GSF-ENV.MACLIB,DISP=SHR             $ENTER    04530001
+//         DD DSN=SYS1.MACLIB,DISP=SHR                        BLDL      04540001
+//SYSUT1   DD UNIT=VIO,SPACE=(CYL,2)                                    04550000
+//SYSPRINT DD SYSOUT=*                                                  04560000
+//SYSLIN   DD UNIT=VIO,SPACE=(TRK,1),DISP=(,PASS),BLKSIZE=3200          04570000
+//*                                                                     04580000
+//GO      EXEC PGM=LOADER,PARM=NOPRINT                                  04590001
+//STEPLIB  DD DSN=CBTTAPE.FILE183.LOAD,DISP=SHR                         04600000
+// DD DSN=SYS1.LINKLIB,DISP=SHR                                         04610000
+//SYSLIN   DD DSN=*.HLASM2.SYSLIN,DISP=(OLD,DELETE)                     04630001
+//SYSPRINT DD SYSOUT=*                                                  04640000
+//SYSDEBUG DD SYSOUT=*                                                  04650000
+//SYSUDUMP DD SYSOUT=*                                                  04660000

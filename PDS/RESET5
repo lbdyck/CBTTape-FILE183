@@ -1,0 +1,47 @@
+//GILBERTR JOB (ACCT#),RESET5,                                          00010000
+// NOTIFY=&SYSUID,                                                      00020000
+// CLASS=A,MSGCLASS=H,COND=(0,NE)                                       00030000
+//ASMH EXEC PGM=IEV90,PARM=(OBJECT,NODECK,NOESD,NORLD,NOXREF)           00040000
+*********************************************************************** 00050000
+*                                                                     * 00060000
+*        "RESET" PROGRAM TO BE USED AS AN EDIT MACRO                  * 00070000
+*                                                                     * 00080000
+*********************************************************************** 00090000
+RESET5   CSECT                                                          00100000
+RESET5   RMODE ANY                                                      00110000
+         BALR  R14,0                   LOCAL BASE                       00120000
+         USING *,R14                                                    00130000
+         LA    R0,=C'ISPEXEC '         ISREDIT INTERFACE                00140000
+         LOAD  EPLOC=(0)               GET ITS ADDRESS                  00150000
+         ST    R0,00(,R13)             AND SAVE IT                      00160000
+*  ISREDIT MACRO                                                        00170000
+         L     R15,00(,R13)            V(ISPEXEC)                       00180000
+         LA    R1,=A(F13,ISREDIT1+VL)  ISREDIT MACRO                    00190000
+         BALR  R14,R15                 EXECUTE FUNCTION                 00200000
+         USING *,R14                                                    00210000
+*  ISREDIT RESET                                                        00220000
+         L     R15,00(,R13)            V(ISPEXEC)                       00230000
+         LA    R1,=A(F13,ISREDIT2+VL)  ISREDIT RESET                    00240000
+         BALR  R14,R15                 EXECUTE FUNCTION                 00250000
+         USING *,R14                                                    00260000
+*  PIN LOAD MODULE                                                      00270000
+         LA    R0,=C'RESET   '         MY OWN NAME                      00280000
+         LOAD  EPLOC=(0)               INCREASE USE COUNT               00290000
+*  RETURN TO SYSTEM                                                     00300000
+         SLR   R15,R15                 RETURN CODE                      00310000
+         SVC   3                       GOBACK WITH RC=00                00320000
+ISREDIT1 DC    C'ISREDIT MACRO'                                         00330000
+ISREDIT2 DC    C'ISREDIT RESET'                                         00340000
+F13      DC    AL4(L'ISREDIT1)         LENGTH                           00350000
+VL       EQU   X'80000000'                                              00360000
+         YREGS                         SYS1.MACLIB                      00370000
+         END                                                            00380000
+//SYSLIB   DD DSN=SYS1.MACLIB,DISP=SHR                                  00390000
+//SYSUT1   DD UNIT=VIO,SPACE=(CYL,1)                                    00400000
+//SYSPRINT DD SYSOUT=*                                                  00410000
+//SYSLIN   DD UNIT=VIO,SPACE=(TRK,1),DISP=(,PASS),DCB=BLKSIZE=3200      00420000
+//*                                                                     00430000
+//LKED    EXEC PGM=HEWL,PARM='MAP,RENT'                                 00440000
+//SYSPRINT DD SYSOUT=*                                                  00450000
+//SYSLIN   DD DSN=*.ASMH.SYSLIN,DISP=(OLD,DELETE)                       00460000
+//SYSLMOD  DD DSN=SYS1.P390.LINKLIB(RESET),DISP=SHR                     00470000

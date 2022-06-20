@@ -1,0 +1,145 @@
+//GILBERTL JOB (ACCT#),GSFLKED,                                         00010000
+// NOTIFY=&SYSUID,                                                      00020000
+// CLASS=A,MSGCLASS=H,COND=(0,NE)                                       00030000
+//ASMH EXEC PGM=IEV90,PARM=(OBJECT,NODECK,NOESD,NORLD,NOXREF)           00040000
+*********************************************************************** 00050000
+*                                                                     * 00060000
+*    THIS PROGRAM IS A FRONT-END TO THE LINKAGE-EDITOR WHICH          * 00070000
+*    PROVIDES THE FOLLOWING FACILITIES:                               * 00080000
+*                                                                     * 00090000
+*    1. IF THERE IS AN //INCLUDE DD THAT POINTS TO AN EXISTING        * 00100000
+*       PDS MEMBER, THEN THIS MEMBER IS APPENDED TO THE SYSLIN FILE.  * 00110000
+*                                                                     * 00120000
+*    2. IF THERE IS A //COMPRESS DD IN THE STEP AND THE LINK-EDIT     * 00130000
+*       ABENDS WITH SD37-04, THEN IEBCOPY IS INVOKED TO COMPRESS      * 00140000
+*       THE SYSLMOD DATA SET AFTER WHICH THE LINK-EDIT IS INVOKED     * 00150000
+*       AGAIN.  THE COMPRESS DD MUST CONTAIN THE IEBCOPY SYSIN,       * 00160000
+*       AS FOLLOWS:                                                   * 00170000
+*                                                                     * 00180000
+*            //COMPRESS DD *                                          * 00190000
+*              COPY I=SYSLMOD,O=SYSLMOD                               * 00200000
+*                                                                     * 00210000
+*    3. IF THERE IS AN //RC0 DD DUMMY CARD IN THE STEP'S JCL,         * 00220000
+*       THE RETURN CODE OF THE STEP WILL BE RESET TO ZERO.            * 00230000
+*                                                                     * 00240000
+*********************************************************************** 00250000
+GSFLKED  CSECT                                                          00260000
+         SAVE  (14,12),,'GSF UTILITIES - GSFLKED'                       00270000
+         BALR  R12,0                                                    00280000
+         USING *,R12                                                    00290000
+         LR    R14,R13                                                  00300000
+         LA    R13,=CL72'APPEL LINK-EDIT AVEC CODE RETOUR A ZERO'       00310000
+         ST    R14,4(,R13)                                              00320000
+         ST    R13,8(,R14)                                              00330000
+         ST    R1,@PARM                                                 00340000
+*                                                                       00350000
+*        TEST FOR THE //INCLUDE DD CARD.                                00360000
+*        IF PRESENT, TEST FOR AN EXISTING MEMBER.                       00370000
+*          IF MEMBER EXISTS, APPEND IT TO SYSLIN DD                     00380000
+*                                                                       00390000
+         RDJFCB MF=(E,OPLPO)             SI PRESENTE,                   00400000
+         LTR   R15,R15                      CARTE DD 'INCLUDE'          00410000
+         BNZ   LINK0                                                    00420000
+         OPEN  MF=(E,OPLPO)               CHERCHER SI LE                00430000
+         MVC   BLDLIST+4(8),EXL1+4+44      MEMBRE EST                   00440000
+         BLDL  INPO,BLDLIST                 PRESENT                     00450000
+         LR    R2,R15                                                   00460000
+         CLOSE MF=(E,OPLPO)                                             00470000
+         LTR   R2,R2                       SI PRESENT,                  00480000
+         BNZ   LINK0                      LIRE SON CONTENU              00490000
+         OPEN  MF=(E,OPLPS)                ET LE                        00500000
+GETPS    GET   INCLUDE                      REECRIRE                    00510000
+         PUTX  SYSLIN,INCLUDE                 SUR 'SYSLIN'              00520000
+         B     GETPS                                                    00530000
+FINPS    CLOSE MF=(E,OPLPS)                                             00540000
+         FREEPOOL INCLUDE                                               00550000
+         FREEPOOL SYSLIN                                                00560000
+*                                                                       00570000
+*        INVOKE THE LINKAGE-EDITOR                                      00580000
+*                                                                       00590000
+*          1. AS A SUB-TASK IF //COMPRESS DD PRESENT                    00600000
+*                                                                       00610000
+*          2. VIA "LINK" IF //COMPRESS DD  IS NOT PRESENT               00620000
+*                                                                       00630000
+LINK0    DEVTYPE =C'COMPRESS',16(,13)    COMPRESS PREVU ?               00640000
+         LTR   R15,R15                      SI NON,                     00650000
+         BNZ   LINK8                       PAS DE 'ATTACH'              00660000
+         L     R1,@PARM                   EXEC DU LKED                  00670000
+         ATTACH EP=IEWL,ECB=ECB1          COMME 'SUBTASK'               00680000
+         ST    R1,ECB1+4                    POUR PIEGER                 00690000
+         WAIT  ECB=ECB1                     LES ABENDS                  00700000
+         DETACH ECB1+4                                                  00710000
+         L     R1,ECB1                   SI LE CODE-RETOUR              00720000
+         N     R1,=X'00FFF000'             EST ZERO,                    00730000
+         BZ    RETURN                       RETURN                      00740000
+         CL    R1,=X'00D37000'           SI ABEND                       00750000
+         BNE   ABENDR1                    CODE 'SD37'                   00760000
+*                                                                       00770000
+*        COMPRESS SYSLMOD PDS                                           00780000
+*                                                                       00790000
+         MVC   INPO+40(8),=C'SYSLMOD '     PROTECTION                   00800000
+         RDJFCB MF=(E,OPLPO)                DU PDS                      00810000
+         ENQ   MF=(E,@ENQL1)                 ET COMPRESS                00820000
+         LINK  EP=IEBCOPY,PARAM=(PARM0,COPYDD),VL=1                     00830000
+         DEQ   MF=(E,@ENQL1)                                            00840000
+*                                                                       00850000
+LINK8    L     R1,@PARM                                                 00860000
+         LINK  EP=IEWL                  EXECUTION DU LINK-EDIT          00870000
+         ST    R15,ECB1                 RETURN CODE                     00880000
+*                                                                       00890000
+RETURN   DEVTYPE =CL8'RC0',16(,R13)                                     00900000
+         LTR   R15,R15                  '//RC0   DD DUMMY'              00910000
+         BNZ   RETURN2                                                  00920000
+         XC    ECB1,ECB1                IF //RC0 PRESENT, RC=0          00930000
+*                                                                       00940000
+RETURN2  L     R15,ECB1                 RETURN CODE                     00950000
+         L     R13,4(,R13)                                              00960000
+         RETURN (14,12),RC=(15)                                         00970000
+ABENDR1  ABEND (1)                                                      00980000
+*                                                                       00990000
+         PRINT NOGEN                                                    01000000
+INPO     DCB   DSORG=PO,MACRF=E,DDNAME=INCLUDE,EXLST=EXL1               01010000
+INCLUDE  DCB   DSORG=PS,MACRF=GL,DDNAME=INCLUDE,EODAD=FINPS             01020000
+SYSLIN   DCB   DSORG=PS,MACRF=PM,DDNAME=SYSLIN,LRECL=80,RECFM=FB        01030000
+OPLPO    OPEN  MF=L,INPO                                                01040000
+OPLPS    OPEN  MF=L,(INCLUDE,,SYSLIN,EXTEND)                            01050000
+EXL1     DC    A(X'87000004'+*),CL176' '                                01060000
+BLDLIST  DC    Y(1,14),CL14' '                                          01070000
+PARM0    DC    Y(0)               PARM VIDE                             01080000
+COPYDD   DC    Y(8*11)                                                  01090000
+         DC    XL8'00'            1   UNUSED                            01100000
+         DC    XL8'00'            2   UNUSED                            01110000
+         DC    XL8'00'            3   UNUSED                            01120000
+         DC    XL8'00'            4   UNUSED                            01130000
+COPYDDK  DC    CL8'COMPRESS'      5   SYSIN                             01140000
+         DC    XL8'00'            6   UNUSED                            01150000
+         DC    XL8'00'            7   UNUSED                            01160000
+         DC    XL8'00'            8   UNUSED                            01170000
+         DC    XL8'00'            9   UNUSED                            01180000
+         DC    CL8'SYSUT1  '     10   SYSUT3                            01190000
+         DC    XL8'00'           11   UNUSED                            01200000
+QLKED    DC    C'SYSIEWLP'                                              01210000
+@ENQL1   ENQ   (QLKED,EXL1+4,E,44,SYSTEMS, LKED / SHARED               X01220000
+               QLKED,EXL1+4,E,44,SYSTEM), LKED / NON SHARED            X01230000
+               MF=L                                                     01240000
+@PARM    DS    A                                                        01250000
+ECB1     DS    2A                                                       01260000
+         YREGS                                                          01270000
+         END                                                            01280000
+//SYSLIB   DD DSN=SYS1.MACLIB,DISP=SHR                                  01290000
+//SYSUT1   DD UNIT=VIO,SPACE=(CYL,2)                                    01300000
+//SYSPRINT DD SYSOUT=*                                                  01310000
+//SYSLIN   DD UNIT=VIO,SPACE=(TRK,1),DISP=(,PASS),DCB=BLKSIZE=3200      01320000
+//*                                                                     01330000
+//LKED    EXEC PGM=HEWL,PARM='MAP,REUS,AC=1'                            01340000
+//SYSPRINT DD SYSOUT=*                                                  01350000
+//SYSLIN   DD DSN=*.ASMH.SYSLIN,DISP=(OLD,PASS)                         01360000
+//SYSLMOD  DD DSN=GILBERT.LOAD(GSFLKED),DISP=SHR                        01370000
+//*                                                                     01380000
+//GO      EXEC PGM=GSFLKED,PARM=(LIST,XREF)                             01390000
+//STEPLIB  DD DSN=GILBERT.LOAD,DISP=SHR                                 01400000
+//SYSLIN   DD DSN=*.ASMH.SYSLIN,DISP=(OLD,PASS)                         01410000
+//SYSLMOD  DD UNIT=VIO,DISP=(,PASS),SPACE=(TRK,(1,,1))                  01420000
+//SYSPRINT DD SYSOUT=*                                                  01430000
+//COMPRESS DD *                                                         01440000
+ COPY INDD=SYSLMOD,OUTDD=SYSLMOD,LIST=NO                                01450000

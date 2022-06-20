@@ -1,0 +1,60 @@
+/*------------------------------------------------------------ REXX --*\00010000
+|*                                                                    *|00020000
+|* MODULE NAME = SHOWTIOT                                             *|00030000
+|*                                                                    *|00040000
+|* DESCRIPTIVE NAME = Display TIOT Entries (Allocated Files)          *|00050000
+|*                                                                    *|00060000
+|* STATUS = R100                                                      *|00070000
+|*                                                                    *|00080000
+|* FUNCTION = The SHOWTIOT exec scans the TIOT and displays active    *|00090000
+|*            entries, particularly their dsname and volser.          *|00100000
+|*                                                                    *|00110000
+|*            The output is a subset of what's produced by the        *|00120000
+|*            LISTALC TSO cmd and by ISRDDN, an ISPF utility          *|00130000
+|*            program invoked via the DDLIST cmd.                     *|00140000
+|*                                                                    *|00150000
+|*            The primary interest in SHOWTIOT is how to retrieve     *|00160000
+|*            information about allocated files in REXX, and in       *|00170000
+|*            COBOL or PL/I as well.                                  *|00180000
+|*                                                                    *|00190000
+|*            This version of SHOWTIOT does NOT support               *|00200000
+|*            multi-volume TIOT entries.                              *|00210000
+|*                                                                    *|00220000
+|* AUTHOR   = Gilbert Saint-Flour <carlos@gsf-soft.com>               *|00230000
+|*            http://gsf-soft.com/Freeware/                           *|00240000
+|*                                                                    *|00250000
+|* DEPENDENCIES = TSO/E V2                                            *|00260000
+|*                SWAREQ REXX Routine                                 *|00270000
+|*                                                                    *|00280000
+|* SYNTAX   = SHOWTIOT                                                *|00290000
+|*                                                                    *|00300000
+\*--------------------------------------------------------------------*/00310000
+tcb = C2D(STORAGE(21C,4))                   /* TCB          PSATOLD  */ 00320000
+tiot= C2D(STORAGE(D2X(tcb+12),4))           /* TIOT         TCBTIO   */ 00330000
+n=0                                                                     00340000
+NUMERIC DIGITS 10                                                       00350000
+SAY 'DDNAME  ' Left('Data Set Name',44) 'VOLSER TIOENTRY  SVA     JFCB' 00360000
+Do Until STORAGE(D2X(tiot+24),1) = '00'X                                00370000
+  sva = STORAGE(D2X(tiot+24+12),3)          /* JFCB         TIOEJFCB */ 00380000
+  jfcb=SWAREQ(sva)                     /* convert SVA to 31-bit addr */ 00390000
+  ddn=STORAGE(D2X(tiot+24+4),8)             /* DDname       IOCBDSNM */ 00400000
+  If jfcb>16 & Left(ddn,1)>'00'x Then Do                                00410000
+    dsn=STORAGE(D2X(jfcb),44)               /* dsname       JFCBDSNM */ 00420000
+    vol=STORAGE(D2X(jfcb+118),6)            /* volser       JFCBVOLS */ 00430000
+    tioelink=STORAGE(D2X(tiot+24+3),1)      /* Flags        TIOELINK */ 00440000
+    If STORAGE(D2X(tiot+24+1),1)<'80'X Then Do /* TIOESTTA  TIOSLTYP */ 00450000
+      if vol='      ' THEN Do                                           00460000
+        vol='VIO   '                                                    00470000
+        If tioelink='02'X Then                                          00480000
+          vol='SYSOUT'                                                  00490000
+        End                                                             00500000
+      SAY ddn dsn vol C2X(STORAGE(D2X(tiot+24),4)) C2X(sva) D2X(jfcb)   00510000
+      /* C2X(tioelink) */                                               00520000
+      End                                                               00530000
+    End                                                                 00540000
+  tiot=tiot+20                              /* next TIOT entry       */ 00550000
+  n=n+1; if n=111 Then Exit 20              /* prevent endless loop  */ 00560000
+END                                                                     00570000
+Exit                                                                    00580000
+  /* To make SHOWTIOT work faster, copy the SWAREQ routine here   */    00590000
+  /* and activate the first line which contains SWAREQ: PROCEDURE */    00600000

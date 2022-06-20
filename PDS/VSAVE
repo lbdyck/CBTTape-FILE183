@@ -1,0 +1,156 @@
+/*************************************************************** REXX */00010000
+/*                                                                    */00020000
+/* MODULE NAME = VIEWSAVE                                             */00030000
+/*                                                                    */00040000
+/* DESCRIPTIVE NAME = SAVE command for VIEW                           */00050000
+/*                                                                    */00060000
+/* STATUS   =  R404                                                   */00070004
+/*                                                                    */00080000
+/* FUNCTION =  This ISPF EDIT macro provides the equivalent of the    */00090000
+/*             SAVE command in a VIEW session (SAVE is only available */00100000
+/*             in EDIT).  VIEWSAVE uses REPLACE to write the data     */00110000
+/*             and LMMSTATS to set the statistics.  This macro        */00120003
+/*             supports PDS members and sequential data sets.         */00130003
+/*                                                                    */00140000
+/*             LMMSTATS is only used if STATS ON is in effect and     */00150000
+/*             the member's directory entry contains ISPF statistics. */00160000
+/*             In that case, the VERSION, LEVEL, CREATED, INIT and    */00170000
+/*             MOD values are set to the values that would have been  */00180000
+/*             set by the SAVE command in EDIT.                       */00190000
+/*                                                                    */00200000
+/* AUTHOR   =  Gilbert Saint-Flour <carlos@gsf-soft.com>              */00210001
+/*             http://gsf-soft.com/Freeware/                          */00220002
+/*                                                                    */00230000
+/* SYNTAX   =  VIEWSAVE <DEBUG>                                       */00240000
+/*                                                                    */00250000
+/* DEPENDENCIES =  ISPF V4                                            */00260000
+/*                                                                    */00270000
+/* Change Activity:                                                   */00280000
+/*                                                                    */00290000
+/*  401   Prevent LMMSTATS failure when zlvers=00                     */00300001
+/*  402   Support for sequential data sets (Carl Hafner)              */00310002
+/*  403   ISRE017                                                     */00320003
+/*  404   Blank Dsname                                                */00330004
+/*                                                                    */00340000
+/**********************************************************************/00350000
+ADDRESS 'ISPEXEC'                                                       00360000
+"ISREDIT MACRO (DEBUG)"                                                 00370000
+IF rc>0 THEN EXIT rc                            /* not an EDIT macro */ 00380000
+UPPER debug                                                             00390000
+"CONTROL ERRORS RETURN"                                                 00400000
+"ISREDIT (zdsn) = DATASET"                                              00410000
+IF zdsn='' THEN DO                                  /* SDSF=SE   */     00420004
+  VGET zapplid                                                          00430004
+  Zedsmsg = "Blank Dsname"                       /* Short message    */ 00431004
+  Zedlmsg = "Data Set Name only contains spaces, APPLID=" || zapplid    00440004
+  "SETMSG MSG(ISRZ001)"                          /* send the message */ 00450004
+  EXIT 12                                                               00460004
+  END                                                                   00470004
+"ISREDIT (zmemb) = MEMBER"                                              00480000
+IF zmemb='' THEN                                    /* DSORG=PS  */     00490000
+  CALL Process_sequential_data_set                                      00500000
+ /*------------------------------------------------------------------*/ 00510000
+ /*     Fast-path processing when STATS=OFF                          */ 00520000
+ /*------------------------------------------------------------------*/ 00530000
+"ISREDIT (stats) = STATS"                                               00540000
+IF stats='OFF' THEN DO                              /* STATS=OFF    */  00550000
+  "ISREDIT REPLACE" zmemb ".ZFIRST .ZLAST"          /* SAVE MEMBER  */  00560000
+  CALL Check_RC rc,0,'REPLACE'                                          00570000
+  "SETMSG MSG(ISRE016)"                       /* member zmemb saved */  00580000
+  EXIT                                                                  00590000
+  END                                                                   00600000
+ /*------------------------------------------------------------------*/ 00610001
+ /*     Prevent LMMSTATS failure when VERSION=00                     */ 00620001
+ /*------------------------------------------------------------------*/ 00630001
+"ISREDIT (zlvers) = VERSION"                        /* NEW VERSION   */ 00640001
+IF zlvers=0 THEN DO                                                     00650001
+  Zedsmsg = "Invalid Version"                    /* Short message    */ 00660001
+  Zedlmsg = "Version 00 is not supported by the LMMSTATS service".      00670001
+  "SETMSG MSG(ISRZ001)"                          /* send the message */ 00680001
+  EXIT 4                    /* not supported in this release */         00690001
+  END                                                                   00700001
+ /*------------------------------------------------------------------*/ 00710000
+ /*     Retrieve current statistics from member's directory entry    */ 00720000
+ /*------------------------------------------------------------------*/ 00730000
+"ISREDIT (dataid) = DATAID"                                             00740000
+"LMOPEN DATAID("dataid")"                                               00750000
+CALL Check_RC rc,0,'LMOPEN'                                             00760000
+"LMMFIND DATAID("dataid") MEMBER("zmemb") STATS(YES)" /* GET STATS   */ 00770000
+lmmfind_rc=rc                                    /* save return code */ 00780000
+CALL Check_RC rc,8,'LMMFIND'                                            00790000
+ /*------------------------------------------------------------------*/ 00800000
+ /*     Rewrite member using the REPLACE command                     */ 00810000
+ /*------------------------------------------------------------------*/ 00820000
+"ISREDIT (n1,n2) = NUMBER"                                              00830000
+modlines=0                                        /* modified lines  */ 00840000
+IF n1='ON' & LEFT(n2,1)='S' THEN DO               /* NUMBER ON STD   */ 00850000
+  "ISREDIT (ustat) = USER_STATE"                  /* push user_state */ 00860000
+  CALL Count_modlines                      /* Cound modified lines   */ 00870000
+  "ISREDIT REPLACE" zmemb ".ZF .ZL"               /* SAVE MEMBER     */ 00880000
+  xrc=rc                                                                00890000
+  "ISREDIT USER_STATE = (ustat)"                  /* pop user_state  */ 00900000
+  CALL Check_RC xrc,0,'REPLACE'                                         00910000
+  END                                                                   00920000
+ELSE DO                                           /* NUMBER OFF      */ 00930000
+  "ISREDIT REPLACE" zmemb ".ZF .ZL"               /* SAVE MEMBER     */ 00940000
+  CALL Check_RC rc,0,'REPLACE'                                          00950000
+  END                                                                   00960000
+ /*------------------------------------------------------------------*/ 00970000
+ /*     Update statistics using LMMSTATS                             */ 00980000
+ /*------------------------------------------------------------------*/ 00990000
+"ISREDIT (zlvers) = VERSION"                        /* NEW VERSION   */ 01000000
+"ISREDIT (zlmod) = LEVEL"                           /* NEW LEVEL     */ 01010000
+IF lmmfind_rc=8 THEN                                /* new member    */ 01020000
+  "LMMSTATS DATAID("dataid") MEMBER("zmemb")",                          01030000
+      "VERSION("zlvers") MODLEVEL("zlmod")",                            01040000
+      "MODRECS("modlines+0")"                                           01050000
+ELSE                                        /* member existed before */ 01060000
+  "LMMSTATS DATAID("dataid") MEMBER("zmemb")",                          01070000
+      "VERSION("zlvers") MODLEVEL("zlmod")",                            01080000
+      "CREATED("zlcdate") INITSIZE("zlinorc")",                         01090000
+      "MODRECS("modlines+0")"                                           01100000
+CALL Check_RC rc,0,'LMMSTATS'                                           01110000
+ /*------------------------------------------------------------------*/ 01120000
+ /*     Issue completion message and exit                            */ 01130000
+ /*------------------------------------------------------------------*/ 01140000
+"LMCLOSE DATAID("dataid")"                                              01150000
+CALL Check_RC rc,0,'LMCLOSE'                                            01160000
+"SETMSG MSG(ISRE016)"                         /* member zmemb saved */  01170000
+EXIT                                                                    01180000
+                                                                        01190000
+ /*------------------------------------------------------------------*/ 01200000
+ /*     Count_modlines internal function: Count modified lines       */ 01210000
+ /*------------------------------------------------------------------*/ 01220000
+Count_modlines:                                                         01230000
+  "ISREDIT NUMBER OFF"                                                  01240000
+  "ISREDIT (recfm) = RECFM"                                             01250000
+  IF recfm='F' THEN                                                     01260000
+    "ISREDIT (lrecl) = LRECL"                                           01270000
+  ELSE                                                                  01280000
+    lrecl=8                                         /* RECFM=V        */01290000
+  "ISREDIT (modlines) = LINENUM .ZL"          /* total number of lines*/01300000
+  "ISREDIT SEEK '00' ALL" lrecl-1             /*count unmodified lines*/01310000
+  IF rc=0 THEN DO                                                       01320000
+    "ISREDIT (c1,c2) = SEEK_COUNTS"                                     01330000
+    modlines=modlines-c1                            /* modified lines*/ 01340000
+    END                                                                 01350000
+  IF debug='DEBUG' THEN                                                 01360000
+    SAY recfm lrecl xrc rc c1 c2 c3 modlines                            01370000
+  RETURN                                                                01380000
+ /*------------------------------------------------------------------*/ 01390000
+ /*           Process a sequential data set                          */ 01400000
+ /*------------------------------------------------------------------*/ 01410000
+Process_sequential_data_set:                                            01420000
+  "ISREDIT REPLACE '"zdsn"'" .zfirst .zlast                             01430002
+  "SETMSG MSG(ISRE017)"                                                 01440003
+  EXIT                                                                  01450002
+ /*------------------------------------------------------------------*/ 01460000
+ /*           Error routine                                          */ 01470000
+ /*------------------------------------------------------------------*/ 01480000
+Check_rc:                                                               01490000
+  IF arg(1)\>arg(2) THEN RETURN                 /* RC=0 */              01500000
+  "SETMSG MSG("zerrmsg")"                                               01510000
+  "LMCLOSE DATAID("dataid")"                                            01520000
+  IF debug='DEBUG' THEN                                                 01530000
+    SAY 'FUNC='arg(3) 'RC='arg(1) 'ZERRMSG='zerrmsg                     01540000
+  EXIT 20                                                               01550000

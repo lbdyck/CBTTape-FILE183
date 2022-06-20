@@ -1,0 +1,141 @@
+/*****************************************************************REXX*/00010000
+/*                                                                    */00020000
+/* MODULE NAME = FTP                                                  */00030000
+/*                                                                    */00040000
+/* DESCRIPTIVE NAME = FTP EDIT Macro for ISPF/PDF                     */00050000
+/*                                                                    */00060000
+/* STATUS = R102                                                      */00070002
+/*                                                                    */00080000
+/* FUNCTION = The FTP EDIT macro is used to transmit a copy of the    */00090002
+/*            data currently being edited to a remote host using      */00100002
+/*            text-mode FTP.  This EDIT macro is useful to transmit   */00110002
+/*            data that does not exist on disk in a transmittable     */00120002
+/*            form, such as packed data, data modified during the     */00130002
+/*            current EDIT session, or data only accessible via the   */00140002
+/*            EDIT Interface (EDIF).                                  */00150002
+/*                                                                    */00160000
+/* AUTHOR   =  Gilbert Saint-Flour <carlos@gsf-soft.com>              */00170002
+/*                                                                    */00180000
+/* Dependencies = TSO/E V2                                            */00190000
+/*                ISPF/PDF V3 or ISPF V4                              */00200000
+/*                TCP/IP V3                                           */00210000
+/*                ROUTEPGM utility R605 (optional)                    */00220002
+/*                FASTPATH utility R128 (optional)                    */00230002
+/*                                                                    */00240000
+/* SYNTAX   =  FTP                                                    */00250000
+/*                 host                  remote host or IP address    */00260000
+/*                 userid                userid to use                */00270001
+/*                                       (default: anonymous)         */00280001
+/*                 password              password for userid          */00290001
+/*                 dir                   directory to change to       */00300001
+/*                                                                    */00310000
+/* OPERATION = see below                                              */00320000
+/*                                                                    */00330000
+/*        FTP creates a temporary data set, copies the data           */00340002
+/*        into it, then creates the control data set and issues       */00350000
+/*        the TCP/IP FTP command.                                     */00360000
+/*                                                                    */00370000
+/* CHANGES = see below                                                */00380000
+/*                                                                    */00390000
+/* 100 New packaging for the CBT tape                                 */00400000
+/* 101 added userid/password and dir options - Lionel Dyck            */00410001
+/* 102 Replace EXECIO with ROUTEPGM                                   */00420002
+/*                                                                    */00430000
+/**********************************************************************/00440000
+Routepgm='NO'                  /* Use the REXX stack and EXECIO       */00450002
+Routepgm='YES'                 /* Use the ROUTEPGM program            */00460002
+FastPath='NO'                  /* Invoke the FTP command directly     */00470002
+FastPath='YES'                 /* Invoke FTP via the FASTPATH utility */00480002
+              /* -------------------------- */                          00490002
+              /* Allocate Tempftp file      */                          00500002
+              /* -------------------------- */                          00510002
+ftpdsn='tempftp.text'                                                   00520002
+RC=LISTDSI(ftpdsn 'NORECALL')                                           00530002
+IF RC>0 THEN DO                                                         00540002
+  IF RC=16 & SYSREASON=9 THEN                                           00550002
+    "HDELETE" ftpdsn "WAIT"                                             00560002
+  "ALLOC DS("ftpdsn") NEW CATALOG",                                     00570002
+       "TRACKS SPACE(10 10) UNIT(SYSALLDA)",                            00580002
+       "DSORG(PS) RECFM(V B) LRECL(255)"                                00590002
+  "FREE DS("ftpdsn")"                                                   00600002
+  END                                                                   00610002
+RC=LISTDSI('TEMPFTP' 'FILE')                                            00620002
+IF RC>0 THEN                                                            00630002
+  "ALLOC DD(TEMPFTP) DS("ftpdsn") OLD DELETE"                           00640002
+            /* -------------------------------- */                      00650002
+            /*     Retrieve ISPF variables      */                      00660002
+            /* -------------------------------- */                      00670002
+ADDRESS 'ISPEXEC'                                                       00680000
+"CONTROL ERRORS RETURN"                                                 00690000
+"ISREDIT MACRO (HOST)";  IF rc>0 THEN EXIT rc                           00700002
+IF host='' THEN EXIT 12                                                 00710000
+"VGET (ZTEMPF ZTEMPN)"                                                  00720000
+            /* -------------------------------- */                      00730002
+            /* Write the text to tempftp.userid */                      00740002
+            /* -------------------------------- */                      00750002
+IF Routepgm='YES' THEN                                                  00760002
+  "SELECT PGM(ROUTEPGM) PARM(TEMPFTP)"                                  00770002
+ELSE DO                                                                 00780002
+    DO I=1 BY 1                                                         00790002
+      "ISREDIT (LINE) = LINE" I             /* GET CURRENT LINE */      00800002
+      IF RC>0 THEN LEAVE                                                00810002
+      IF line='' THEN                                                   00820002
+        QUEUE ' '                           /* blank line */            00830002
+      ELSE                                                              00840002
+        QUEUE STRIP(line,'T')                                           00850002
+    END                                                                 00860002
+  QUEUE ''                                                              00870002
+  ADDRESS 'TSO' "EXECIO * DISKW TEMPFTP (FINIS"                         00880002
+  END                                                                   00890002
+/**********************************************************************/00900000
+/*                                                                    */00910000
+/*             Build the FTP control statements                       */00920000
+/*                                                                    */00930000
+/**********************************************************************/00940000
+ADDRESS 'TSO'                                                           00950002
+/* -------------------------- */                                        00960001
+/* Clear out variables        */                                        00970001
+/* -------------------------- */                                        00980001
+parse value "" with userid password dir                                 00990001
+                                                                        01000001
+/* -------------------------- */                                        01010001
+/* test for userid/password   */                                        01020001
+/* -------------------------- */                                        01030001
+if words(host) > 1 then                                                 01040001
+   parse value host with host userid password dir .                     01050001
+                                                                        01060001
+QUEUE host                                                              01070001
+                                                                        01080001
+/* -------------------------- */                                        01090001
+/* if userid then use it      */                                        01100001
+/* -------------------------- */                                        01110001
+if length(userid) > 0 then                                              01120001
+   QUEUE userid password                                                01130001
+else                                                                    01140001
+   QUEUE 'anonymous'                                                    01150001
+                                                                        01160001
+/* -------------------------- */                                        01170001
+/* test for dir               */                                        01180001
+/* -------------------------- */                                        01190001
+if length(dir) > 0 then                                                 01200001
+   QUEUE 'cd' dir                                                       01210001
+                                                                        01220001
+/* -------------------------- */                                        01230001
+/* queue out put command      */                                        01240001
+/* -------------------------- */                                        01250001
+QUEUE 'put' ftpdsn 'tempftp.'userid()                                   01260001
+QUEUE 'quit'                                                            01270000
+QUEUE ''                                                                01280000
+"EXECIO * DISKW" ZTEMPN "(FINIS"                                        01290000
+/**********************************************************************/01300000
+/*                                                                    */01310000
+/*             Invoke the FTP client program                          */01320000
+/*                                                                    */01330000
+/**********************************************************************/01340000
+"ALLOC DD(INPUT) OLD DS('"ZTEMPF"') REUSE"                              01350000
+"ALLOC DD(OUTPUT) DS(*)"                                                01360000
+IF FastPath='YES' THEN                                                  01370002
+  "ISPEXEC SELECT PGM(FASTPATH) PARM(EXECPGM,FTP)"                      01380002
+ELSE                                                                    01390002
+  "FTP"                                                                 01400002
+"FREE DD(INPUT OUTPUT)"                                                 01410000

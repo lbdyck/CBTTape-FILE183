@@ -1,0 +1,77 @@
+/*---------------------------------------------------------------REXX-*\00010001
+|*                                                                    *|00020000
+|* MODULE NAME = TALLY                                                *|00030000
+|*                                                                    *|00040000
+|* DESCRIPTIVE NAME = Tallies tracks on DSLIST panel.                 *|00050000
+|*                                                                    *|00060000
+|* STATUS = R102                                                      *|00070002
+|*                                                                    *|00080000
+|* FUNCTION = Display the total number of tracks used up by the       *|00090000
+|*            data sets currently displayed on the Data Set List      *|00100000
+|*            panel (ISPF 3.4).  Requires that the size information   *|00110000
+|*            for all the data sets be previously obtained from the   *|00120000
+|*            VTOC, for example with a SORT SIZE command.             *|00130000
+|*                                                                    *|00140000
+|* AUTHOR   =  Gilbert Saint-Flour <carlos@gsf-soft.com>              *|00150000
+|*             http://gsf-soft.com/Freeware/                          *|00160002
+|*                                                                    *|00170000
+|* DEPENDENCIES = TSO/E V2                                            *|00180000
+|*                ISPF V3, V4 or V5                                   *|00190001
+|*                                                                    *|00200000
+|* SYNTAX   =  TALLY                                                  *|00210000
+|*                                                                    *|00220000
+|*             Must be issued while on the DSLIST panel, either       *|00230000
+|*             as a line command (on any line) or as TSO %TALLY.      *|00240000
+|*                                                                    *|00250000
+|* CHANGE LOG                                                         *|00260001
+|*                                                                    *|00270001
+|*101 When DTA+016=0, get DSB addr from DTA+044                       *|00280001
+|*102 Stop using DTB in ISPF 5.9 and above                Ron.Hesketh *|00290002
+|*                                                                    *|00300002
+\*--------------------------------------------------------------------*/00310000
+ADDRESS 'ISPEXEC'                                                       00320002
+tcb    = PTR(540)               /* TCB (EXEC command)    PSATOLD  */    00330000
+tcb    = PTR(tcb+132)           /* TCB (ISPTASK)         TCBOTC   */    00340000
+fsa    = PTR(tcb+112)           /* first save area       TCBFSA   */    00350000
+r1     = PTR(fsa+24)            /* ISPTASK's R1                   */    00360000
+tld    = PTR(r1)                /* TLD address                    */    00370000
+dta    = PTR(tld+076)           /* DTA address                    */    00380000
+tbl    = STORAGE(D2X(dta+12),8) /* Name of temp table    DSL12345 */    00390002
+"VGET ZENVIR"                   /* Retrieve ISPF Version          */    00400002
+IF LEFT(Zenvir,8) < 'ISPF 5.9' THEN DO                                  00410002
+  dtb    = PTR(dta+016)           /* DTB address                  */    00420002
+  IF dtb=0 THEN                                                         00430002
+    dtb  = PTR(dta+044)           /* OPEN Table Chain             */    00440002
+  IF STORAGE(D2X(dtb),3) /= 'DTB' THEN DO                               00450002
+    SAY 'Error: Table name could not be located (DTB)' zenvir           00460002
+    EXIT 12                                                             00470002
+    END                                                                 00480002
+  tbl  = STORAGE(D2X(dtb+6),8)  /* Name of temp table    DSL12345 */    00490002
+  END                                                                   00500002
+                                                                        00510000
+'CONTROL ERRORS RETURN'                                                 00520000
+'TBTOP' tbl                                                             00530000
+  IF rc>0 THEN DO                                                       00540000
+    SAY 'TBTOP failed for table' tbl 'RC='rc                            00550000
+    EXIT                                                                00560000
+  END                                                                   00570000
+                                                                        00580000
+tally=0;rows=0;processed=0;zusize=0   /* Init counters */               00590000
+DO FOREVER                                                              00600000
+  'TBSKIP' tbl                        /* NEXT ROW      */               00610000
+  IF rc>0 THEN LEAVE                                                    00620000
+  'TBGET' tbl                         /* SET VARIABLES */               00630000
+  IF rc>0 THEN LEAVE                                                    00640000
+  rows=rows+1                         /* count rows    */               00650000
+  IF zusize = '' THEN ITERATE         /* ignore migrated data sets */   00660000
+  tally=tally+zusize                  /* tally file size */             00670000
+  processed=processed+1               /* count processed data sets */   00680000
+END                                                                     00690000
+ZMSG000S = tally 'Tracks'                                               00700000
+ZMSG000L = 'Total Data sets:' rows,                                     00710000
+           ' Data sets processed:' processed,                           00720000
+           ' Total tracks:' tally                                       00730000
+"SETMSG MSG(ISPZ000)"                                                   00740000
+EXIT                                                                    00750000
+                                                                        00760000
+PTR: RETURN C2D(STORAGE(D2X(ARG(1)),4))                                 00770000

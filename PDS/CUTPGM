@@ -1,0 +1,586 @@
+//GILBERTC JOB (ACCT#),CUTPGM,                                          00010000
+// NOTIFY=&SYSUID,                                                      00020000
+// CLASS=A,MSGCLASS=H,COND=(0,NE)                                       00030000
+//HLASM EXEC PGM=ASMA90,PARM=(OBJECT,NODECK,NOESD,NORLD,NOXREF)         00040002
+*********************************************************************** 00050000
+*                                                                     * 00060000
+* MODULE NAME = CUTPGM                                                * 00070000
+*                                                                     * 00080000
+* DESCRIPTIVE NAME = UTILITY PROGRAM FOR THE CUT & PASTE EDIT MACROS  * 00090000
+*                                                                     * 00100000
+* FUNCTION = THIS PGM IS INVOKED BY THE CUT AND PASTE EDIT MACROS     * 00110000
+*            TO CREATE AND MAINTAIN CLIP-BOARDS USING DATA SPACES,    * 00120000
+*            NAME/TOKEN PAIRS AND COMPRESSION/EXPANSION SERVICES.     * 00130000
+*                                                                     * 00140000
+* STATUS = R402                                                       * 00150002
+*                                                                     * 00160000
+* AUTHOR = GILBERT SAINT-FLOUR <carlos@gsf-soft.com>                  * 00170002
+*                                                                     * 00180000
+* ENVIRONMENT = SEE BELOW                                             * 00190000
+*                                                                     * 00200000
+*    DEPENDENCIES: MVS/ESA 4.2.2                                      * 00210000
+*                  ISPF/PDF V3                                        * 00220000
+*                  CUT & PASTE EDIT MACROS R300                       * 00230000
+*                                                                     * 00240000
+* MODULE TYPE = PROCEDURE, (CSECT TYPE)                               * 00250000
+*                                                                     * 00260000
+*    PROCESSOR = IBM OS/ASSEMBLER H VERSION 2 OR                      * 00270000
+*                IBM HIGH LEVEL ASSEMBLER/MVS                         * 00280000
+*                                                                     * 00290000
+*    MODULE SIZE = 2K                                                 * 00300000
+*                                                                     * 00310000
+*    ATTRIBUTES = REENTERABLE, RMODE ANY, AMODE 31,                   * 00320001
+*                 PROBLEM STATE, KEY 8                                * 00330000
+*                 APF AUTHORIZATION: NONE                             * 00340000
+*                                                                     * 00350000
+* OPERATION = SEE BELOW                                               * 00360000
+*                                                                     * 00370000
+*   CUTPGM IS INVOKED BY THE CUT AND PASTE EDIT MACROS AND,           * 00380000
+*   DEPENDING ON THE PARM PASSED BY THE INVOKER, PROVIDES THE         * 00390000
+*   "CUT", "PASTE" AND "DUMP" FUNCTIONS.                              * 00400000
+*                                                                     * 00410000
+*   1. "CUT" DEFINES A CLIP-BOARD AND COPIES DATA FROM THE EDIT       * 00420000
+*      SESSION TO THE CLIP-BOARD.  DATA MAY OR MAY NOT BE             * 00430000
+*      COMPRESSED DURING THE COPY PROCESS, BASED ON A PARM OPTION.    * 00440000
+*                                                                     * 00450000
+*   2. "PASTE" RETRIEVES DATA FROM THE CLIP-BOARD AND INSERTS IT      * 00460000
+*      INTO THE CURRENT EDIT DATA.                                    * 00470000
+*                                                                     * 00480000
+*   3. "DUMP" DISPLAYS THE CONTENTS OF A CLIP-BOARD USING THE         * 00490000
+*      "BRIF" SERVICE.  THIS FUNCTION IS INTENDED FOR DEBUGGING       * 00500000
+*      PURPOSES ONLY.                                                 * 00510000
+*                                                                     * 00520000
+*   THE PARM FIELD IS USED TO PASS PARAMETERS TO THE PROGRAM.         * 00530000
+*   PLEASE REFER TO THE "PARM" DSECT FOR THE FORMAT OF THE            * 00540000
+*   PARM FIELD.                                                       * 00550000
+*                                                                     * 00560000
+*   CLIP-BOARD NAMES HAVE THE SAME FORMAT AS PDS MEMBER NAMES.        * 00570000
+*   THE NUMBER OF CLIP-BOARDS IN USE AT A GIVEN TIME IS ONLY          * 00580000
+*   LIMITED BY THE SYSTEM.  CLIP-BOARDS GET DELETED AT THE END        * 00590000
+*   OF THE TSO SESSION (I.E. AT LOGOFF TIME).                         * 00600000
+*                                                                     * 00610000
+*   EACH CLIP-BOARD IS ACTUALLY A DATA SPACE NAMED 'NNNNNCUT',        * 00620000
+*   WHERE NNNNN IS A SEQUENCE NUMBER GENERATED BY THE SYSTEM          * 00630000
+*   WHEN THE DSPSERV MACRO IS ISSUED TO CREATE A DATA SPACE.          * 00640000
+*                                                                     * 00650000
+*   THIS PROGRAM USES NAME/TOKEN PAIRS TO RETRIEVE THE STOKEN AND     * 00660000
+*   ALET OF THE DATA SPACES IT CREATES.  NAME/TOKEN PAIRS IS A        * 00670000
+*   FEATURE INTRODUCED IN MVS/ESA 4.2.2.  CONSEQUENTLY, THIS          * 00680000
+*   PROGRAM WON'T LINK NOR EXECUTE ON MVS SYSTEMS PRIOR TO 4.2.2.     * 00690000
+*                                                                     * 00700000
+*   TO REDUCE PAGING, DATA CAN BE STORED IN COMPRESSED FORMAT,        * 00710000
+*   DEPENDING ON A PARM OPTION.  THREE LEVELS ARE AVAILABLE:          * 00720000
+*                                                                     * 00730000
+*   1. WHEN COMPRESS=0, DATA IS NOT COMPRESSED AND EACH RECORD        * 00740000
+*      USES UP TO LRECL+2 BYTES OF STORAGE.                           * 00750001
+*                                                                     * 00760000
+*   2. WHEN COMPRESS=1, TRAILING BLANKS ARE REMOVED.                  * 00770000
+*                                                                     * 00780000
+*   3. WHEN COMPRESS=2, MVS COMPRESSION/EXPANSION SERVICES            * 00790000
+*      (CSECRSRV MACRO) ARE USED TO COMPRESS STRINGS OF               * 00800001
+*      REDUNDANT CHARACTERS.                                          * 00810000
+*                                                                     * 00820000
+* RETURN-CODES = SEE BELOW                                            * 00830000
+*                                                                     * 00840000
+*          0                    OK                                    * 00850000
+*         12                    UNDEFINED CLIP-BOARD          (PASTE) * 00860000
+*         20                    INVALID FUNCTION                      * 00870000
+*        1NN                    VDEFINE        FAILED WITH RC=NN      * 00880000
+*        2NN                    ISREDIT        FAILED WITH RC=NN      * 00890000
+*        5NN                    CSECRSRV       FAILED WITH RC=NN      * 00900000
+*        6NN                    OPEN           FAILED WITH RC=NN      * 00910000
+*        7NN                    BRIF           FAILED WITH RC=NN      * 00920000
+*       1NNN                    TCBTOKEN MACRO FAILED WITH RC=NNN     * 00930000
+*       2NNN                    DSPSERV CREATE FAILED WITH RC=NNN     * 00940000
+*       3NNN                    ALESERV ADD    FAILED WITH RC=NNN     * 00950000
+*       4NNN                    IEANTCR CALL   FAILED WITH RC=NNN     * 00960000
+*                                                                     * 00970000
+* CHANGE ACTIVITY                                                     * 00980000
+*                                                                     * 00990000
+*  $400 COMPLETE REWRITE FOR ESA 4.2.2                                * 01000000
+*  $401 ISSUE LOAD TO MAKE MYSELF RESIDENT IN MEMORY                  * 01010001
+*  $402 FIX PADDING ERROR IN PASTE ROUTINE                            * 01020002
+*                                                                     * 01030000
+&REL     SETC  'R402'                                                 * 01040002
+*********************************************************************** 01050000
+CUTPGM   CSECT                                                          01060000
+CUTPGM   RMODE ANY                                                      01070000
+         SAVE  (14,12),,'GSF UTILITIES - CUTPGM &REL'                   01080002
+         LR    R12,R15                 BASE REG                         01090002
+         USING CUTPGM,R12                                               01100002
+         L     R11,0(,R1)              A(PARM)                          01110002
+         USING PARM,R11                                                 01120002
+*---------------------------------------------------------------------* 01130000
+*                                                                     * 01140000
+*        INITIALISATION                                               * 01150000
+*                                                                     * 01160000
+*        1. ALLOCATE WORKING-STORAGE                                  * 01170000
+*        2. RETRIEVE THE STOKEN/ALET OF THE DATA SPACE                * 01180000
+*        3. CHECK PARAMETERS COMMON TO CUT AND PASTE FUNCTIONS        * 01190000
+*                                                                     * 01200000
+*---------------------------------------------------------------------* 01210000
+         STORAGE OBTAIN,               GET DYNAMIC STORAGE             X01220000
+               LENGTH=DYNAML,          LENGTH                          X01230000
+               LOC=BELOW,              SNAPDCB                         X01240000
+               BNDRY=PAGE              INITIALIZE WITH X'00'            01250000
+         ST    R13,4(,R1)                                               01260000
+         ST    R1,8(,R13)                                               01270000
+         LM    R13,R1,8(R13)           A(DYNAM)                         01280000
+         USING DYNAM,R13                                                01290000
+*                                                                       01300001
+         LOAD  EP=CUTPGM               MAKE MYSELF RESIDENT             01310001
+*                                                                       01320000
+         LOAD  EP=ISPLINK              ISPF INTERFACE                   01330000
+         ST    R0,ISPLINK@             SAVE THE ADDRESS                 01340000
+*                                                                       01350000
+         MVC   CLIPNAME,=C'CUTPASTE'   NAME OF MY DATA SPACE            01360000
+         MVC   CLIPNAME+8(8),CLIPBOARD BUFFER ID                        01370000
+*                                                                       01380000
+*        RETRIEVE THE STOKEN/ALET OF THE DATA SPACE                     01390000
+*                                                                       01400000
+         CALL  IEANTRT,                RETRIEVE                        X01410000
+               (=A(IEANT_HOME_LEVEL),  SCOPE                           X01420000
+               CLIPNAME,DSPCSTKN,      NAME/TOKEN                      X01430000
+               DWD),                   RETURN CODE                     X01440000
+               MF=(E,TENWORDS)                                          01450000
+         LTR   R15,R15                 DATA SPACE EXISTS ALREADY?       01460000
+         BNZ   INIT30                  NO, JUMP                         01470000
+         L     R2,DSPCORG              ORIGIN                           01480000
+         LAM   R2,R2,DSPCALET          POINT TO THE DATA SPACE          01490000
+         SAC   512                     MODE=AR                          01500000
+         MVC   HEADER,0(R2)            MOVE HEADER FROM "CUT"           01510000
+         SAC   0                       MODE=PRIMARY                     01520000
+*                                                                       01530000
+INIT30   CLI   FUNCTION,C'D'           FUNCTION=DUMP?                   01540000
+         BE    DUMP00                  YES, GO THERE                    01550000
+*                                                                       01560000
+         PACK  LINE1,LINE1             FIRST LINE                       01570000
+*                                                                       01580000
+         CLI   FUNCTION,C'C'           FUNCTION=CUT?                    01590000
+         BE    CUT00                   YES, GO THERE                    01600000
+         CLI   FUNCTION,C'P'           FUNCTION=PASTE?                  01610000
+         BE    PASTE00                 YES, GO THERE                    01620000
+         LA    R15,20                  RC=20 (INVALID FUNCTION)         01630000
+         B     EXIT15                  QUIT                             01640000
+*********************************************************************** 01650000
+*                                                                     * 01660000
+*        "DUMP" FUNCTION: DISPLAY THE CONTENTS OF THE DATA SPACE      * 01670000
+*                         USING THE ISPF/PDF BROWSE INTERFACE (BRIF). * 01680000
+*                                                                     * 01690000
+*********************************************************************** 01700000
+DUMP00   LA    R15,12                  DATA SPACE NOT FOUND             01710000
+         OC    HDRTCB,HDRTCB           DATA SPACE LOCATED?              01720000
+         BZ    EXIT15                  NO, QUIT                         01730000
+         LA    R0,DYNAM                DIALOG DATA ADDR                 01740000
+         ST    R0,DWD                  DIALOG DATA PTR                  01750000
+         LA    R14,=C'BRIF'            ISPF FUNCTION                    01760000
+         LA    R15,CLIPNAME            DSNAME                           01770000
+         LA    R0,=C'F '               RECFM                            01780000
+         LA    R1,=F'80'               LRECL                            01790000
+         LA    R2,=A(DUMP500)          READ ROUTINE                     01800000
+         SLR   R3,R3                   COMMAND RTNE ADDR                01810000
+         LA    R4,DWD                  PARM FOR READ ROUTINE            01820000
+         STM   R14,R4,TENWORDS         PARAMETER LIST                   01830000
+         OI    TENWORDS+24,X'80'       END OF PARAMETER LIST            01840000
+         LA    R1,TENWORDS             PARAMETER LIST                   01850000
+         L     R15,ISPLINK@            ISPF INTERFACE                   01860000
+         BALR  R14,R15              <- BRIF                             01870000
+         LTR   R15,R15                 BRIF OK?                         01880000
+         BZ    EXIT00                  YES, EXIT                        01890000
+         LA    R15,700(,R15)           ERROR: BRIF FAILED               01900000
+         B     EXIT15                  NO, QUIT                         01910000
+*                                                                       01920000
+*        BRIF READ ROUTINE                                              01930000
+*                                                                       01940000
+         PUSH  USING                                                    01950000
+DUMP500  BAKR  R14,0                   SAVE REGS                        01960000
+         LR    R11,R15                 BASE REG                         01970000
+         USING DUMP500,R11                                              01980000
+         LM    R2,R5,0(R1)             LOAD PARM ADDR                   01990000
+         L     R13,0(,R5)              POINT TO DYNAMIC STORAGE AREA    02000000
+         L     R7,0(,R4)               LINE NUMBER REQUESTED BY BRIF    02010000
+         BCTR  R7,0                    RELATIVE TO ZERO                 02020000
+         M     R6,=F'80'               MULT BY LINE LENGTH              02030000
+*L R0,DSPCALET                                                          02040000
+         LAM   R7,R7,DSPCALET          POINT TO THE DATA SPACE          02050000
+         SAC   512                     MODE=AR                          02060000
+         MVC   LINE(80),0(R7)          MOVE LINE TO ADDRESS SPACE       02070000
+         SAC   0                       MODE=PRIMARY                     02080000
+         LA    R0,LINE                 ADDRESS OF CURRENT RECORD        02090000
+         ST    R0,0(,R2)               PASS ADDR BACK TO BRIF           02100000
+*STM R2,R7,LINE                                                         02110000
+DUMP590  SLR   R15,R15                 GOBACK WITH RC=00                02120000
+         PR                                                             02130000
+         POP   USING                                                    02140000
+*********************************************************************** 02150000
+*                                                                     * 02160000
+*        "CUT" FUNCTION                                               * 02170000
+*                                                                     * 02180000
+*        1. PROCESS PARM                                              * 02190000
+*        2. DEFINE THE DATA SPACE                                     * 02200000
+*        3. RETRIEVE DATA LINES AND STORE THEM INTO THE DATA SPACE    * 02210000
+*        4. UPDATE DATA SPACE HEADER                                  * 02220000
+*                                                                     * 02230000
+*********************************************************************** 02240000
+CUT00    PACK  LINE2,LINE2             LAST LINE                        02250000
+*                                                                       02260000
+         BAL   R14,DEFSPC              DEFINE DATA SPACE                02270000
+         LTR   R15,R15                 OK?                              02280000
+         BNZ   EXIT15                  NO, QUIT                         02290000
+*                                                                       02300000
+         CLI   APPEND,C'+'             APPEND OPTION ?                  02310000
+         BE    CUT40                   YES, DO NOT RESET POINTERS       02320000
+         MVC   HDRCOMPR,COMPRESS       SAVE COMPRESSION LEVEL           02330000
+         XC    HDRLINES,HDRLINES       RESET LINE COUNTER               02340000
+*                                                                       02350000
+         L     R4,DSPCORG              ORIGIN                           02360000
+         LA    R4,L'HEADER(,R4)        SKIP HEADER                      02370000
+         ST    R4,HDRNEXTB             FIRST BYTE OF DATA               02380000
+*                                                                       02390000
+         PACK  DWD,LRECL               MAX RECORD SIZE                  02400000
+         CVB   R0,DWD                  LENGTH                           02410000
+         ST    R0,HDRLRECL             LENGTH                           02420000
+*                                                                       02430000
+CUT40    BAL   R14,VDEFLINE            VDEFINE LINE                     02440000
+         LTR   R15,R15                 CHECK RETURN CODE                02450000
+         BNZ   ERROR100                ISPLINK FAILED                   02460000
+*                                                                       02470000
+CUT50    L     R4,HDRNEXTB             FIRST BYTE OF DATA               02480000
+         LAM   R4,R4,DSPCALET          POINT TO THE DATA SPACE          02490000
+*                                                                       02500000
+         L     R5,HDRBLKS              SIZE OF THE DATA SPACE (PAGES)   02510000
+         SLL   R5,12                   SIZE OF THE DATA SPACE (BYTES)   02520000
+         SL    R5,DSPCORG              MINUS ORIGIN                     02530000
+         SLR   R5,R4                   SIZE OF THE DATA PORTION         02540000
+*                                                                       02550000
+         MVC   COMMAND(20),=C'(LINE) = LINE 123456'                     02560000
+*---------------------------------------------------------------------* 02570000
+*                                                                     * 02580000
+*        "CUT" FUNCTION: COPY DATA TO THE BUFFER                      * 02590000
+*                                                                     * 02600000
+*---------------------------------------------------------------------* 02610000
+*LOOP                                                                   02620000
+CUT80    OI    LINE1+L'LINE1-1,15      SUPPRESS SIGN                    02630000
+         UNPK  COMMAND+14(6),LINE1     123456                           02640000
+         LA    R0,20                   LENGTH OF COMMAND                02650000
+         BAL   R14,ISREDIT                                              02660000
+         LTR   R15,R15                 CHECK RETURN CODE                02670000
+         BNZ   ERROR200                ISREDIT FAILED                   02680000
+*                                                                       02690000
+*        MOVE LINE TO BUFFER                                            02700000
+*                                                                       02710000
+CUT81    LAE   R2,LINE                 SOURCE TEXT                      02720000
+         L     R3,HDRLRECL             LENGTH OF SOURCE TEXT            02730000
+         SAC   512                     MODE=AR                          02740000
+         CLI   HDRCOMPR,C'0'           COMPRESS=NONE ?                  02750000
+         BE    CUT84                   YES, JUMP                        02760000
+         CLI   HDRCOMPR,C'2'           COMPRESS=CSRCE ?                 02770000
+         BE    CUT85                   YES, JUMP                        02780000
+*                                                                       02790000
+*        TRUNCATE TRAILING BLANKS      (COMPRESS=1)                     02800000
+*                                                                       02810000
+         LA    R1,LINE(R3)             FIRST BYTE AFTER LINE            02820000
+CUT82    BCTR  R1,0                                                     02830000
+         CLI   0(R1),C' '              IS IT A SPACE ?                  02840000
+         BNE   CUT84                   NO, EXIT                         02850000
+         BCT   R3,CUT82                                                 02860000
+         LA    R3,1                    LENGTH=1                         02870000
+*                                                                       02880000
+CUT84    STH   R3,0(,R4)               STORE LENGTH                     02890000
+         LA    R4,2(,R4)               SKIP LENGTH COUNTER              02900000
+         LR    R5,R3                   RECORD SIZE                      02910000
+         MVCL  R4,R2                   MOVE DATA                        02920000
+         SAC   0                       MODE=PRIMARY                     02930000
+         B     CUT88                   NEXT LINE                        02940000
+*                                                                       02950000
+*        COMPRESS DATA USING MVS COMPRESSION/EXPANSION SERVICES         02960000
+*                                                                       02970000
+CUT85    SLR   R1,R1                   NO WORK AREA                     02980000
+         LAE   R6,0(,R4)               SAVE ADDRESS                     02990000
+         LA    R4,2(,R4)               SKIP COUNT                       03000000
+         BCTR  R5,0                                                     03010000
+         BCTR  R5,0                                                     03020000
+.OW10890 LAE   14,0                    PREVENT S0C4 IN CSRCE            03030000
+         CSRCESRV SERVICE=COMPRESS     BUFFER<=LINE                     03040000
+         LR    R1,R4                   CALC LENGTH OF COMPRESSED TEXT   03050000
+         SR    R1,R6                   CALC LENGTH OF COMPRESSED TEXT   03060000
+         BCTR  R1,0                    CALC LENGTH OF COMPRESSED TEXT   03070000
+         BCTR  R1,0                    CALC LENGTH OF COMPRESSED TEXT   03080000
+         STH   R1,0(,R6)               SAVE LENGTH OF COMPRESSED TEXT   03090000
+****     MVI   0(R4),X'FF'             END OF FILE MARK                 03100000
+         SAC   0                       MODE=PRIMARY                     03110000
+         LTR   R15,R15                 OK?                              03120000
+         BNZ   ERROR500                NO, EXIT                         03130000
+*                                                                       03140000
+CUT88    LA    R0,1                    NUMBER OF LINES IN BUFFER        03150000
+         AL    R0,HDRLINES             NUMBER OF LINES IN BUFFER        03160000
+         ST    R0,HDRLINES             NUMBER OF LINES IN BUFFER        03170000
+*                                                                       03180000
+         AP    LINE1,=P'1'             INCREMENT LINE NUMBER            03190000
+         CP    LINE1,LINE2             LAST LINE REACHED?               03200000
+         BNH   CUT80                   NOT YET, PROCESS NEXT LINE       03210000
+*ENDLOOP                                                                03220000
+         ST    R4,HDRNEXTB             SAVE ADDR OF NEXT BYTE           03230000
+         L     R4,DSPCORG              POINT TO HEADER                  03240000
+         SAC   512                     MODE=AR                          03250000
+         MVC   0(L'HEADER,R4),HEADER   MOVE HEADER FOR "PASTE"          03260000
+         SAC   0                       MODE=PRIMARY                     03270000
+         B     EXIT00                                                   03280000
+*********************************************************************** 03290000
+*                                                                     * 03300000
+*        "PASTE" FUNCTION                                             * 03310000
+*                                                                     * 03320000
+*        RETRIEVE DATA LINES FROM THE DATA SPACE AND INSERT THEM      * 03330000
+*        AFTER &LINE1                                                 * 03340000
+*                                                                     * 03350000
+*********************************************************************** 03360000
+PASTE00  LA    R15,12                  DATA SPACE NOT FOUND             03370000
+         OC    HDRTCB,HDRTCB           DATA SPACE LOCATED?              03380000
+         BZ    EXIT15                  NO, QUIT                         03390000
+         BAL   R14,VDEFLINE            VDEFINE LINE                     03400000
+         LA    R2,L'HEADER(,R2)        POINT AT COMPRESSED TEXT         03410000
+         L     R8,HDRLINES             NUMBER OF LINES IN BUFFER        03420000
+         MVC   COMMAND(35),=C'LINE_AFTER 123456 = DATALINE (LINE)'      03430000
+*                                                                       03440000
+*        GET LINES FROM THE DATA SPACE AND PASS THEM TO ISPF EDIT       03450000
+*LOOP                                                                   03460000
+PASTE50  SAC   512                     MODE=AR                          03470000
+         LH    R3,0(,R2)               SIZE OF RECORD STORED IN BUFFER  03480000
+         LA    R2,2(,R2)               SKIP RCD LEN                     03490000
+         LAE   R4,LINE                 SOURCE TEXT                      03500000
+         L     R5,HDRLRECL             LENGTH OF SOURCE TEXT            03510000
+         CLI   HDRCOMPR,C'2'           COMPRESS=CSRCE ?                 03520000
+         BE    PASTE55                 YES, JUMP                        03530000
+*                                                                       03540000
+         ICM   R3,B'1000',=C' '        PADDING                          03550002
+         MVCL  R4,R2                   MOVE FROM BUFFER                 03560000
+         SAC   0                       MODE=PRIMARY                     03570000
+         B     PASTE57                 NEXT LINE                        03580000
+*                                                                       03590000
+*        EXPAND DATA USING MVS COMPRESSION/EXPANSION SERVICES           03600000
+*                                                                       03610000
+PASTE55  SLR   R1,R1                   NO WORK AREA                     03620000
+         CSRCESRV SERVICE=EXPAND       BUFFER=>LINE                     03630000
+         SAC   0                       MODE=PRIMARY                     03640000
+         LTR   R15,R15                 OK?                              03650000
+         BNZ   ERROR500                NO, EXIT                         03660000
+*                                                                       03670000
+*        INSERT A LINE AFTER CURRENT                                    03680000
+*                                                                       03690000
+PASTE57  OI    LINE1+L'LINE1-1,15      SUPPRESS SIGN                    03700000
+         UNPK  COMMAND+11(6),LINE1     123456                           03710000
+         LA    R0,35                   LENGTH OF THE ISREDIT COMMAND    03720000
+         BAL   R14,ISREDIT                                              03730000
+         CH    R15,=H'4'               LINE TRUNCATED?                  03740000
+         BH    ERROR200                BAD, QUIT                        03750000
+*                                                                       03760000
+         AP    LINE1,=P'1'             NEXT LINE NUMBER                 03770000
+         BCT   R8,PASTE50              KEEP ON DOING IT                 03780000
+*ENDLOOP                                                                03790000
+*********************************************************************** 03800000
+*                                                                     * 03810000
+*        RETURN TO CALLER                                             * 03820000
+*                                                                     * 03830000
+*********************************************************************** 03840000
+EXIT00   SLR   R15,R15                 RC=00                            03850000
+         B     EXIT15                                                   03860000
+*                                                                       03870000
+ERROR100 LA    R15,100(,R15)           ISPLINK FAILED (VDEFINE)         03880000
+         B     EXIT15                                                   03890000
+*                                                                       03900000
+ERROR200 LA    R15,200(,R15)           ISPLINK FAILED (ISREDIT)         03910000
+         B     EXIT15                                                   03920000
+*                                                                       03930000
+ERROR500 LA    R15,500(,R15)           CSRCESRV FAILED                  03940000
+         B     EXIT15                                                   03950000
+*                                                                       03960000
+EXIT15   LR    R2,R15                  SAVE RETURN CODE                 03970000
+         LR    R1,R13                  A(DYNAM)                         03980000
+         L     R13,4(,R13)                                              03990000
+         STORAGE RELEASE,LENGTH=DYNAML,ADDR=(1) FREE DYNAMIC STORAGE    04000000
+         LR    R15,R2                  PASS RETURN CODE                 04010000
+         RETURN (14,12),RC=(15)        GOBACK TO CALLER WITH RC IN R15  04020000
+*---------------------------------------------------------------------* 04030000
+*                                                                     * 04040000
+*        ISPLINK VDEFINE (LINE) CHAR                                  * 04050000
+*                                                                     * 04060000
+*---------------------------------------------------------------------* 04070000
+VDEFLINE BAKR  R14,0                                                    04080000
+         LA    R14,=C'VDEFINE'         FUNCTION                         04090000
+         LA    R15,=C'LINE '           NAME                             04100000
+         LA    R0,LINE                 ADDRESS                          04110000
+         LA    R1,=C'CHAR'             TYPE                             04120000
+         LA    R2,HDRLRECL             LENGTH                           04130000
+         STM   R14,R2,TENWORDS         BUILD PARM LIST                  04140000
+         OI    TENWORDS+16,X'80'       MARK END OF LIST                 04150000
+         L     R15,ISPLINK@            PICK UP ISPF INTERFACE ADDRESS   04160000
+         LA    R1,TENWORDS             PARAM                            04170000
+         BALR  R14,R15                 GOTO ISPLINK                     04180000
+         PR                                                             04190000
+*---------------------------------------------------------------------* 04200000
+*                                                                     * 04210000
+*        DEFINE THE DATA SPACE (FUNCTION=CUT)                         * 04220000
+*                                                                     * 04230000
+*---------------------------------------------------------------------* 04240000
+DEFSPC   BAKR  R14,0                                                    04250000
+         OC    HDRTCB,HDRTCB           DATA SPACE CREATED ALREADY?      04260000
+         BNZ   DEFSPC7                 YES, JUMP                        04270000
+*                                                                       04280000
+         PACK  DWD,BLOCKS              SIZE OF DATA SPACE IN BLOCKS     04290000
+         CVB   R0,DWD                  SIZE OF DATA SPACE IN BLOCKS     04300000
+         ST    R0,HDRBLKS              SIZE OF DATA SPACE IN BLOCKS     04310000
+*                                                                       04320000
+*        RETRIEVE THE TCBTOKEN OF MY JOB-STEP TCB                       04330000
+*                                                                       04340000
+         TCBTOKEN TTOKEN=STEPTOKN,     TCBTOKEN OF MY JS TCB           X04350000
+               TYPE=JOBSTEP,                                           X04360000
+               MF=(E,TCBTOKN1)                                          04370000
+         LTR   R15,R15                 OK?                              04380000
+         LA    R15,1000(,R15)          RC=10NN        TCBTOKEN          04390000
+         BNZ   DEFSPC9                 NO, EXIT                         04400000
+*                                                                       04410000
+*        DEFINE A DATA SPACE AND ASSIGN OWNERSHIP TO MY JOB-STEP TCB    04420000
+*                                                                       04430000
+         DSPSERV CREATE,                                               X04440000
+               NAME=CLIPNAME,          C'CUTPASTE'                     X04450000
+               GENNAME=YES,            DSPSERV GENERATES A NAME        X04460000
+               OUTNAME=DSPCNAME,       NAME OF DATA SPACE              X04470000
+               BLOCKS=HDRBLKS,         16 MEGS                         X04480000
+               STOKEN=DSPCSTKN,                                        X04490000
+               TTOKEN=STEPTOKN,        TCBTOKEN OF MY JS TCB           X04500000
+               ORIGIN=DSPCORG,                                         X04510000
+               MF=(E,DSPSERV1)                                          04520000
+         LTR   R15,R15                 OK?                              04530000
+         LA    R15,2000(,R15)          RC=20NN         DSPSERV          04540000
+         BNZ   DEFSPC9                 NO, EXIT                         04550000
+         MVC   HDRTCB,PSATOLD-PSA      OWNER OF THE DATA SPACE          04560000
+         MVI   APPEND,C'-'             APPEND OPTION OFF                04570000
+*                                                                       04580000
+*        ADD THE DATA SPACE TO THE PASN-AL TO ALLOW ACESS FROM          04590000
+*        ANY TASK IN MY ADDRESS SPACE.                                  04600000
+*                                                                       04610000
+         ALESERV ADD,                                                  X04620000
+               STOKEN=DSPCSTKN,                                        X04630000
+               ALET=DSPCALET,                                          X04640000
+               AL=PASN,                MAKE IT PUBLIC                  X04650000
+               MF=(E,ALESERV1)                                          04660000
+         LTR   R15,R15                 OK?                              04670000
+         LA    R15,3000(,R15)          RC=30NN         ALESERV          04680000
+         BNZ   DEFSPC9                 NO, EXIT                         04690000
+*                                                                       04700000
+*        CREATE A NAME/TOKEN PAIR TO BE ABLE TO RETRIEVE                04710000
+*        THE DATA SPACE LATER ON.                                       04720000
+*                                                                       04730000
+         CALL  IEANTCR,                CREATE A NAME/TOKEN PAIR        X04740000
+               (=A(IEANT_HOME_LEVEL),                                  X04750000
+               CLIPNAME,DSPCSTKN,      NAME/TOKEN                      X04760000
+               =F'0',                  PERSIST OPTION                  X04770000
+               DWD),                                                   X04780000
+               MF=(E,TENWORDS)                                          04790000
+         LTR   R15,R15                 OK?                              04800000
+         BZ    DEFSPC8                 YES, JUMP                        04810000
+         LA    R15,4000(,R15)          RC=40NN         IEANTCR          04820000
+         B     DEFSPC9                 NO, EXIT                         04830000
+*                                                                       04840000
+*        IF THE DATA SPACE EXISTS ALREADY AND I OWN IT,                 04850000
+*        ISSUE DSPSERV RELEASE TO PREVENT UNNECESSARY PAGING.           04860000
+*                                                                       04870000
+DEFSPC7  CLI   APPEND,C'+'             APPEND OPTION ?                  04880000
+         BE    DEFSPC8                 YES, DO NOT ISSUE RELEASE        04890000
+         CLC   HDRTCB,PSATOLD-PSA      DO I OWN THIS DATA SPACE?        04900000
+         BNE   DEFSPC8                 NO, DO NOT ISSUE RELEASE         04910000
+         DSPSERV RELEASE,              FREE PAGING SPACE               X04920000
+               STOKEN=DSPCSTKN,                                        X04930000
+               BLOCKS=HDRBLKS,         SIZE                            X04940000
+               START=DSPCORG,          ORIGIN                          X04950000
+               MF=(E,DSPSERV1)                                          04960000
+*                                                                       04980000
+DEFSPC8  SLR   R15,R15                 RC=0                             04990000
+DEFSPC9  PR                                                             05000000
+*---------------------------------------------------------------------* 05010000
+*                                                                     * 05020000
+*        EXECUTE ISREDIT FUNCTION                                     * 05030000
+*                                                                     * 05040000
+*---------------------------------------------------------------------* 05050000
+ISREDIT  ST    R0,TENWORDS+16          LENGTH OF THE COMMAND            05060000
+         LA    R15,=C'ISREDIT '        COMMAND                          05070000
+         LA    R0,TENWORDS+16          LENGTH                           05080000
+         LA    R1,COMMAND              COMMAND                          05090000
+         STM   R15,R1,TENWORDS         BUILD PARM LIST                  05100000
+         OI    TENWORDS+8,X'80'        MARK END OF LIST                 05110000
+         L     R15,ISPLINK@            ISPF INTERFACE                   05120000
+         LA    R1,TENWORDS             PARAM                            05130000
+         BR    R15                     GOTO ISPLINK                     05140000
+*---------------------------------------------------------------------* 05150000
+*                                                                     * 05160000
+*        INPUT PARAMETERS                                             * 05170000
+*                                                                     * 05180000
+*---------------------------------------------------------------------* 05190000
+PARM     DSECT                                                          05200000
+         DS    H                       LENGTH                           05210000
+FUNCTION DS    C'C'                    FUNCTION: C/P/D                  05220000
+CLIPBOARD DS   C'12345678'             CLIP BOARD                       05230000
+LINE1    DS    Z'123456'               FIRST LINE (.ZF)                 05240000
+APPEND   DS    C'+'                    APPEND/REPLACE     (CUT ONLY)    05250000
+COMPRESS DS    C'0'                    COMPRESSION LEVEL  (CUT ONLY)    05260000
+LRECL    DS    Z'32767'                MAX RECORD SIZE    (CUT ONLY)    05270000
+LINE2    DS    Z'123456'               LAST LINE (.ZL)    (CUT ONLY)    05280000
+BLOCKS   DS    Z'123456'               SIZE OF DATA SPACE (CUT ONLY)    05290000
+*---------------------------------------------------------------------* 05300000
+*                                                                     * 05310000
+*        WORKING-STORAGE AREA                                         * 05320000
+*                                                                     * 05330000
+*---------------------------------------------------------------------* 05340000
+DYNAM    DSECT                                                          05350000
+         DS    18F                                                      05360000
+ISPLINK@ DS    V(ISPLINK)                                               05370000
+TENWORDS DS    10F                                                      05380000
+TCBTOKN1 TCBTOKEN MF=L                                                  05390000
+         DSPSERV MF=(L,DSPSERV1)                                        05400000
+ALESERV1 ALESERV MF=L                                                   05410000
+*                                                                       05420000
+STEPTOKN DS    XL16                    TCBTOKEN OF MY JS TCB            05430000
+DWD      DS    D                                                        05440000
+COMMAND  DS    CL40                    ISREDIT COMMAND                  05450000
+*                                                                       05460000
+*        NAME/TOKEN PAIR                                                05470000
+*                                                                       05480000
+         DS    0F                                                       05490000
+CLIPNAME DS    C'CUTPASTE',XL8'00'     NAME OF THE CLIP-BOARD           05500000
+DSPCSTKN DS    XL8                  0  AS TOKEN                         05510000
+DSPCALET DS    F                    8  ALET                             05520000
+DSPCORG  DS    F                   12  ORIGIN                           05530000
+*                                                                       05540000
+*        DATA SPACE HEADER                                              05550000
+*                                                                       05560000
+         DS    0F                                                       05570000
+HEADER   DS    0CL32                   DATA SPACE HEADER                05580000
+HDRBLKS  DS    F                       NUMBER OF BLOCKS                 05590000
+HDRTCB   DS    A                       TCB THAT OWNS THE DATA SPACE     05600000
+HDRLRECL DS    F                       RECORD LENGTH                    05610000
+HDRLINES DS    F                       NUMBER OF LINES                  05620000
+HDRNEXTB DS    A                       NEXT AVAILABLE BYTE              05630000
+HDRCOMPR DS    C                       COMPRESSION LEVEL                05640000
+         DS    3X                      RESERVED                         05650000
+DSPCNAME DS    C'12345CUT'             NAME OF DATA SPACE               05660000
+*                                                                       05670000
+         DS    0D                                                       05680000
+LINE     DS    CL32767                 RECORD AREA                      05690000
+DYNAML   EQU   *-DYNAM                                                  05700000
+*430     IEANTASM                      NAME/TOKEN EQUATES               05710000
+IEANT_HOME_LEVEL EQU 2                                                  05720000
+*        IHAPSA                                                         05730000
+PSA      DSECT                                                          05740000
+PSATOLD  EQU   *+X'021C'               A(TCB)                           05750000
+         YREGS                                                          05760001
+         END                                                            05770000
+//SYSLIB   DD DSN=SYS1.MACLIB,DISP=SHR                                  05780000
+//SYSUT1   DD UNIT=VIO,SPACE=(CYL,1)                                    05790000
+//SYSPRINT DD SYSOUT=*                                                  05800000
+//SYSLIN   DD UNIT=VIO,SPACE=(TRK,1),DISP=(,PASS),BLKSIZE=3200          05810000
+//*                                                                     05820000
+//LKED    EXEC PGM=HEWL,PARM='MAP,RENT'                                 05830000
+//SYSPRINT DD SYSOUT=*                                                  05840000
+//SYSLIN   DD DSN=*.HLASM.SYSLIN,DISP=(OLD,DELETE)                      05850002
+//SYSLIB   DD DSN=SYS1.CSSLIB,DISP=SHR                                  05860000
+//SYSLMOD  DD DSN=CBTTAPE.FILE183.LOAD(CUTPGM),DISP=SHR                 05880002

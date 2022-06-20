@@ -1,0 +1,133 @@
+//SBGOLOBH JOB (ACCT#),DATA-HANDBOOK,                                   00010004
+// NOTIFY=&SYSUID,                                                      00030004
+// LINES=50,                                                            00030102
+// CLASS=A,MSGCLASS=X,COND=(8,LT)                                       00031001
+//ASMH    EXEC PGM=ASMA90,REGION=0M,                                    00040004
+// PARM='XREF(SHORT),NODECK,NOOBJECT,TERM'                              00041001
+//SYSLIB   DD DSN=SYS1.MACLIB,DISP=SHR                                  00050000
+//         DD DSN=SYS1.MODGEN,DISP=SHR                                  00060000
+//SYSUT1   DD UNIT=VIO,SPACE=(CYL,55)                                   00070000
+//SYSTERM  DD SYSOUT=*                                                  00080000
+//SYSPRINT DD UNIT=VIO,SPACE=(CYL,55),DSN=&&ASMLIST,                    00090000
+//            DCB=(RECFM=FBM,DSORG=PS,LRECL=121),                       00100000
+//            DISP=(,PASS,DELETE)                                       00110000
+//SYSIN    DD *                                                         00120000
+         IFGACB  ,                                                      00130000
+         IHAACEE ,                                                      00140000
+         IHAASCB DSECT=YES,LIST=YES                                     00150000
+         IHAASVT DSECT=YES,LIST=YES                                     00160000
+         IHAASXB DSECT=YES,LIST=YES                                     00170000
+         IEEBASEA                                                       00180000
+         IHACDE ,                                                       00190000
+         IEECHAIN ,                                                     00200000
+         IHACSD DSECT=YES                                               00210000
+         CVT DSECT=YES,LIST=YES,PREFIX=YES                              00220000
+         DCBD  DSORG=PS                                                 00230000
+**       DCBD  DSORG=DA                                                 00240000
+         IHADECB DSECT=YES                                              00250000
+         IHADFA DSECT=YES                                               00260000
+         IHADSAB                                                        00270000
+         IECSDSL1 1                                                     00280000
+         DS    44X'04'                                                  00290000
+         IECSDSL1 4                                                     00300000
+*STATUS      OLD=01   MOD=02    NEW=04    SHR=08                        00310000
+*DISP    UNCATLG=01 CATLG=02 DELETE=04   KEEP=08                        00320000
+*SPACE                ALX=02   MXIG=04 CONTIG=08                        00330000
+*LABEL        NL=01    SL=02    NSL=04            SUL=0A                00340000
+*             BLP=10  LTM=21     AL=40    AUL=48                        00350000
+         IEFZB4D0                                                       00360000
+         IEFZB4D2                                                       00370000
+         IEZDEB LIST=YES                                                00380000
+         IHADVA DSECT=YES                                               00390000
+         IKJECT                                                         00400000
+         IHAECVT LIST=YES                                               00410000
+         IHAGDA                                                         00430000
+         IEZIOB DSECT=YES                                               00440000
+         IECDIOCM                                                       00450000
+JCT      DSECT                                                          00460000
+         IEFAJCTB                                                       00470000
+JCTX     DSECT                                                          00480000
+         IEFJCTX                                                        00490000
+         IEFJESCT                                                       00500000
+JFCB     DSECT                                                          00510000
+         IEFJFCBN LIST=YES                                              00520000
+         IEZJSCB ,                                                      00530000
+         IEFJSCVT                                                       00540000
+         IHALCCA DSECT=YES                                              00550000
+         IEFALLCT                                                       00560000
+         IHALDA                                                         00570000
+         IHALLE                                                         00580000
+         IHALPDE                                                        00590000
+**       IECDSECS                                                       00600000
+**       IECDSECT                                                       00610000
+         IRAOUCB DSECT=YES                                              00620000
+         IHAPCCA DSECT=YES                                              00630000
+         IHAPDS DSECT=YES,PDSBLDL=YES                                   00640000
+         IHAPSA DSECT=YES,LIST=YES                                      00650000
+         IKJPSCB                                                        00660000
+         IARRCE  ,              RSM CONTROL AND ENUMERATION AREA        00670000
+         IHARD   ,              REGION DESCRIPTOR                       00680000
+         IKJRB DSECT=YES,LIST=YES                                       00710000
+         IRXARGTB                                                       00720000
+         IRXCMPTB ,            COMPILER TABLE TSO/E 2.3.1               00730000
+         IRXDSIB                                                        00740000
+         IRXEFPL                                                        00750000
+         IRXENVB               ENVIRONMENT BLOCK                        00760000
+         IRXENVT               ENVIRONMENT TABLE (IRXANCHR)             00770000
+         IRXEVALB                                                       00780000
+         IRXEXECB                                                       00790000
+         IRXEXTE                                                        00800000
+         IRXFPDIR                                                       00810000
+         IRXINSTB                                                       00820000
+         IRXMODNT                                                       00830000
+         IRXPACKT                                                       00840000
+         IRXPARMB                                                       00850000
+         IRXSHVB                                                        00860000
+         IRXSUBCT                                                       00870000
+         IRXWORKB                                                       00880000
+         ISGRIB                                                         00890000
+         IFGRPL  ,                                                      00900000
+         IDARMRCD ,                RECORD MGMT ERROR CODES              00910000
+         IHASCB DSECT=YES                                               00920000
+SCT      DSECT                                                          00930000
+         IEFASCTB                                                       00940000
+         IEFSCTX DSECT=YES                                              00950000
+         IHASCVT DSECT=YES,LIST=YES                                     00960000
+         IHASDWA DSECT=YES,VRAMAP=YES                                   00970000
+SIOT     DSECT                                                          00980000
+         IEFASIOT                                                       00990000
+         IEESMCA                                                        01000000
+         IHASNAP DSECT=YES                                              01010000
+*        IHASCA                 SPIE/ESPIE CONTROL AREA                 01020004
+         IHAEPIE                EXTENDED PROGRAM INTERRUPT ELEMENT      01030000
+         IHAPIE                 PROGRAM INTERRUPT ELEMENT               01040000
+         IHAPICA                PROGRAM INTERRUPTION CONTROL AREA       01050000
+         IHASPQE                SP Q ELEMENT                            01060000
+         IHAFBQE                FREE BLOCK                              01070000
+         IHASPQA                SP Q DESCRIPTOR                         01080000
+         IHADQE                 DESCRIPTOR Q ELEMENT                    01090000
+         IHAFQE                 FREE Q ELEMENT                          01100000
+         IHASPT                 CSA                                     01110000
+         IEFJSSOB (AL,SO)                                               01120000
+         IEFJSSIB                                                       01130000
+         IEFSSSA                                                        01140000
+         IEFJSSVT                                                       01150000
+         IHASTCB LIST=YES                                               01160000
+         IKJTCB DSECT=YES,LIST=YES                                      01170000
+         IEFTCT                                                         01180000
+TIOT     DSECT                                                          01190000
+         IEFTIOT1                                                       01200000
+         IKJTSB LIST=YES,EXT=YES                                        01210000
+         IKJTSVT                                                        01220000
+UCB      DSECT                                                          01230000
+         IEFUCBOB LIST=YES,PREFIX=YES                                   01240000
+         IEECUCM LIST=YES,DSECT=YES                                     01250000
+         IKJUPT                                                         01260000
+         IHAXTLST                                                       01270000
+         END                                                            01280000
+/*                                                                      01290000
+//DBK     EXEC PGM=DAHANDBK,COND=(8,LT)                                 01300000
+//STEPLIB   DD DSN=SYS1.W$$.LINKLIB,DISP=SHR                            01310004
+//INPUT     DD DSN=&&ASMLIST,DISP=(OLD,DELETE,DELETE)                   01320000
+//TITLE     DD SYSOUT=*                                                 01330000
+//OUTPUT    DD SYSOUT=*                                                 01340000

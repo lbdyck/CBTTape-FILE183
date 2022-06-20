@@ -1,0 +1,71 @@
+//GILBERT2 JOB (ACCT#),ISREDIT2,                                        00010000
+// CLASS=A,MSGCLASS=H,COND=(0,NE),NOTIFY=&SYSUID                        00020000
+//HLASM EXEC PGM=ASMA90,PARM=(OBJECT,NODECK,NOESD,NORLD,NOXREF)         00030000
+*********************************************************************** 00040000
+*                                                                     * 00050000
+* PROGRAM NAME = ISREDIT2                                             * 00060000
+*                                                                     * 00070000
+* DESCRIPTIVE NAME = SPEED UP ISPF EDIT MACROS                        * 00080000
+*                                                                     * 00090000
+* FUNCTION = CREATE A PERMANENT CDE ON JPAQ TO ELIMINATE DIRECTORY    * 00100000
+*            SEARCHES FOR ISPLLIB/STEPLIB/TSOLIB WHEN THE ISREDIT     * 00110000
+*            MODULE IS IN THE LINK-LIST OR THE LPA                    * 00120000
+*                                                                     * 00130000
+* STATUS = R100                                                       * 00140000
+*                                                                     * 00150000
+* AUTHOR = GILBERT SAINT-FLOUR <carlos@gsf-soft.com>                  * 00160000
+*                                                                     * 00170000
+* ENVIRONMENT = SEE BELOW                                             * 00180000
+*                                                                     * 00190000
+*     AMODE = 31                                                      * 00200000
+*     SCP   = MVS/ESA 4.3 OR ABOVE                                    * 00210000
+*     KEY   = USER                                                    * 00220000
+*     MODE  = PROBLEM                                                 * 00230000
+*     APF   = OFF                                                     * 00240000
+*                                                                     * 00250000
+* OPERATION = ISREDIT2 USES AN UNDOCUMENTED FEATURE OF THE IDENTIFY   * 00260000
+*             MACRO TO CREATE A MAJOR CDE FOR THE ISREDIT MODULE.     * 00270000
+*                                                                     * 00280000
+* INVOCATION = SEE BELOW                                              * 00290000
+*                                                                     * 00300000
+*          AS A COMMAND: ISREDIT2                                     * 00310000
+*                        ISPEXEC SELECT CMD(ISREDIT2)                 * 00320000
+*          AS A PROGRAM: CALL *(ISREDIT2)                             * 00330000
+*                        ISPEXEC SELECT PGM(ISREDIT2)                 * 00340000
+*                                                                     * 00350000
+* NOTES = SEE BELOW                                                   * 00360000
+*                                                                     * 00370000
+*        ISREDIT2 MAY BE INVOKED MORE THAN ONCE                       * 00380000
+*                                                                     * 00390000
+*********************************************************************** 00400000
+ISREDIT2 CSECT                                                          00410000
+ISREDIT2 AMODE ANY                                                      00420000
+         LR    R12,R15                                                  00430000
+         USING ISREDIT2,R12                                             00440000
+         LOAD  EP=ISPEXEC                                               00450000
+         LOAD  EP=ISREDIT                                               00460000
+         LR    R2,R0                                                    00470000
+         IDENTIFY EP=ISR_EDIT,ENTRY=(R2)                                00480000
+         LTR   R15,R15                                                  00490000
+         BNZ   ERR1                                                     00500000
+DELETE   LOAD  EP=ISR_EDIT                                              00510000
+         DELETE EP=ISREDIT                                              00520000
+         IDENTIFY EP=ISREDIT,ENTRY=(R2)                                 00530000
+         LTR   R15,R15                                                  00540000
+         BNZ   ERR2                                                     00550000
+         SVC   3                                                        00560000
+ERR1     TPUT  =C'IDENTIFY 1 FAILED',17                                 00570000
+         SVC   3                                                        00580000
+ERR2     TPUT  =C'IDENTIFY 2 FAILED',17                                 00590000
+         SVC   3                                                        00600000
+         YREGS                                                          00610000
+         END                                                            00620000
+//SYSLIB   DD DSN=SYS1.MACLIB,DISP=SHR                                  00630000
+//SYSUT1   DD UNIT=VIO,SPACE=(CYL,2)                                    00640000
+//SYSPRINT DD SYSOUT=*                                                  00650000
+//SYSLIN   DD UNIT=VIO,SPACE=(TRK,1),DISP=(,PASS)                       00660000
+//*                                                                     00670000
+//LKED    EXEC PGM=IEWL                                                 00680000
+//SYSPRINT DD SYSOUT=*                                                  00690000
+//SYSLIN   DD DSN=*.HLASM.SYSLIN,DISP=(OLD,DELETE)                      00700000
+//SYSLMOD  DD DSN=GILBERT.LOAD(ISREDIT2),DISP=SHR                       00710000

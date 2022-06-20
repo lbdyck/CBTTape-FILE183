@@ -1,0 +1,378 @@
+//GILBERTL JOB (ACCT#),IKJEFLN2,                                        00010000
+// NOTIFY=&SYSUID,                                                      00020000
+// CLASS=A,MSGCLASS=H,COND=(0,NE)                                       00030000
+//HLASM EXEC PGM=ASMA90,PARM=(OBJECT,NODECK,NOESD,NORLD,NOXREF)         00040000
+*********************************************************************** 00050000
+*                                                                     * 00060000
+* MODULE NAME = IKJEFLN2                                              * 00070000
+*                                                                     * 00080000
+* DESCRIPTIVE NAME = TSO Logon Post-Display Exit for TN3270 Reconnect * 00090004
+*                                                                     * 00100000
+* FUNCTION = This TSO Logon exit allows LOGON RECONNECT to succeed    * 00110000
+*            in the TN3270 environment by issuing a VTAM disconnect   * 00120004
+*            command before Logon actually proceeds.                  * 00130004
+*            The user must specify the Reconnect option on the        * 00140000
+*            Logon panel and log onto the system on which the         * 00150000
+*            active TSO session was created.                          * 00160000
+*                                                                     * 00170000
+* STATUS = R099f (Beta)                                               * 00180004
+*                                                                     * 00190000
+* AUTHOR = Gilbert Saint-Flour <carlos@gsf-soft.com>                  * 00200000
+*          Thanks to Keith Moe of Amdahl for his suggestions and help.* 00210000
+*                                                                     * 00220000
+* NOTES = SEE BELOW                                                   * 00230000
+*                                                                     * 00240000
+*    DEPENDENCIES = MVS/ESA or OS/390                                 * 00250000
+*                                                                     * 00260000
+*    AUTHORIZATION = APF                                              * 00270000
+*                                                                     * 00280000
+*    RESTRICTIONS = NONE                                              * 00290000
+*                                                                     * 00300000
+* MODULE TYPE = PROCEDURE, (TSO Logon Exit)                           * 00310000
+*                                                                     * 00320000
+*    PROCESSOR = IBM HIGH LEVEL ASSEMBLER/MVS                         * 00330001
+*                                                                     * 00340000
+*    MODULE SIZE = 1K                                                 * 00350000
+*                                                                     * 00360000
+*    ATTRIBUTES = RENT, REFR, RMODE ANY, AMODE 31,                    * 00370000
+*                 SUPERVISOR STATE, KEY 8                             * 00380000
+*                                                                     * 00390000
+* INSTALLATION = This exit must be installed in an authorized system  * 00400000
+*             library (LPA or link-list) under the name IKJEFLN2.     * 00410000
+*             No SYS1.PARMLIB change is necessary to activate this    * 00420000
+*             exit - its presence is a system library triggers its    * 00430000
+*             invocation.                                             * 00440000
+*             To deactivate this exit and remove it from the system,  * 00450000
+*             simply delete it and refresh LLA if it was in a         * 00460000
+*             link-list library.                                      * 00470000
+*                                                                     * 00480000
+* OPERATION = Retrieve the user-id and password from the input        * 00490000
+*             parameters and check all of the active address spaces   * 00500000
+*             for an existing TSO session with the specified user-id. * 00510000
+*                                                                     * 00520000
+*             If a TSO session is found, then check the TSBXWREC      * 00530000
+*             flag which indicates that the terminal has been         * 00540000
+*             disconnected and the session is already in "waiting     * 00550000
+*             to reconnect" status. If TSBXWREC=1, exit.              * 00560000
+*                                                                     * 00570000
+*             If TSBXWREC=0, then validate the password by issuing    * 00580000
+*             RACROUTE REQUEST=VERIFY.                                * 00590000
+*                                                                     * 00600000
+*             If RACROUTE fails, prompt the user for the correct      * 00610000
+*             password.                                               * 00620000
+*                                                                     * 00630000
+*             If RACROUTE is successful, issue a VARY NET,TERM        * 00640000
+*             command to disconnect the TSO session from the          * 00650000
+*             terminal and and exit to the Logon processor.           * 00660000
+*                                                                     * 00670000
+* Notes:      This version of the exit allows Reconnect to proceed    * 00680000
+*             when the screen size of the new terminal is smaller     * 00690000
+*             than the size of the old terminal.  This should not     * 00700000
+*             be a problem if the session is at the READY prompt      * 00710000
+*             because TSO automatically adjusts to the new screen     * 00720000
+*             size.  Reconnecting with a smaller screen size,         * 00730000
+*             however, is likely to cause screen writing errors       * 00740000
+*             in ISPF and other TSO full-screen applications.         * 00750000
+*             Note that the same problem exists with 3270 terminals.  * 00760000
+*                                                                     * 00770000
+*             This exit will not allow a user to reconnect to         * 00780000
+*             a session that is active on a different member          * 00790000
+*             of a MAS or SYSPLEX.                                    * 00800000
+*                                                                     * 00810000
+* CALLED BY = TSO Logon (re: TSO/E Customization manual).             * 00820000
+*                                                                     * 00830000
+* CHANGE ACTIVITY                                                     * 00840000
+*                                                                     * 00850000
+* 099f 5th Beta Release                                               * 00860004
+*                                                                     * 00870000
+*********************************************************************** 00880000
+IKJEFLN2 CSECT                                                          00890000
+IKJEFLN2 RMODE ANY                                                      00900000
+         DC    C'GSF Utilities - IKJEFLN2 R099f '                       00910004
+BEGIN    BAKR  R14,0                   SAVE THE REGISTERS               00920000
+         LR    R11,R1                  parm list                        00930000
+         USING PARMLIST,R11                                             00940000
+         LR    R12,R15                 local base                       00950000
+         USING BEGIN,R12                                                00960000
+*                                                                       00970000
+*        check that the parm list contains reconnect=S, otherwise exit. 00980000
+*                                                                       00990000
+CHKRECON L     R2,PARM31               reconnect option                 01000000
+         ICM   R0,B'1111',0(R2)        parm omitted?                    01010000
+         BZ    EXIT                    yes, exit                        01020000
+         ICM   R1,B'1111',4(R2)        length=0?                        01030000
+         BZ    EXIT                    yes, exit                        01040000
+         CLI   8(R2),C'S'              reconnect=S ?                    01050000
+         BNE   EXIT                    no, exit                         01060000
+*                                                                       01070000
+*        allocate dynamic storage area                                  01080000
+*                                                                       01090000
+GETDYNAM GETMAIN R,LV=DYNAML           allocate dynamic storage         01100000
+         ST    R13,4(,R1)                                               01110000
+         ST    R1,8(,R13)                                               01120000
+         LR    R13,R1                  A(DYNAM)                         01130000
+         USING DYNAM,R13                                                01140000
+         MVC   VTAMCMD(VTAMCMDL),VTAMCMDM                               01150000
+*                                                                       01160000
+*        retrieve user-id from parm list                                01170000
+*                                                                       01180000
+GETUID   LA    R0,USERID               "to" area                        01190000
+         LA    R1,L'USERID             "to" length                      01200000
+         L     R2,PARM21               user-id                          01210000
+         LA    R14,8(,R2)              "from" area                      01220000
+         LH    R15,6(,R2)              "from" length                    01230000
+         ICM   R15,B'1000',BLANKS      padding character                01240000
+         MVCL  R0,R14                  move user-ID                     01250000
+*---------------------------------------------------------------------* 01260000
+*                                                                     * 01270001
+*        Search ASCB chain for an active TSO session                  * 01280000
+*        with the same user-ID.                                       * 01290000
+*                                                                     * 01300001
+*---------------------------------------------------------------------* 01310000
+FINDTSB  LA    R4,2                    FIRST ASID                       01320000
+         L     R5,CVTPTR(0,0)          CVT ADDRESS                      01330001
+         L     R5,CVTASVT-CVTMAP(,R5)  POINT TO ASVT                    01340000
+         L     R5,ASVTMAXU-ASVT(,R5)   MAX ASID                         01350000
+*LOOP                                                                   01360000
+LOOP2    LOCASCB ASID=(R4)                                              01370000
+         LTR   R15,R15                 ASCB active?                     01380000
+         BNZ   LOOP2NXT                no, ignore                       01390000
+         CL    R1,PSAAOLD-PSA(0,0)     own address space?               01400001
+         BE    LOOP2NXT                yes, ignore                      01410001
+         LR    R7,R1                   pass ASCB address                01420000
+         USING ASCB,R7                                                  01430000
+         ICM   R8,B'1111',ASCBTSB      TSO ADDRESS SPACE?               01440000
+         BZ    LOOP2NXT                no, ignore                       01450000
+         L     R1,ASCBJBNS             point at job name                01460000
+         CLC   USERID,0(R1)            MY USERID?                       01470000
+         BE    ASIDF99                 YES, EXIT                        01480000
+LOOP2NXT LA    R4,1(,R4)               NEXT ASID                        01490000
+         BCT   R5,LOOP2                NEXT ASID                        01500000
+*ENDLOOP                                                                01510000
+         B     CLEANUP                 No active TSO session found      01520000
+ASIDF99  EQU   *                                                        01530000
+*---------------------------------------------------------------------* 01540000
+*                                                                     * 01550000
+*        Retrieve TSB & TSBX associated with the TSO session.         * 01560000
+*                                                                     * 01570000
+*---------------------------------------------------------------------* 01580000
+         USING TSB,R8                                                   01590000
+MOVETSB1 LA    R0,L'TSB1-1             LENGTH OF UNPROTECTED TSB        01600000
+         IVSK  R1,R8                   Source key into R1               01610000
+         MVCSK TSB1,TSB                Move TSB to unprotected storage  01620000
+         LA    R8,TSB1                                                  01630000
+         L     R9,TSBEXTNT             addr of the TSBX                 01640000
+         LA    R0,L'TSBX1-1            LENGTH OF UNPROTECTED TSBX       01650000
+         IVSK  R1,R9                   Source key into R1               01660000
+         MVCSK TSBX1,0(R9)             Move TSBX to unprotected storage 01670000
+         USING TSBX,TSBX1                                               01680000
+*                                                                       01690000
+*        If the TSO session is already in "waiting to reconnect"        01700000
+*        status, then exit.                                             01710000
+*                                                                       01720000
+         TM    TSBXFLG1,TSBXWREC       waiting to reconnect?            01730000
+         BO    CLEANUP                 yes, we're done                  01740000
+         TM    TSBXFLG2,TSBXPREC       Reconnect in progress?           01750000
+         BO    CLEANUP                 yes, we're done                  01760000
+*---------------------------------------------------------------------* 01770000
+*                                                                     * 01780000
+*        Validate the userid/password using RACROUTE REQUEST=VERIFY   * 01790000
+*        and the current terminal name.                               * 01800000
+*                                                                     * 01810000
+*        If the user specified a Group name, it is not validated      * 01820000
+*        here but will be validated later on by Logon processing.     * 01830000
+*                                                                     * 01840000
+*---------------------------------------------------------------------* 01850000
+CHKPSWD  MVC   RACINITL(RACINITLL),RACINITM                             01860004
+         L     R2,PARM32               OID card                         01870004
+         ICM   R0,B'1111',0(R2)        any data specified here?         01880004
+         BZ    CHKPSWD5                no, ignore                       01890004
+         RACINIT OIDCARD=7(R2),        OID Card                        X01900004
+               MF=(M,RACINITL)                                          01910004
+CHKPSWD5 EQU   *                                                        01920004
+         LM    R2,R3,PARM21            user-id,password                 01930004
+         ICM   R0,B'1111',0(R3)        was password specified?          01940004
+         BZ    CLEANUP                 no, exit                         01950004
+         RACINIT ENVIR=CREATE,                                         X01960004
+               USERID=7(R2),           user-id                         X01970000
+               PASSWRD=7(R3),          password                        X01980000
+               TERMID=TERMID1,         Own terminal name (current)     X01990000
+               ACEE=ACEEPTR,           addr of the ACEE                X02000004
+               MF=(E,RACINITL)                                          02010000
+         LTR   R2,R15                  RACINIT successful?              02020004
+         BNZ   BADPSWD                 No, error                        02030004
+*                                                                       02040000
+*        Delete the ACEE we just created, it's useless.                 02050000
+*                                                                       02060000
+         MVC   RACINITL(RACINITLL),RACINITM                             02070000
+         RACINIT ENVIR=DELETE,         DELETE ACEE                     X02080004
+               ACEE=ACEEPTR,           addr of the ACEE                X02090004
+               MF=(E,RACINITL)                                          02100000
+*---------------------------------------------------------------------* 02110000
+*                                                                     * 02120000
+*        Retrieve current terminal name from my own TSB               * 02130000
+*                                                                     * 02140000
+*---------------------------------------------------------------------* 02150000
+MOVETSB2 L     R7,PSAAOLD-PSA(0,0)     current ASCB                     02160001
+         L     R8,ASCBTSB              Terminal Status Block            02170000
+         LA    R0,L'TSB2-1             LENGTH OF UNPROTECTED TSB        02180000
+         IVSK  R1,R8                   Source key into R1               02190000
+         MVCSK TSB2,TSB                Move TSB to unprotected storage  02200000
+         LA    R8,TSB2                                                  02210000
+         MVC   SIZE1,TSBPRMR           save screen sizes                02220000
+         L     R9,TSBEXTNT             addr of the TSBX                 02230000
+         LA    R0,L'TSBX2-1            LENGTH OF UNPROTECTED TSBX       02240000
+         IVSK  R1,R9                   Source key into R1               02250000
+         MVCSK TSBX2,0(R9)             Move TSBX to unprotected storage 02260000
+*---------------------------------------------------------------------* 02270000
+*                                                                     * 02280000
+*        Issue VTAM disconnect command                                * 02290000
+*                                                                     * 02300000
+*---------------------------------------------------------------------* 02310000
+SENDCMD  MVC   NEWTERM,TERMID1         new terminal name                02320003
+         MVC   OLDTERM,TERMID2         old terminal name                02330003
+         MODESET KEY=ZERO                                               02340000
+         SLR   R0,R0                   CN(0)                            02350000
+         MGCR  VTAMCMD                 issue command                    02360000
+         MODESET KEY=NZERO                                              02370000
+*                                                                       02380000
+         TPUT  VTAMCMD+4,VTAMCMDL-4    display command                  02390000
+NEXTPAGE MVC   WORK80(3),=C'***'       move string to 24-bit storage    02400004
+         TPUT  WORK80,3,ASIS           display ***                      02410004
+         TGET  WORK80,1                prompt the user to press ENTER   02420004
+         B     CLEANUP                                                  02430000
+*---------------------------------------------------------------------* 02440000
+*                                                                     * 02450000
+*        RACINIT Failed                                               * 02460004
+*                                                                     * 02470004
+*        If the password is invalid, set up control switches          * 02480000
+*        to ensure the user is prompted for a new password.           * 02490000
+*                                                                     * 02500000
+*---------------------------------------------------------------------* 02510000
+BADPSWD  CH    R2,=H'8'                invalid password?                02520004
+         BNE   CLEANUP                 no, exit                         02530004
+*                                                                       02540004
+         L     R3,PARM10               control switches                 02550004
+         OI    4+8(R3),BIT0            re-prompt                        02560000
+         L     R4,PARM15               re-prompt code                   02570000
+         LA    R1,2                    password code                    02580000
+         ST    R1,8(,R4)               store code into parm15           02590000
+*                                                                       02600000
+*        Set the "do not issue RACROUTE" switch to                      02610000
+*        prevent RACF from counting two violations.                     02620000
+*                                                                       02630000
+         OI    2+8(R3),BIT2            do not issue RACROUTE            02640000
+*---------------------------------------------------------------------* 02650000
+*                                                                     * 02660000
+*        free dynamic storage and exit                                * 02670000
+*                                                                     * 02680000
+*---------------------------------------------------------------------* 02690000
+CLEANUP  FREEMAIN R,LV=DYNAML,A=(R13)                                   02700000
+EXIT     SLR   R15,R15                 RC=0                             02710000
+         PR                            go back to IKJEFLE               02720000
+RACINITM RACINIT MF=L                                                   02730004
+VTAMCMDM WTO   'VARY NET,TERM,TYPE=COND,NOTIFY=NO,SLU=12345678 1234567 X02740003
+               12345678',MF=L                                           02750003
+VTAMCMDL EQU   *-VTAMCMDM                                               02760000
+BLANKS   DC    CL8' '                                                   02770000
+*********************************************************************** 02780000
+*        Dynamic Save Area                                            * 02790000
+*********************************************************************** 02800000
+DYNAM    DSECT                                                          02810000
+         DS    18F                     standard save area               02820000
+VTAMCMD  DS    XL(VTAMCMDL)                                             02830000
+         ORG   VTAMCMD+VTAMCMDL-25                                      02840003
+OLDTERM  DS    CL8,C                   old terminal                     02850003
+USERID   DS    CL8                     user-id (8 chars)                02860003
+NEWTERM  DS    CL8                     new terminal                     02870003
+         ORG                                                            02880003
+PASSWORD DS    CL8                     password                         02890000
+RACINITL RACINIT MF=L                                                   02900004
+RACINITLL EQU  *-RACINITL                                               02910000
+ACEEPTR  DS    A                       addr of ACEE created by RACINIT  02920004
+TSB1     DS    XL(TSB_LENGTH)          TSB of active TSO session        02930000
+SIZE2    EQU   TSBPRMR-TSB+TSB1,4      screen size (old)                02940000
+TERMID2  EQU   TSBTRMID-TSB+TSB1,8     terminal id (old)                02950000
+TSBX1    DS    XL(TSBX_LENGTH)         TSBX of active TSO session       02960000
+TSB2     DS    XL(TSB_LENGTH)          own TSB  (current)               02970000
+SIZE1    EQU   TSBPRMR-TSB+TSB2,4      screen size (current)            02980000
+TERMID1  EQU   TSBTRMID-TSB+TSB2,8     terminal id (current)            02990000
+TSBX2    DS    XL(TSBX_LENGTH)         own TSBX (current)               03000000
+WORK80   DS    CL80                    TPUT                             03010004
+DYNAML   EQU   *-DYNAM                                                  03020000
+*********************************************************************** 03030000
+*        Parameter list                                               * 03040000
+*********************************************************************** 03050000
+PARMLIST DSECT                                                          03060000
+PARM1    DS    A                       Command Buffer                   03070000
+PARM2    DS    A                       New Command Buffer               03080000
+PARM3    DS    A                       UPT                              03090000
+PARM4    DS    A                       ECT                              03100000
+PARM5    DS    A                       PSCB                             03110000
+PARM6    DS    A                       exit-to-exit communication word  03120000
+PARM7    DS    A                       exit reason code                 03130000
+PARM8    DS    A                       reserved                         03140000
+PARM9    DS    A                       reserved                         03150000
+*                                      exit-dependent parameter list    03160000
+PARM10   DS    A                       control switches                 03170000
+PARM11   DS    A                       Panel Module                     03180000
+PARM12   DS    A                       TGET Buffer                      03190000
+PARM13   DS    A                       Help Panel Number                03200000
+PARM14   DS    A                       Language Code                    03210000
+PARM15   DS    A                       re-prompt code                   03220000
+PARM16   DS    A                       Installation-defined parm list   03230000
+PARM17   DS    A                       reserved                         03240000
+PARM18   DS    A                       reserved                         03250000
+PARM19   DS    A                       First Message                    03260000
+PARM20   DS    A                       Second Message                   03270000
+PARM21   DS    A                       User-ID                          03280000
+PARM22   DS    A                       Password                         03290000
+PARM23   DS    A                       Account                          03300000
+PARM24   DS    A                       Procedure                        03310000
+PARM25   DS    A                       Region                           03320000
+PARM26   DS    A                       Performance Group                03330000
+PARM27   DS    A                       New Password                     03340000
+PARM28   DS    A                       RACF Group Name                  03350000
+PARM29   DS    A                       No Mail Option                   03360000
+PARM30   DS    A                       No Notices Option                03370000
+PARM31   DS    A                       Reconnect Option                 03380000
+PARM32   DS    A                       OID Card                         03390004
+PARM33   DS    A                       First Command                    03400000
+PARM34   DS    A                       SECLABEL                         03410000
+         PRINT NOGEN                                                    03420000
+PRINT    OPSYN ANOP                                                     03430000
+         YREGS                         R0-R15                           03440000
+         IEZBITS                                                        03450000
+PSA      DSECT                                                          03460001
+PSAAOLD  EQU   PSA+X'224',4,C'A'       current ASCB                     03470001
+         CVT   DSECT=YES               COMMUNICATION VECTOR TABLE       03480000
+         IHAASCB                       ADDRESS SPACE CONTROL BLOCK      03490000
+         IHAASVT                       ADDRESS SPACE VECTOR TABLE       03500000
+         IKJTSB EXT=YES                TSB/TSBX                         03510000
+TSBX_LENGTH EQU *-TSBX                                                  03520000
+TSB      DSECT                                                          03530000
+TSB_LENGTH EQU *-TSB                                                    03540000
+         END   BEGIN                                                    03550000
+//SYSLIB   DD DSN=SYS1.MACLIB,DISP=SHR                                  03560000
+//         DD DSN=SYS1.MODGEN,DISP=SHR             IEZBITS IHAASVT      03570004
+//SYSUT1   DD UNIT=VIO,SPACE=(CYL,2)                                    03580000
+//SYSPRINT DD SYSOUT=*                                                  03590000
+//SYSLIN   DD UNIT=VIO,SPACE=(TRK,1),DISP=(,PASS),DCB=BLKSIZE=3200      03600000
+//*                                                                     03610000
+//LKED    EXEC PGM=LINKLLA,PARM=(MAP,RENT)                              03620004
+//SYSLIN   DD DSN=*.HLASM.SYSLIN,DISP=(OLD,PASS)                        03630000
+//SYSPRINT DD SYSOUT=*                                                  03640000
+//SYSLMOD  DD DSN=SYS1.LOCAL.LINKLIB(IKJEFLN2),DISP=SHR                 03650000
+//                                                                      03660000
+//                                                                      03670000
+//*                                                                     03680000
+//* Delete the module; as long as LLA is not refreshed,                 03690000
+//* it will remain available.  In case of a serious problem,            03700000
+//* refreshing LLA will get rid of it.                                  03710000
+//*                                                                     03720000
+//SCRATCH EXEC PGM=IKJEFT01                                             03730004
+//SYSTSPRT DD SYSOUT=*                                                  03740004
+//SYSTSIN  DD *                                                         03750004
+TSOLIB ACT DA('GSFSOFT.SCRATCH.LOAD')                                   03760004
+SCRATCH 'SYS1.LOCAL.LINKLIB(IKJEFLN2)' LLAREFRESH                       03770004
+/*                                                                      03780004

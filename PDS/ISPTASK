@@ -1,0 +1,278 @@
+//GILBERTI JOB (ACCT#),ISPTASK,                                         00010000
+// NOTIFY=&SYSUID,                                                      00020000
+// CLASS=A,MSGCLASS=H,COND=(0,NE)                                       00030001
+//HLASM EXEC PGM=ASMA90,PARM=(OBJECT,NODECK,NOESD,NORLD,NOXREF)         00040005
+*********************************************************************** 00050000
+*                                                                     * 00060000
+*        ISPTASK MODULE                                               * 00070002
+*                                                                     * 00080000
+*        This module prevents S522 abends while in ISPF,              * 00090000
+*        between midnight and 19:00:00                                * 00100000
+*                                                                     * 00110000
+*        Link-edit it into your ISPLLIB or STEPLIB,                   * 00120000
+*        re-enter ISPF, you won't time out anymore.                   * 00130000
+*                                                                     * 00140000
+*        For this module to work, the following conditions            * 00150000
+*        must be met:                                                 * 00160000
+*                                                                     * 00170000
+*        1.  This module must be link-edited with the NOREUS          * 00180000
+*            attribute into a library allocated to your TSO           * 00190000
+*            session under the name ISPLLIB or STEPLIB.               * 00200000
+*            DO NOT try to link-edit this module with the REUS        * 00210000
+*            or RENT attribute, nor to link-edit it into a            * 00220000
+*            link-list or LPA library.                                * 00230000
+*                                                                     * 00240000
+*        2.  The ISPF modules must be in LPA or in the link-list.     * 00250000
+*            DO NOT use this module if ISPF's ISPTASK module is in    * 00260000
+*            your ISPLLIB or STEPLIB.                                 * 00270000
+*                                                                     * 00280000
+*        NOTE:                                                        * 00290000
+*                                                                     * 00300000
+*            ISPSTART issues an ATTACH EP=ISPTASK,TASKLIB=ISPLLIB     * 00310000
+*            macro at least once, twice if you use split-screen.      * 00320000
+*                                                                     * 00330000
+*  AUTHOR = Gilbert Saint-Flour <carlos@gsf-soft.com>                 * 00340000
+*           http://gsf-soft.com/Freeware/                             * 00350000
+*                                                                     * 00360000
+*302 Do not prevent S522 during week-ends                             * 00370002
+*303 Get ISPF's ISPTASK from STEPLIB, if it's in it                   * 00380003
+*304 Issue BLDL against every active tasklib until JSTCB reached      * 00390004
+*305 Fix day-of-the-week calc routine for year 2000                   * 00400005
+*    Fix alignment error in BLDLLIST                                  * 00410005
+&REL     SETC  '305'                                                  * 00420005
+*********************************************************************** 00430000
+ISPTASK  CSECT                                                          00440000
+ISPTASK  RMODE ANY                                                      00450000
+         SAVE  (14,12),,'GSF Utilities - ISPTASK R&REL'                 00460005
+         LR    R12,R15                 BASE REGISTER                    00470000
+         USING ISPTASK,R12                                              00480000
+*                                                                       00490000
+* = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = 00500000
+*        USERID selection - R2 Points to USERID in TIOT                 00510000
+* = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = 00520000
+*                                                                       00530000
+         L     R2,X'021C'(,0)          PSATOLD (my TCB)                 00540000
+         L     R2,012(,R2)             TCBTIO  (my TIOT)                00550000
+**       CLC   =C'IBMUSER ',0(R2)      USER=IBMUSER ?                   00560000
+**       BNE   XCTL                    no, do nothing                   00570002
+*                                                                       00580000
+* = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = 00590000
+*        End of USERID Selection                                        00600000
+* = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = 00610000
+*                                                                       00620000
+*        Pass control to the Secondary entry point                      00630000
+*                                                                       00640000
+*        1.  bump my own use count, to make sure I don't get            00650000
+*            deleted by XCTL                                            00660000
+*                                                                       00670000
+*        2.  issue XCTL to remove one PRB                               00680000
+*                                                                       00690000
+BUMP_USE IDENTIFY EPLOC=ISP_TASK,ENTRY=ISP_TASK+8                       00700000
+         LOAD  EPLOC=ISP_TASK          BUMP USE COUNT                   00710000
+         XCTL  EPLOC=ISP_TASK          INVOKE SECONDARY ENTRY POINT     00720000
+*                                                                       00730000
+*        Secondary entry point                                          00740000
+*                                                                       00750000
+ISP_TASK DC    C'ISP_TASK'             SECONDARY ENTRY POINT            00760000
+         LR    R12,R15                 BASE REGISTER                    00770000
+         USING ISP_TASK+8,R12                                           00780005
+*                                                                       00790000
+* = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = 00800000
+*                                                                       00810000
+*        Make some PDF modules resident in JPAQ (ESA 4.3 and up)        00820001
+*                                                                       00830000
+*        The purpose of this paragraph is to speed up access            00840000
+*        to some PDF functions (Edit, Browse) when ISPLLIB and          00850000
+*        STEPLIB contain large numbers of libraries.                    00860000
+*                                                                       00870000
+*        LOAD and IDENTIFY macros are used to clone the LPDE,           00880001
+*        create two CDEs and one XTLST for each module and chain        00890001
+*        the CDEs to the JPAQ.  Note that the modules                   00900001
+*        themselves are not duplicated, the only version that           00910000
+*        exists is the one in PLPA; all we do here is to create         00920000
+*        entries in the JPAQ that point to the PLPA modules.            00930000
+*                                                                       00940000
+*        Using this technique allows you to avoid time-consuming        00950000
+*        directory searches whenever you invoke the most common         00960000
+*        PDF functions.                                                 00970000
+*                                                                       00980000
+*        If you're lucky enough that you have no ISPLLIB or             00990000
+*        STEPLIB, this won't do you any good, but it won't do           01000000
+*        you any harm either.                                           01010000
+*                                                                       01020000
+*        If you're so unlucky that ISPF/PDF is in the link-list         01030001
+*        and not in the LPA on your system (shame on your system        01040001
+*        programmers), then this will definitely help you.              01050001
+*                                                                       01060000
+* = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = 01070000
+*                                                                       01080000
+LOADJPAQ BAL   R3,LOADJPA1             issue LOAD/IDENTIFY              01090000
+         DC    C'ISRBRO  '             PDF 1                            01100000
+         DC    C'ISREDIT '             PDF 2                            01110000
+         DC    C'ISRUDA  '             PDF 3.1 & 3.2                    01120000
+         DC    C'ISRUMC  '             PDF 3.3                          01130000
+         DC    C'ISRUDL  '             PDF 3.4                          01140000
+         DC    C'ISRPTC  '             PDF 6                            01150000
+         DC    C'ISPEXEC '             ISPLINK/ISPEXEC interface        01160000
+         DC    C'ISRSUBS '             PDF RMODE31 routines             01170000
+         DC    C'ISRSUBX '             PDF RMODE24 routines             01180000
+*                                                                       01190001
+         DC    C'IRXINIT '             REXX main pgm                    01200000
+         DC    C'IRXSTAMP'             REXX stack manager               01210000
+         DC    C'IRXAPPC '             REXX APPC interface              01220000
+         DC    C'IRXECUSP'             REXX ?                           01230000
+*                                                                       01240001
+         DC    C'ALLOCATE'             TSO ALLOCATE command             01250001
+         DC    C'EXEC    '             TSO EXEC command                 01260000
+         DC    C'CALL    '             TSO CALL command                 01270000
+         DC    C'DELETE  '             TSO DELETE command               01280001
+         DC    C'IDCSATO '             IDCAMS interface for TSO         01290001
+         DC    C'HELP    '             TSO HELP command                 01300001
+         DC    C'SUBMIT  '             TSO SUBMIT command               01310001
+*                                                                       01320001
+*                                                                       01330001
+*                                                                       01340001
+         DC    X'FFFF'                 end of table                     01350000
+*loop                                                                   01360000
+LOADJPA1 LOAD  EPLOC=(R3),             load ISRBRO                     X01370001
+               ERRET=LOADJPA9          module not found                 01380000
+         LR    R2,R0                   save entry point addr            01390000
+         LA    R0,0(,R2)               clean entry point                01400000
+         L     R1,CVTPTR               CVT address                      01410000
+         USING CVT,R1                                                   01420000
+         L     R1,CVTSMEXT             STORAGE MAP EXTENSION            01430000
+         USING CVTVSTGX,R1                                              01440000
+         CL    R0,CVTPLPAS             entry-point in PLPA?             01450000
+         BL    LOADJPA9                no, jump                         01460000
+         CL    R0,CVTEPLPE             entry-point in PLPA?             01470000
+         BH    LOADJPA9                no, jump                         01480000
+         DROP  R1                      CVTSTGX                          01490000
+LOADJPA2 MVC   DWD,0(R3)               convert ISRBRO to ISR_BRO        01500001
+         MVI   DWD+3,C'_'              convert ISRBRO to ISR_BRO        01510001
+         MVC   DWD+4(4),3(R3)          convert ISRBRO to ISR_BRO        01520001
+         IDENTIFY EPLOC=DWD,ENTRY=(R2) define ISR_BRO                   01530000
+         LTR   R15,R15                                                  01540000
+         BNZ   LOADJPA9                                                 01550000
+         LOAD  EPLOC=DWD               load ISR_BRO                     01560000
+         DELETE EPLOC=(R3)             delete ISRBRO                    01570000
+         IDENTIFY EPLOC=(R3),ENTRY=(R2) define ISRBRO onto ISR_BRO      01580000
+LOADJPA9 LA    R3,8(,R3)               next entry                       01590000
+         CLI   0(R3),X'FF'             end of table reached?            01600000
+         BNE   LOADJPA1                not yet, process next entry      01610000
+*endloop                                                                01620000
+*                                                                       01630002
+* = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = 01640002
+*        DETERMINE DAY OF THE WEEK                                      01650002
+* = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = 01660002
+*                                                                       01670002
+         TIME  ZONE=GMT                R1=0YYYDDDF                      01680005
+         ST    R1,GMTDATE              store date                       01690002
+         MVO   DWD,GMTDATE(2)          0YYY FROM 0YYY.DDD               01700005
+         OI    DWD+7,15                sign                             01710005
+         CVB   R0,DWD                  R0=YEAR                          01720002
+         LR    R1,R0                   R1=YEAR                          01730002
+         BCTR  R1,0                    R1=YEAR-1                        01740002
+         SRL   R1,2                    DIVIDE YEAR-1 BY 4               01750002
+         AR    R1,R0                   ADD RESULT TO NUMBER OF YEARS    01760002
+         ZAP   DWD,GMTDATE+2(2)        DDD FROM YY.DDD                  01770002
+         SLR   R14,R14                 PREPARE DIVISION                 01780002
+         CVB   R15,DWD                 R15=DAY                          01790002
+         BCTR  R15,0                   R15=DAY-1                        01800002
+         AR    R15,R1                  ADD NUMBER OF YEARS              01810002
+         D     R14,=F'7'               DIVIDE BY NUM OF DAYS IN WEEK    01820002
+*R14 contains the day of the week code (0=monday, 4=friday, 6=sunday)   01830002
+         CH    R14,=H'4'               saturday or sunday?              01840002
+         BH    XCTL                    yes, do not prevent S522         01850002
+*                                                                       01860000
+* = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = 01870000
+*        Prime the timer                                                01880000
+* = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = 01890000
+*                                                                       01900000
+         SYNCH STIMER                  PRIME TIMER                      01910000
+         DROP                                                           01920000
+*                                                                       01930000
+* = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = 01940000
+*        Now pass control to ISPF's own ISPTASK module in               01950000
+*        the STEPLIB or the LPA/link-list.                              01960003
+* = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = 01970000
+*                                                                       01980000
+XCTL     LM    R14,R12,12(R13)         restore R14-R12                  01990000
+         BALR  R15,0                   LOCAL BASE                       02000000
+         USING *,R15                                                    02010000
+         ICM   R1,B'1111',0(R1)        A(TLD)                           02020000
+         BMR   R14                     invoked as a program, exit       02030000
+         CLC   =C'TLD',0(R1)           check for a TLD                  02040000
+         BNER  R14                     invoked as a TSO command, exit   02050000
+*                                                                       02060000
+         BALR  R12,0                   LOCAL BASE                       02070000
+         USING *,R12                                                    02080000
+         NOP   XCTL89                  fall through first time          02090004
+         OI    *-3,X'F0'               close the door                   02100004
+*                                                                       02110004
+         L     R4,X'021C'(,0)          PSATOLD (my TCB)                 02120003
+         USING TCB,R4                                                   02130003
+         L     R5,TCBJLB               DCB for ISPLLIB                  02140004
+*loop                                                                   02150004
+XCTL83   CL    R4,TCBJSTCB             Job Step TCB                     02160004
+         BE    XCTL87                  yes, use LINKLIST                02170004
+         L     R4,TCBOTC               mother task                      02180004
+         CL    R5,TCBJLB               same tasklib?                    02190004
+         BE    XCTL83                  yes, try previous TCB            02200004
+         ICM   R5,B'1111',TCBJLB       addr of tasklib TCB              02210004
+         BZ    XCTL87                  no tasklib, try CVTLINK          02220005
+         BLDL  (R5),BLDLLIST           search STEPLIB's directory       02230003
+         LTR   R15,R15                 ISPTASK found in tasklib ?       02240004
+         BNZ   XCTL83                  no, try next TCB                 02250004
+         TM    PDS2ATR1,PDS2RENT       is it ISPF's ISPTASK?            02260004
+         BNO   XCTL83                  no, try next TCB                 02270004
+*endloop                                                                02280004
+         B     XCTL88                  yes, use this DCB                02290004
+*                                                                       02300004
+XCTL87   L     R5,16                   CVTPTR                           02310003
+         L     R5,8(,R5)               CVTLINK                          02320003
+XCTL88   LA    R4,BLDLLIST+4           C'ISPTASK '                      02330003
+         STM   R4,R5,XCTLL             XCTL EP=ISPTASK,DCB=CVTLINK,SF=L 02340004
+*                                                                       02350004
+XCTL89   LA    R15,XCTLL               XCTL EP=ISPTASK,DCB=CVTLINK,SF=L 02360004
+         DROP                                                           02370000
+         LM    R0,R12,20(R13)          restore R0-R12                   02380000
+         XCTL  SF=(E,(15))             Invoke ISPF's own ISPTASK       x02390000
+                                       module, while bypassing ISPLLIB x02400000
+                                       and STEPLIB                      02410000
+         DC    0F'0'                   fwd alignment req'd for IHAPDS   02420005
+BLDLLIST DC    H'1,64',CL64'ISPTASK'                                    02430004
+         ORG   BLDLLIST+4              overlay member name              02440004
+         IHAPDS DSECT=NO,PDSBLDL=YES                                    02450004
+         ORG                                                            02460004
+*                                                                       02470000
+* = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = 02480000
+*        TIMER EXIT RTNE                                                02490000
+* = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = 02500000
+*                                                                       02510000
+STIMER   TIME  DEC                     R0=HHMMSSHH                      02520000
+         BALR  R15,0                   Local base                       02530000
+         USING *,R15                                                    02540000
+         CLM   R0,B'1100',STIMER19     PAST 19:00:00 ?                  02550000
+         BH    STIMER99                YES, ALLOW S522 AGAIN            02560000
+         STIMERM SET,ID=DWD,EXIT=STIMER,BINTVL=STIMER60                 02570000
+STIMER99 SVC   3                       GOBACK TO FLIH                   02580000
+STIMER19 DC    X'1900'                 19:00:00                         02590000
+STIMER60 DC    A(10*60*100)            WAIT TIME IN 1/100 SEC           02600000
+*                                                                       02610000
+DWD      DS    D                       WORK AREA                        02620000
+XCTLL    XCTL  SF=L                    WORK AREA                        02630004
+GMTDATE  DS    F                       GMT julian date                  02640002
+         YREGS                                                          02650000
+         CVT   DSECT=YES,LIST=NO                                        02660000
+         IKJTCB DSECT=YES,LIST=NO                                       02670003
+         END   ISPTASK                                                  02680002
+//SYSLIB   DD DSN=SYS1.MACLIB,DISP=SHR                                  02690000
+//         DD DSN=SYS1.MODGEN,DISP=SHR                   IHAPDS/IEZBITS 02700004
+//SYSUT1   DD UNIT=VIO,SPACE=(CYL,2)                                    02710000
+//SYSPRINT DD SYSOUT=*                                                  02720000
+//SYSLIN   DD UNIT=VIO,SPACE=(TRK,1),DISP=(,PASS),DCB=BLKSIZE=3200      02730000
+//*                                                                     02740000
+//LKED    EXEC PGM=HEWL,PARM='MAP,NOREUS'                               02750000
+//SYSLIN   DD DSN=*.HLASM.SYSLIN,DISP=(OLD,DELETE)                      02760005
+//SYSPRINT DD SYSOUT=*                                                  02770000
+//SYSLMOD  DD DSN=CBTTAPE.FILE183.LOAD(ISPTASK),DISP=SHR  <== ISPLLIB   02780005

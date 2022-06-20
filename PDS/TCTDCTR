@@ -1,0 +1,301 @@
+//GILBERTT JOB (ACCT#),TCTDCTR,                                         00010000
+// NOTIFY=&SYSUID,                                                      00020000
+// CLASS=A,MSGCLASS=H,COND=(0,NE)                                       00030000
+//*                                                                     00040000
+//HLASM EXEC PGM=ASMA90,PARM=(OBJECT,NODECK,NOESD,NORLD,NOXREF)         00050008
+*                                                                       00060000
+*                                                                       00070000
+*        EDITION DU NOMBRE D'EXCP SUR TOUS LES FICHIERS DU STEP         00080000
+*                                                                       00090000
+*        VERSION CHAPEAU DE TCTDCTR, XA 2.2                             00100000
+*                                                                       00110000
+*                                                                       00120000
+$TCTDCTR START 0                                                        00130000
+$TCTDCTR AMODE 31                                                       00140000
+         L     R15,6(,R15)             AMODE31                          00150004
+         BSM   0,R15                   AMODE31                          00160004
+         DC    AL4(*+X'80000004')      AMODE31                          00170004
+         SAVE  (14,12),,TCTDCTR-&SYSDATE.-&SYSTIME                      00180000
+         BALR  R12,0                   LOAD BASE REGISTER               00190000
+         USING *,R12                   SPECIFY IT TO ASSEMBLER          00200000
+         LR    R14,R13                 SYSTEM SAVE-AREA                 00210000
+         LA    R13,=18C'SAVE'          NEW SAVE-AREA                    00220000
+         ST    R14,4(,R13)             FORWARD CHAIN                    00230000
+         ST    R13,8(,R14)             BACKWARD CHAIN                   00240000
+*                                                                       00280000
+         WXTRN MEMBER                                                   00290000
+         ICM   R15,B'1111',=A(MEMBER)  PROGRAM TO BE TRACED             00300000
+         BZ    NOCALL                  NO PROGRAM TO CALL               00310000
+         BALR  R14,R15                 CALL PROGRAM TO BE TRACED        00320000
+NOCALL   STH   R15,RETCODE                                              00330000
+*                                                                       00340000
+         L     R4,540(,0)              PSATOLD                          00350008
+         USING TCB,R4                                                   00360000
+*=       C     RTCB,TCBJSTCB           CHECK IF I'M A BATCH PGM         00370000
+*=       BNE   GOBACK                  QUIT IF TSO                      00380000
+*                                                                       00390000
+         LA    R1,=A(S99RB+X'80000000') SVC99 REQUEST BLOCK    HEADER   00400000
+         SVC   99                      ALLOCATE SYSDBOUT                00410000
+         OPEN  MF=(E,OPENL1)           OPEN SYSDBOUT                    00420000
+         LTR   R15,R15                 CHECK OPEN RETURN CODE           00430000
+         BNZ   GOBACK                  QUIT IF OPEN FAILED              00440000
+         L     R5,TCBTIO               MY TIOT                          00450000
+         USING TIOT1,R5                                                 00460000
+         L     R6,X'0224'              MY ASCB                          00470000
+         L     R6,ASCBOUCB-ASCB(,R6)   MY OUCB                          00480000
+         USING OUCB,R6                                                  00490000
+         L     R7,TCBJSCB              MY JSCB                          00500003
+         USING IEZJSCB,R7                                               00510003
+         BAL   R11,PUTDCB2         <== LOCATE OUTPUT RECORD             00520000
+         STRING '1 JOB=',TIOCNJOB,'  STEP=',(TIOCSTEP+0,8),            X00530003
+               '  PROCSTEP=',(TIOCSTEP+8,8),                           X00540003
+               '  PGM=',JSCBPGMN,                                      X00550003
+               '  PERFORM=',(OUCBNPG,H,L),                             X00560003
+               INTO=((R1),121)                                          00570000
+         BAL   R11,PUTDCB2             WRITE BLANK LINE                 00580003
+         BAL   R11,PUTDCB2                                              00590003
+         STRING '   DDNAME     DISP  VOLSER    EXCP   DATA SET NAME',  X00600003
+               34X,'DEVICE     CUA    LABEL',                          X00610003
+               INTO=((R1),121)                                          00620003
+         BAL   R11,PUTDCB2                                              00630003
+         MVI   1(R1),C'-'              LINE OF DASHES                   00640003
+         MVC   2(109,R1),1(R1)         LINE OF DASHES                   00650003
+*LOOP                                                                   00660000
+TIOT_GET CLI   TIOEDDNM,C' '           FREED DD?                        00670000
+         BL    TIOT_NXT                YES, JUMP                        00680000
+         LA    R6,TENWORDS+4           WORK AREA                        00690000
+         ST    R6,TENWORDS             WORK AREA                        00700000
+         USING ZB505,R6                                                 00710000
+         XC    SWAEPAX,SWAEPAX                                          00720007
+         MVC   SWVA,TIOEJFCB           SVA OF THE JFCB                  00730000
+         SWAREQ FCODE=RL,EPA=TENWORDS,MF=(E,SWAREQL1),UNAUTH=YES        00740000
+         L     R6,SWBLKPTR             31-BIT ADDRESS OF JFCB           00750000
+         USING INFMJFCB,R6                                              00760000
+         MVC   WKCELL1,BLANKS          CLEAR WORK AREA                  00770000
+         MVC   STATUS,BLANKS           CLEAR WORK AREA                  00780000
+         MVC   UNITNAME,BLANKS         CLEAR WORK AREA                  00790000
+         MVC   VOLSER,=C'JES     '     SYSIN/SYSOUT                     00800000
+         SLR   R1,R1                   EXCP=0                           00810000
+         SLR   R7,R7                   NO UCB                           00820000
+         TM    TIOELINK,TIOESSDS       IS THIS A JES DATA SET?          00830000
+         BO    TIOT61                  YES, JUMP                        00840000
+         MVC   VOLSER,=C'DUMMY   '     DUMMY DATA SET                   00850000
+         ICM   R7,B'0111',TIOEFSRT     UCB ADDRESS                      00860000
+         BZ    TIOT64                  NO UCB, SKIP TCT SCAN            00870000
+         USING UCBOB,R7                                                 00880000
+         MVC   UNITNAME+8(4),UCBTYP    DEVICE TYPE                      00890000
+         BAL   R14,GETUNIT         <== GET UNITNAME                     00900000
+         MVC   VOLSER,=C'VIO     '     UNIT=VIO                         00910000
+         TM    UCBOB,UCBVRDEV          IS THIS A VIO DATA SET?          00920000
+         BO    TIOT41                  YES, JUMP                        00930000
+         MVC   VOLSER,JFCBVOLS         NO, MOVE FIRST VOLSER            00940000
+*                                                                       00950000
+TIOT41   BAS   R1,TIOT41IC                                              00960000
+         DC    C'NEW',AL1(JFCNEW)                                       00970000
+         DC    C'MOD',AL1(JFCMOD)                                       00980000
+         DC    C'SHR',AL1(JFCOLD+JFCSHARE)                              00990000
+         DC    C'OLD',AL1(JFCOLD)                                       01000000
+         DC    C'???',0H'0'                                             01010000
+TIOT41TM TM    JFCBIND2,*-*            TEST LABEL TYPE FLAGS            01020000
+*--LOOP                                                                 01030000
+TIOT41IC IC    R15,3(,R1)              PICK UP MASK FOR "TM"            01040000
+         EX    R15,TIOT41TM                                             01050000
+         BO    TIOT41X                                                  01060000
+         LA    R1,3+1(,R1)             BUMP TABLE PTR                   01070000
+         CLI   0(R1),C'?'              END OF TABLE?                    01080000
+         BNE   TIOT41IC                NEXT TABLE ENTRY                 01090000
+*--ENDLOOP                                                              01100000
+TIOT41X  MVC   STATUS,0(R1)            DISP                             01110000
+*                                                                       01120000
+         TM    UCBFL5,UCBSMS           SMS VOL?     X'20'               01130000
+         BZ    TIOT46                  NO, JUMP                         01140000
+         MVC   WKCELL1(3),=C'SMS'      SMS-MANAGED                      01150000
+*                                                                       01160000
+TIOT46   CLI   UCBTBYT3,UCB3TAPE       TAPE DEVICE?                     01170000
+         BNE   TIOT61                  NO, JUMP                         01180000
+         BAS   R1,TIOT46IC                                              01190000
+         DC    C'LTM',AL1(JFCBLTM)                                      01200000
+         DC    C'BLP',AL1(JFCBLP)                                       01210000
+         DC    C'SUL',AL1(JFCSUL)                                       01220000
+         DC    C'AUL',AL1(JFCSUL+JFCBAL)                                01230000
+         DC    C'AL ',AL1(JFCBAL)                                       01240000
+         DC    C'NSL',AL1(JFCNSL)                                       01250000
+         DC    C'SL ',AL1(JFCSL)                                        01260000
+         DC    C'NL ',AL1(JFCNL)                                        01270000
+         DC    C'???',0H'0'                                             01280000
+TIOT46TM TM    JFCBLTYP,*-*            TEST LABEL TYPE FLAGS            01290000
+*--LOOP                                                                 01300000
+TIOT46IC IC    R15,3(,R1)              PICK UP MASK FOR "TM"            01310000
+         EX    R15,TIOT46TM                                             01320000
+         BO    TIOT46X                                                  01330000
+         LA    R1,3+1(,R1)             BUMP TABLE PTR                   01340000
+         CLI   0(R1),C'?'              END OF TABLE?                    01350000
+         BNE   TIOT46IC                NEXT TABLE ENTRY                 01360000
+*--ENDLOOP                                                              01370000
+TIOT46X  LH    R0,JFCBFLSQ             PICK UP FILE SEQUENCE NUMBER     01380000
+         LTR   R0,R0                   LABEL=0?                         01390000
+         BNZ   TIOT46Y                 NO, JUMP                         01400000
+         LA    R0,0001                 YES, CHANGE TO LABEL=1           01410000
+TIOT46Y  STRING ((R0),,L),',',((R1),3),INTO=WKCELL1                     01420000
+*                                                                       01430000
+TIOT61   LA    R0,TIOENTRY             POINT TO CURRENT TIOT ENTRY      01440000
+         SL    R0,TCBTIO               CHANGE ADDRESS TO OFFSET         01450000
+         BAL   R14,EXCP00          <== GET EXCP COUNT IN R1             01460000
+         STRING ((R1),,R5B),INTO=WKCELL2                                01470000
+         CL    R1,=F'100000'           OVER 100K?                       01480000
+         BL    TIOT64                  NO, JUMP                         01490000
+         SLR   R0,R0                   YES, DIVIDE BY 1000              01500006
+         LA    R1,500(,R1)             YES, DIVIDE BY 1000              01510006
+         D     R0,=F'1000'             YES, DIVIDE BY 1000              01520006
+         STRING ((R1),,R4B),'K',INTO=WKCELL2                            01530000
+*                                                                       01540000
+TIOT64   LTR   R7,R7                   DO WE HAVE AN UCB?               01550000
+         BNZ   TIOT_PRT                YES, JUMP                        01560000
+         LA    R7,BLANKS               NO, POINT TO A DUMMY UCB         01570000
+TIOT_PRT BAL   R11,PUTDCB2         <== LOCATE OUTPUT RECORD             01580000
+         STRING $$$,TIOEDDNM,$$$,STATUS,$$$,                          XX01590003
+               VOLSER,$$$,(WKCELL2,5),$$$,JFCBDSNM,$$$,               XX01600003
+               UNITNAME,$$$,UCBNAME,$$$,WKCELL1,$$$,                  XX01610003
+               INTO=((R1),121)                                          01620003
+*                                                                       01630000
+TIOT_NXT SLR   R0,R0                   PREPARE IC                       01640002
+         IC    R0,TIOELNGH             LOAD LENGTH OF CURRENT ENTRY     01650002
+         ALR   R5,R0                   BUMP UP TO NEXT ENTRY            01660002
+         CLI   TIOELNGH,0              IS THIS THE END?                 01670002
+         BNZ   TIOT_GET                NOT YET, LOOP THROUGH TIOT       01680002
+*ENDLOOP                                                                01690000
+         BAL   R11,PUTDCB2             WRITE BLANK LINE                 01700003
+         MVI   1(R1),C'-'              LINE OF DASHES                   01710003
+         MVC   2(109,R1),1(R1)         LINE OF DASHES                   01720003
+         BAL   R11,PUTDCB2             WRITE BLANK LINE                 01730003
+         CLOSE MF=(E,OPENL1)           CLOSE SYSDBOUT (IF NECESSARY)    01740000
+         FREEPOOL DCB2                                                  01750000
+*                                                                       01760000
+GOBACK   L     R13,4(,R13)                                              01770000
+         L     R14,12(,R13)            RESTORE REGISTERS                01780005
+         LH    R15,RETCODE                                              01790002
+         LM    R0,R12,20(R13)          RESTORE REGISTERS                01800005
+         BSM   0,R14                   GOBACK WITH CALLER'S AMODE       01810004
+*---------------------------------------------------------------------- 01820001
+*        ISSUE PUT WITH AMODE=24                                      * 01830008
+*---------------------------------------------------------------------* 01840008
+PUTDCB2  LA    R15,PUTDCB2P            AMODE24                          01850001
+         BSM   0,R15                   AMODE24                          01860001
+PUTDCB2P PUT   DCB2                                                     01870001
+         MVI   0(R1),C' '              ALL SPACES                       01880003
+         MVC   1(120,R1),0(R1)         ALL SPACES                       01890003
+         BSM   0,R11                   GOBACK, RESET AMODE              01900001
+*---------------------------------------------------------------------* 01910008
+*        EXCP00: RETRIEVE EXCP COUNT IN TCTIOTSD AREA                 * 01920008
+*---------------------------------------------------------------------* 01930008
+EXCP00   L     R1,540(,0)              MY TCB                           01940008
+         L     R1,TCBTCT-TCB(,R1)      TCBTCT                           01950000
+         L     R1,TCTIOTBL-SMFTCT(,R1) START OF I/O MEASUREMENT TABLE   01960000
+         LA    R1,TCTIODSP-TCTTIOT(,R1) FIRST DD ENTRY                  01970000
+         USING TCTDCBTD,R1                                              01980000
+*LOOP                                                                   01990000
+EXCP11   CL    R0,TCTDCBTD             SAME TIOT OFFSET?                02000000
+         BE    EXCP21                  YES, EXIT LOOP                   02010000
+         ICM   R15,B'1111',TCTDCBLE    END OF TABLE ?                   02020000
+         LA    R1,TCTDCBLE             NEXT LOOKUP TABLE ENTRY          02030008
+         BNZ   EXCP11                  NOT YET, TRY NEXT DD ENTRY       02040000
+*ENDLOOP                                                                02050000
+         SLR   R0,R0                   EXCP COUNT IS ZERO               02060000
+         B     EXCP99                                                   02070000
+*                                                                       02080000
+EXCP21   L     R1,TCTIOTSD             OFFSET IN I/O MEASURE. TABLE     02090000
+         L     R15,540(,0)             MY TCB                           02100008
+         L     R15,TCBTCT-TCB(,R15)    MY TCT                           02110000
+         A     R1,TCTIOTBL-SMFTCT(,R15) START OF I/O MEASUREMENT TABLE  02120000
+         USING TCTDDENT,R1                                              02130000
+         ICM   R0,B'1111',TCTDCTR      EXCP COUNT IN R0                 02140000
+EXCP99   LR    R1,R0                   EXCP COUNT IN R1 TOO             02150000
+         BR    R14                                                      02160000
+         DROP  R1                                                       02170000
+*---------------------------------------------------------------------* 02180008
+*        CONVERT UCBTYP TO UNITNAME                                   * 02190008
+*---------------------------------------------------------------------* 02200008
+GETUNIT  ST    R14,TENWORDS+32         SAVE R14                         02210000
+         MVI   TENWORDS+20,X'01'       RETURN A LOOK-UP VALUE (BIT7)    02220000
+         MVI   TENWORDS+21,X'00'       CLEAR UNUSED BYTE                02230000
+         LA    R14,UNITNAME            UNITNAME+DEVTYPE                 02240000
+         LA    R15,TENWORDS+20         FLAGS                            02250000
+         STM   R14,R15,TENWORDS                                         02260000
+         OI    TENWORDS+4,X'80'        END-OF-LIST FLAG                 02270000
+         LA    R1,TENWORDS             PARM LIST ADDRESS                02280000
+         L     R14,CVTPTR              POINT TO CVT                     02290000
+         L     R14,CVTLINK-CVTMAP(,R14) POINT TO LINKLIST DCB           02300000
+         LINK  SF=(E,IEFEB4UV),DCB=(R14)   GET UNIT NAME                02310000
+         LTR   R15,R15                                                  02320000
+         BNZ   GETUNIT6                BAD RETURN CODE, QUIT            02330000
+         MVI   TENWORDS+20,X'20'       RETURN A UNIT NAME (BIT2)        02340000
+         LA    R1,TENWORDS             PARM LIST ADDRESS                02350000
+         LINK  SF=(E,IEFEB4UV)         GET UNIT NAME                    02360001
+         LTR   R15,R15                                                  02370000
+         BZ    GETUNIT9                GOOD RETURN CODE, GOBACK         02380000
+GETUNIT6 MVC   UNITNAME,BLANKS         CONVERSION DID NOT WORK          02390000
+GETUNIT9 L     R14,TENWORDS+32         RESTORE R14                      02400000
+         BR    R14                                                      02410000
+*---------------------------------------------------------------------* 02420008
+*        WORK AREAS                                                   * 02430008
+*---------------------------------------------------------------------* 02440008
+BLANKS   DC    CL40' '                                                  02450003
+$$$      DC    C' | '                                                   02460003
+         PRINT NOGEN                                                    02470001
+PRINT    OPSYN ANOP                                                     02480000
+IEFEB4UV LINK  EP=IEFEB4UV,SF=L                                         02490000
+DCB2     DCB   DSORG=PS,MACRF=PL,DDNAME=SYSDBOUT,RECFM=FBA,LRECL=121    02500000
+OPENL1   OPEN  (DCB2,OUTPUT),MF=L                                       02510000
+S99RB    DC    A(X'14010000',0,*+12,0,0)                                02520000
+         DC    A(S99TXT01,X'80000000'+S99TXT18)                         02530000
+S99TXT01 DC    AL2(X'01',1,8),CL8'SYSDBOUT '  DDNAME                    02540000
+S99TXT18 DC    AL2(X'18',0)                   SYSOUT=*                  02550000
+RETCODE  DS    H                                                        02560000
+WKCELL1  DS    D                                                        02570000
+WKCELL2  DS    D                                                        02580000
+STATUS   DS    C'OLD'                                                   02590000
+VOLSER   DS    CL6                                                      02600000
+UNITNAME DS    CL8,XL4                                                  02610000
+SWAREQL1 SWAREQ MF=L                   WORK AREA FOR SWAREQ             02620000
+TENWORDS DS    10F                                                      02630000
+*-------------------------------------------------------------------    02640000
+*        DSECTS FOR MVS SYSTEM CONTROL BLOCKS                           02650000
+*               SOME OF THESE MACRO INSTRUCTION WILL BE FOUND           02660000
+*               IN SYS1.MODGEN INSTEAD OF SYS1.MACLIB.                  02670000
+*-------------------------------------------------------------------    02680000
+         IKJTCB LIST=NO    TCB MAPPING       TASK CONTROL BLOCK         02690000
+         IEFTCT            TCT MAPPING       TIMING CONTROL TABLE       02700007
+TIOT     DSECT                                                          02710000
+         IEFTIOT1          TIOT MAPPING      TASK INPUT-OUTPUT TABLE    02720007
+         IKJRB             PRB DSECT         PROGRAM REQUEST BLOCK      02730007
+         IHACDE            CDE DSECT         CONTENTS DIRECTORY ENTRY   02740007
+         IEFZB505 LOCEPAX=YES          SWAREQ                           02750007
+         IEFJFCBN                      JOB FILE CONTROL BLOCK           02760007
+         IEFJESCT                      JES COMMUNICATION TABLE          02770007
+         IEZJSCB                       JOB STEP CONTROL BLOCK           02780007
+         CVT   DSECT=YES                                                02790000
+         IEFUCBOB LIST=NO,PREFIX=NO    UCB DSECT                        02800000
+         IHAASCB                       ADDRESS SPACE CONTROL BLOCK      02810000
+         IRAOUCB                       SRM PARMS                        02820000
+         YREGS             REGISTER EQUATES                             02830007
+         STRING GENERATE                                                02840007
+         END                                                            02850000
+//SYSLIB   DD DSN=SYS1.MACLIB,DISP=SHR                                  02870008
+//         DD DSN=SYS1.MODGEN,DISP=SHR                                  02880007
+//         DD DSN=CBTTAPE.FILE183.PDS,DISP=SHR          STRING          02881008
+//SYSUT1   DD UNIT=VIO,SPACE=(CYL,5)                                    02890007
+//SYSPRINT DD SYSOUT=*                                                  02900007
+//SYSLIN   DD UNIT=VIO,SPACE=(TRK,1),DISP=(,PASS),BLKSIZE=3200          02910008
+//*                                                                     02920000
+//GO      EXEC PGM=LOADER,PARM=NOPRINT                                  02930007
+//SYSPRINT DD SYSOUT=*                                                  02940007
+//SYSUDUMP DD SYSOUT=*                                                  02950008
+//SYSDBOUT DD SYSOUT=*                                                  02960008
+//SYSLIN   DD DSN=*.HLASM.SYSLIN,DISP=(OLD,PASS)                        02970008
+//                                                                      02980008
+//                                                                      02990008
+//LKED    EXEC PGM=IEWL,PARM='MAP,REUS'                                 03000000
+//SYSPRINT DD SYSOUT=*                                                  03010007
+//SYSLIN   DD DSN=*.HLASM.SYSLIN,DISP=(OLD,PASS)                        03020008
+//SYSUT1   DD UNIT=VIO,SPACE=(CYL,5)                                    03030007
+//SYSLMOD  DD DSN=CBTTAPE.FILE183.LOAD(TCTDCTR),DISP=SHR                03040008

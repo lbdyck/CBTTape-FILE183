@@ -1,0 +1,614 @@
+//GILBERTV JOB (ACCT#),VSAMVIEW,                                        00010000
+// NOTIFY=&SYSUID,                                                      00020000
+// CLASS=A,MSGCLASS=H,COND=(0,NE)                                       00030000
+//ASMH EXEC PGM=IEV90,PARM=(NODECK,OBJECT,NOESD,NORLD,NOXREF)           00040000
+         PUNCH ' ALIAS VV'          <- "VV" IS AN ALIAS FOR "VSAMVIEW"  00050000
+*********************************************************************** 00060000
+*                                                                     * 00070000
+* MODULE NAME = VSAMVIEW                                              * 00080000
+*                                                                     * 00090000
+* DESCRIPTIVE NAME = VIEW A VSAM DATA SET UNDER ISPF                  * 00100000
+*                                                                     * 00110000
+* FUNCTION = THIS COMMAND ALLOWS YOU TO VIEW A VSAM DATA SET IN       * 00120000
+*            ISPF USING EDIF.  THE SAVE COMMAND IS DISABLED, BUT      * 00130000
+*            ALL OTHER EDIT FACILITIES ARE AVAILABLE (CREATE, ETC).   * 00140000
+*                                                                     * 00150000
+* STATUS = R100                                                       * 00160000
+*                                                                     * 00170000
+* AUTHOR = GILBERT SAINT-FLOUR <carlos@gsf-soft.com>                  * 00180000
+*                                                                     * 00190000
+* NOTES = SEE BELOW                                                   * 00200000
+*                                                                     * 00210000
+*    DEPENDENCIES = MVS/370, MVS/XA, MVS/ESA                          * 00220000
+*                   ISPF/PDF V2R3                                     * 00230000
+*                                                                     * 00240000
+*    AUTHORIZATION = NONE                                             * 00250000
+*                                                                     * 00260000
+*    RESTRICTIONS = NONE                                              * 00270000
+*                                                                     * 00280000
+* MODULE TYPE = PROCEDURE, (TSO COMMAND PROCESSOR)                    * 00290000
+*                                                                     * 00300000
+*    PROCESSOR = IBM OS/ASSEMBLER H VERSION 2 OR                      * 00310000
+*                IBM HIGH LEVEL ASSEMBLER/MVS                         * 00320000
+*                                                                     * 00330000
+*    MODULE SIZE = 3K                                                 * 00340000
+*                                                                     * 00350000
+*    ATTRIBUTES = REENTERABLE, RMODE 24, AMODE 31,                    * 00360000
+*                 PROBLEM STATE, KEY 8                                * 00370000
+*                                                                     * 00380000
+* OPERATION = SEE COMMENTS IN SOURCE CODE                             * 00390000
+*                                                                     * 00400000
+* SYNTAX = SEE BELOW                                                  * 00410000
+*                                                                     * 00420000
+*        VSAMVIEW 'DATA-SET-NAME'                                     * 00430000
+*                 RECSIZE('MAX-RECORD-LENGTH')                        * 00440000
+*                 SKIP('COUNT')                                       * 00450000
+*                 COUNT('COUNT')                                      * 00460000
+*                                                                     * 00470000
+*        REQUIRED: DATA-SET-NAME                                      * 00480000
+*                                                                     * 00490000
+* CHANGE ACTIVITY                                                     * 00500000
+*                                                                     * 00510000
+*   100  INITIAL RELEASE                                              * 00520000
+*                                                                     * 00530000
+*********************************************************************** 00540000
+VSAMVIEW CSECT                                                          00550000
+VSAMVIEW AMODE 31                                                       00560000
+         SAVE  (14,12),,'GSF UTILITIES - VSAMVIEW R100'                 00570000
+         LR    R11,R15                                                  00580000
+         USING VSAMVIEW,R11                                             00590000
+         LA    R12,VSAMVIEW+4095                                        00600000
+         USING VSAMVIEW+4095,R12                                        00610000
+         LR    R9,R1                   SAVE CPPL ADDRESS                00620000
+         USING CPPL,R9                 SET UP ADDRESSABILITY TO CPPL    00630000
+         ICM   R2,B'1111',CPPL         INVOKED AS A PGM?                00640000
+         BM    ALLOCATE                YES, JUMP                        00650000
+         LA    R3,DYNAML               LENGTH OF DYNAMIC STORAGE AREA   00660000
+         GETMAIN R,LV=(R3)             ALLOCATE DYNAMIC STORAGE         00670000
+         LR    R2,R1                   CLEAR DYNAMIC STORAGE            00680000
+         SLR   R15,R15                 CLEAR DYNAMIC STORAGE            00690000
+         MVCL  R2,R14                  CLEAR DYNAMIC STORAGE            00700000
+         ST    R13,4(,R1)                                               00710000
+         ST    R1,8(,R13)                                               00720000
+         LM    R13,R1,8(R13)           SET R13, RELOAD R14-R1           00730000
+         USING DYNAM,R13                                                00740000
+         STM   R11,R12,BASEREGS        FOR READ ROUTINES                00750000
+*********************************************************************** 00760000
+*                                                                     * 00770000
+*        BUILD PARSE PARM LIST, CALL IKJPARS                          * 00780000
+*                                                                     * 00790000
+*********************************************************************** 00800000
+CALLPARS LA    R1,TENWORDS             POINT TO PPL                     00810000
+         USING PPL,R1                  SET UP ADDRESSABILITY TO PPL     00820000
+         L     R0,CPPLUPT              USER PROFILE TABLE               00830000
+         ST    R0,PPLUPT               STORE UPT ADDRESS IN PPL         00840000
+         L     R0,CPPLECT              ENVIRONMENT CONTROL TABLE        00850000
+         ST    R0,PPLECT               STORE ECT IN PPL                 00860000
+         LA    R0,ECB1                 EVENT CONTROL BLOCK              00870000
+         ST    R0,PPLECB               STORE ECB IN PPL                 00880000
+         MVC   PPLPCL,=A(PCLCSECT)     STORE PCL ADDR INTO PPL          00890000
+         LA    R0,DYNANSWR             ANSWER AREA                      00900000
+         ST    R0,PPLANS               STORE ANSWER ADDRESS IN PPL      00910000
+         L     R0,CPPLCBUF             COMMAND BUFFER                   00920000
+         ST    R0,PPLCBUF              STORE BUFFER ADDRESS IN PPL      00930000
+         LA    R14,=C'IKJPARS '        NAME OF PARSE ROUTINE            00940000
+         L     R15,16                  CVTPTR                           00950000
+         L     R15,8(,R15)             CVTLINK                          00960000
+         STM   R14,R15,DWD             BUILD LINK PARMLIST              00970000
+         LINK  SF=(E,DWD)              CALL THE PARSE ROUTINE           00980000
+         LTR   R7,R15                  CHECK FOR ZERO PARSE RETURN      00990000
+         BNZ   QUIT16                  GO AWAY UPSET                    01000000
+         DROP  R1,R9                   PPL, CPPL                        01010000
+*********************************************************************** 01020000
+*                                                                     * 01030000
+*        PROCESS PARSED PARAMETERS                                    * 01040000
+*                                                                     * 01050000
+*********************************************************************** 01060000
+PARSE100 L     R2,DYNANSWR             LOAD PDL ADDRESS                 01070000
+         USING IKJPARMD,R2             SET UP ADDRESSABILITY TO PDL     01080000
+         LA    R14,DSNAME              44-BYTE AREA                     01090000
+         LA    R15,L'DSNAME            GET LENGTH                       01100000
+         L     R0,DSNPCE               GET ADDRESS                      01110000
+         LH    R1,DSNPCE+4             ACTUAL LENGTH OF DSN             01120000
+         ICM   R1,B'1000',=C' '        PADDING                          01130000
+         MVCL  R14,R0                  MOVE DATA SET NAME               01140000
+*TPUT DSNAME,L'DSNAME                                                   01150000
+PARSE180 LA    R1,RECSZIDL             LOAD POINTER TO RECSZ FIELD      01160000
+         BAL   R14,PACKCVB             CONVERT PARAMETER                01170000
+         ST    R0,RECSIZE              STORE RECORD SIZE                01180000
+         LA    R1,SKIPIDL              LOAD POINTER TO SKIP FIELD       01190000
+         BAL   R14,PACKCVB             CONVERT PARAMETER                01200000
+         ST    R0,RECSKIP              STORE SKIP COUNT                 01210000
+         LA    R1,COUNTIDL             LOAD POINTER TO COUNT FIELD      01220000
+         BAL   R14,PACKCVB             CONVERT PARAMETER                01230000
+         AL    R0,RECSKIP              ADD SKIP COUNT                   01240000
+         ST    R0,RECCOUNT             STORE UPPER LIMIT                01250000
+*                                                                       01260000
+*        FREE-UP STORAGE ACQUIRED BY PARSE                              01270000
+*                                                                       01280000
+         IKJRLSA DYNANSWR              FREE PDL                         01290000
+*                                                                       01300000
+*        BUMP MY USE COUNT TO PREVENT S0C4 ON $SELECT                   01310000
+*                                                                       01320000
+         L     R1,540(,0)              PSATOLD (MY TCB)                 01330000
+         L     R1,0(,R1)               TCBRBP (MY PRB)                  01340000
+         ICM   R1,B'0111',X'00D'(R1)   RBCDE1 (MY CDE)                  01350000
+         MVC   OWNNAME,CDNAME-CDENTRY(R1) MOVE OWN NAME                 01360000
+         LOAD  EPLOC=OWNNAME           BUMP CDUSE                       01370000
+*                                                                       01380000
+*        RE-INVOKE MYSELF AS A PGM AND PASS THE ADDR OF THE DYNAMIC     01390000
+*        STORAGE AREA IN THE PARM.                                      01400000
+*                                                                       01410000
+         STRING 'PGM(',(OWNNAME,,T),') PARM(',((R13),,R8Z),')',        X01420000
+               INTO=MESSAGE                                             01430000
+         ST    R15,DWD                 LENGTH                           01440000
+         LA    R14,$SELECT             SERVICE                          01450000
+         LA    R15,DWD                 LENGTH                           01460000
+         LA    R0,MESSAGE              PARAMETERS                       01470000
+         STM   R14,R1,TENWORDS         PARM LIST                        01480000
+         OI    TENWORDS+8,X'80'        PARM LIST                        01490000
+         LA    R1,TENWORDS             PARM LIST                        01500000
+         L     R13,4(,R13)             CALLER'S SAVE AREA               01510000
+         XCTL  (2,12),EPLOC=$ISPLINK                                    01520000
+*---------------------------------------------------------------------* 01530000
+*        PACKCVB SUB-ROUTINE                                          * 01540000
+*---------------------------------------------------------------------* 01550000
+PACKCVB  LH    R15,4(,R1)              LOAD LENGTH                      01560000
+         LTR   R0,R15                  THIS PARM SPECIFIED?             01570000
+         BZR   R14                     NO, GOBACK WITH R0=0             01580000
+         L     R1,0(,R1)               LOAD ADDRESS                     01590000
+         BCTR  R15,0                   DECREMENT R15 FOR EXECUTE        01600000
+         EX    R15,PACKCVBX            PACK VALUE                       01610000
+         CVB   R0,DWD                  CONVERT ZONED TO BINARY          01620000
+         BR    R14                                                      01630000
+PACKCVBX PACK  DWD,0(,R1)              *EXECUTED*                       01640000
+*---------------------------------------------------------------------* 01650000
+         MACRO                                                    MACRO 01660000
+&NAME    ISPLINK &OPRNDS,&ERRET=                                  MACRO 01670000
+         GBLB  &IHBSWA                                            MACRO 01680000
+&IHBSWA  SETB  1                       VL=1                       MACRO 01690000
+&NAME    LA    R1,TENWORDS             PARM LIST                  MACRO 01700000
+         IHBOPLST ,&OPRNDS,MF=(E,(1))                             MACRO 01710000
+         L     R15,ISPLINK@            ISPLINK BOOTSTRAP                01720000
+         BALR  R14,R15                 INVOKE ISPLINK                   01730000
+         AIF   (T'&ERRET EQ 'O').MEND                             MACRO 01740000
+         LTR   R15,R15                 ANY ERROR?                       01750000
+         BNZ   &ERRET                  YES, JUMP                        01760000
+.MEND    MEND                                                     MACRO 01770000
+*********************************************************************** 01780000
+*                                                                     * 01790000
+*        ALLOCATE THE DATA SET                                        * 01800000
+*                                                                     * 01810000
+*********************************************************************** 01820000
+ALLOCATE PACK  16(8,R13),2(8,R2)       PACK THE PARM                    01830000
+         CVB   R1,16(,R13)             GET IT IN BINARY                 01840000
+         ST    R13,4(,R1)                                               01850000
+         ST    R1,8(,R13)                                               01860000
+         LM    R13,R1,8(R13)           SET R13, RELOAD R14-R1           01870000
+         USING DYNAM,R13                                                01880000
+*---------------------------------------------------------------------* 01920000
+*        ISPEXEC CONTROL ERRORS RETURN                                * 01930000
+*---------------------------------------------------------------------* 01940000
+         LOAD  EPLOC=$ISPLINK                                           01950000
+         ST    R0,ISPLINK@             SAVE ISPLINK ADDRESS             01960000
+         LA    R1,=A($CONTROL,$ERRORS,$RETURN+X'80000000')              01970000
+         L     R15,ISPLINK@                                             01980000
+         BALR  R14,R15                 CONTROL ERRORS RETURN            01990000
+         LTR   R15,R15                                                  02000000
+         BNZ   QUIT16                  ISPF NOT ACTIVE                  02010000
+*---------------------------------------------------------------------* 02020000
+*                                                                     * 02030000
+*        ALLOCATE THE DATA SET                                        * 02040000
+*                                                                     * 02050000
+*---------------------------------------------------------------------* 02060000
+         MVC   S99RB,=X'14,01,2000'    SVC 99 REQUEST BLOCK             02070000
+         LA    R1,S99TUPTR             TEXT UNIT POINTERS               02080000
+         ST    R1,S99RB+8              TEXT UNIT POINTERS               02090000
+*                                                                       02100000
+         LA    R14,S99T1                   RETURN DDNAME                02110000
+         MVC   S99T1(6),=X'0055,0001,0008' RETURN DDNAME                02120000
+         LA    R15,S99T2                   DSNAME                       02130000
+         MVC   S99T2(6),=X'0002,0001,002C' DSNAME                       02140000
+         LA    R0,=X'0004,0001,0001,08'    DISP=SHR                     02150000
+         LA    R1,=X'001C,0000'            FREE=CLOSE                   02160000
+         STM   R14,R1,S99TUPTR             TEXT-UNIT POINTERS           02170000
+         OI    S99TUPTR+12,X'80'           END OF LIST                  02180000
+*                                                                       02190000
+         LA    R1,S99RB                BUILD SVC99 PARM LIST            02200000
+         ST    R1,S99RBPTR             BUILD SVC99 PARM LIST            02210000
+         OI    S99RBPTR,X'80'          BUILD SVC99 PARM LIST            02220000
+         LA    R1,S99RBPTR                                              02230000
+         DYNALLOC ,                    ALLOCATE THE DATA SET            02240000
+         LTR   R15,R15                                                  02250000
+ NOP 0   BNZ   ALLOC900                SVC99 FAILED, JUMP               02260000
+*---------------------------------------------------------------------* 02270000
+*                                                                     * 02280000
+*        INITIALIZE VSAM CONTROL BLOCKS (ACB, RPL)                    * 02290000
+*                                                                     * 02300000
+*---------------------------------------------------------------------* 02310000
+         MVC   IFGACB(ACB1_L),ACB1_M   MOVE ACB,RPL                     02320000
+         MVC   ACBDDNM,DDNAME          MOVE DDNAME                      02330000
+         LA    R2,IFGACB               POINT TO ACB                     02340000
+         ST    R2,OPENLIST             BUILD OPEN LIST                  02350000
+         MVI   OPENLIST,X'80'          BUILD OPEN LIST                  02360000
+         OPEN  MF=(E,OPENLIST)         OPEN VSAM DATA SET               02370000
+         CH    R15,=H'4'               OPEN OK?                         02380000
+         BH    OPENR160                NO, QUIT                         02390000
+*                                                                       02400000
+         SHOWCB ACB=(R2),AREA=(S,MAXRECNO),LENGTH=12,                  X02410000
+               FIELDS=(NLOGR,LRECL),MF=(G,MESSAGE)                      02420000
+         ICM   R0,B'1111',MAXLRECL     LRECL=0 (LDS)                    02430000
+         BZ    OPENR160                YES, JUMP                        02440000
+*                                                                       02450000
+         ICM   R0,B'1111',MAXRECNO     EMPTY/OPEN ?                     02460000
+         BNZ   OPENVS4                 NO, JUMP                         02470000
+         MVI   MAXRECNO,X'7F'          YES, SET MAX NUMBER              02480000
+         ICM   R0,B'1111',RECCOUNT     COUNT SPECIFIED?                 02490000
+         BZ    OPENVS4                 NO, JUMP                         02500000
+         ST    R0,MAXRECNO             YES, USE COUNT                   02510000
+OPENVS4  EQU   *                                                        02520000
+*                                                                       02530000
+*        SET UP RPL FOR ESDS/KSDS                                       02540000
+*                                                                       02550000
+         MVC   IFGRPL(RPL1_L),RPL1_M   MOVE ACB,RPL                     02560000
+*TPUT =C'ST R2,RPLDACB',13                                              02570000
+         ST    R2,RPLDACB              STORE ACB ADDRESS INTO RPL       02580000
+         LA    R0,RECAD                THE RIGHT WORD                   02590000
+         ST    R0,RPLAREA              STORE AREA ADDRESS INTO RPL      02600000
+         LA    R0,L'RECAD              ADDRESS                          02610000
+         ST    R0,RPLBUFL              STORE AREA LENGTH INTO RPL       02620000
+*                                                                       02630000
+         TESTCB ACB=(R2),ATRB=KSDS,MF=(G,MESSAGE) IS THIS A KSDS?       02640000
+         BE    OPENKSDS                YES, JUMP                        02650000
+         TESTCB ACB=(R2),ATRB=RRDS,MF=(G,MESSAGE) IS THIS AN RRDS?      02660000
+         BE    OPENRRDS                YES, JUMP                        02670000
+         TESTCB ACB=(R2),ATRB=ESDS,MF=(G,MESSAGE) IS THIS AN ESDS?      02680000
+         BNE   OPENR160                UNSUPPORTED TYPE                 02690000
+*                                                                       02700000
+OPENESDS MVI   VS_TYPE,C'E'            CLUSTER IS AN ESDS               02710000
+         B     OPENVS6                                                  02720000
+*                                                                       02730000
+OPENKSDS MVI   VS_TYPE,C'K'            CLUSTER IS A KSDS                02740000
+         B     OPENVS6                                                  02750000
+*                                                                       02760000
+OPENRRDS MVI   VS_TYPE,C'R'            CLUSTER IS AN RRDS               02770000
+         LA    R0,CURRECNO             RECORD NUMBER                    02780000
+         ST    R0,RPLARG               RECORD NUMBER                    02790000
+         OI    RPLOPT1,RPLDIR          OPTCD=(DIR,KEY)                  02800000
+*                                                                       02810000
+OPENVS6  EQU   *                                                        02820000
+         LOAD  EP=ISRCONFG             PDF CONFIG TABLE                 02830000
+         LR    R1,R0                   ENTRY ADDRESS                    02840000
+         L     R2,X'190'(,R1)          UNDOSIZE (IN K)                  02850000
+         SLL   R2,10                   UNDOSIZE (IN BYTES)              02860000
+         ST    R2,UNDOSIZE             ADD SIZE OF UNDO BUFFER          02870000
+*                                                                       02880000
+         ICM   R0,B'1111',RECSIZE      RECSIZE PARM SPECIFIED?          02890000
+         BNZ   *+10                    NO, EXIT                         02900000
+         MVC   RECSIZE,MAXLRECL        USE CALLER'S RECORD SIZE         02910000
+*                                                                       02920000
+         B     EDIF                                                     02930000
+*                                                                       02940000
+*        VSAM OPEN ERROR                                                02950000
+*                                                                       02960000
+OPENR160 CLI   ACBERFLG,160            EMPTY DATA SET?                  02970000
+         BNE   QUIT16                  NO, QUIT                         02980000
+         MVC   ZERRMSG,=C'ISRB603 '    "NO DATA TO BROWSE"              02990000
+         LA    R7,4                    RC=4                             03000000
+         B     SETMSG8                 ISSUE MESSAGE                    03010000
+*********************************************************************** 03020000
+*                                                                       03030000
+*        INVOKE ISPF/PDF EDIF SERVICE                                   03040000
+*                                                                       03050000
+*********************************************************************** 03060000
+EDIF     LA    R0,SAVERRTN             DDATA FOR EDIF                   03070000
+         ST    R0,SAVERRTN             DDATA FOR EDIF                   03080000
+*                                                                       03090000
+         ISPLINK (=C'EDIF',            SERVICE                         X03100000
+               DSNAME,                 DATA SET NAME                   X03110000
+               =C'VSAMVIEW',           PROFILE NAME                    X03120000
+               =C'V ',                 RECFM                           X03130000
+               RECSIZE,                RECORD LENGTH                   X03140000
+               =A(READRTNE),           READ ROUTINE                    X03150000
+               =A(WRITERTN),           WRITE ROUTINE                   X03160000
+               0,                      COMMAND EXIT                    X03170000
+               SAVERRTN)               DIALOG DATA ADDR                 03180000
+         LR    R7,R15                  SAVE RETURN CODE FROM EDIF       03190000
+*********************************************************************** 03200000
+*                                                                       03210000
+*        PROGRAM EXIT                                                   03220000
+*                                                                       03230000
+*           1. ISSUE ERROR MESSAGE                                      03240000
+*           2. CLEAN UP                                                 03250000
+*           3. GOBACK TO CALLER                                         03260000
+*                                                                       03270000
+*********************************************************************** 03280000
+SETMSG   LTR   R7,R7                   CHECK RC FROM EDIF               03290000
+         BZ    QUIT50                  OK, EXIT                         03300000
+         LA    R0,L'ZERRMSG                                             03310000
+         ST    R0,DWD                                                   03320000
+         ISPLINK (=C'VCOPY ',=C'ZERRMSG ',DWD,ZERRMSG,=C'MOVE ')        03330000
+         LTR   R15,R15                 CHECK RC                         03340000
+         BNZ   QUIT50                  BAD, EXIT                        03350000
+SETMSG8  ISPLINK (=C'SETMSG ',ZERRMSG)                                  03360000
+         B     QUIT50                                                   03370000
+*                                                                       03380000
+QUIT16   LA    R7,16                   RC=16                            03390000
+*---------------------------------------------------------------------* 03400000
+*                                                                       03410000
+*        FREE WORK AREA AND GOBACK TO ISPF                              03420000
+*                                                                       03430000
+*---------------------------------------------------------------------* 03440000
+QUIT50   TM    OPENLIST,X'80'          OPEN LIST OK?                    03450000
+         BZ    QUIT53                  NO, JUMP                         03460000
+         CLOSE MF=(E,OPENLIST)         CLOSE ACB/DCB                    03470000
+*                                                                       03480000
+QUIT53   TM    S99RBPTR,X'80'          SVC 99 REQ BLK OK?               03490000
+         BNO   QUIT90                  NO, JUMP                         03500000
+         MVI   S99RB+1,2               VERB=FREE                        03510000
+         OI    S99TUPTR,X'80'          ONLY 1 T.U.                      03520000
+         MVI   S99T1+1,1               X'55' -> X'01'                   03530000
+         LA    R1,S99RBPTR                                              03540000
+         DYNALLOC ,                    FREE THE DATA SET                03550000
+*                                                                       03560000
+QUIT90   LR    R15,R7                  RETURN CODE                      03570000
+         L     R13,4(,R13)                                              03580000
+         RETURN (14,12),RC=(15)                                         03590000
+*********************************************************************** 03600000
+*                                                                       03610000
+*        VSAM READ ROUTINE                                              03620000
+*                                                                       03630000
+*********************************************************************** 03640000
+READRTNE SAVE  (14,12),,'VSAMVIEW READ ROUTINE'                         03650000
+         LM    R4,R7,0(R1)             INPUT PARMS                      03660000
+         L     R7,0(,R7)               A(SAVERRTN)                      03670000
+         ST    R13,4(,R7)              CHAIN SAVE AREA                  03680000
+         ST    R7,8(,R13)              CHAIN SAVE AREA                  03690000
+         LR    R13,R7                  NEW SAVE AREA                    03700000
+         USING SAVERRTN,R13                                             03710000
+         LM    R11,R12,BASEREGS        BASE REGISTERS                   03720000
+*LOOP                                                                   03730000
+READVS10 EQU   *                                                        03740000
+         LA    R3,1                    RECORD NUMBER                    03750000
+         AL    R3,CURRECNO             RECORD NUMBER                    03760000
+         ST    R3,CURRECNO             RECORD NUMBER                    03770000
+         C     R3,MAXRECNO             BEYOND END OF FILE?              03780000
+         BH    READVS80                YES, EXIT                        03790000
+*                                                                       03800000
+         ICM   R0,B'1111',RECCOUNT     COUNT SPECIFIED?                 03810000
+         BZ    READVS12                NO, JUMP                         03820000
+         CLR   R0,R3                   USER LIMIT REACHED?              03830000
+         BL    READVS80                YES, QUIT                        03840000
+READVS12 EQU   *                                                        03850000
+*                                                                       03860000
+         SLR   R0,R0                                                    03870000
+         LR    R1,R3                   RECORD NUMBER                    03880000
+         D     R0,=F'1000'             DIVIDE BY SIZE OF A SEGMENT      03890000
+         LTR   R0,R0                   START OF A NEW SEGMENT?          03900000
+         BNZ   READVS20                NO, JUMP                         03910000
+         LA    R1,32                   LENGTH OF EDIF HEADER            03920000
+         AL    R1,RECSIZE              ADD RECORD LENGTH                03930000
+         M     R0,=F'1000'             CALCULATE SIZE OF A SEGMENT      03940000
+         AL    R1,=F'100000'           ADD ANOTHER 100K TO BE SAFE      03950000
+         AL    R1,UNDOSIZE             ADD SIZE OF UNDO BUFFER          03960000
+         GETMAIN RC,LV=(R1),LOC=ANY    ALLOC ROOM FOR 1000 RECORDS      03970000
+         LTR   R15,R15                 ENOUGH STORAGE LEFT?             03980000
+         BZ    READVS17                YES, JUMP                        03990000
+         LR    R2,R0                   CUSHION SIZE IN BYTES            04000000
+         SRL   R2,10                   CUSHION SIZE IN K                04010000
+*                                                                       04020000
+         STRING 'INSUFFICIENT STORAGE',INTO=MESSAGE                     04030000
+         ST    R15,DWD                 LENGTH OF SHORT MESSAGE          04040000
+         ISPLINK (=C'VREPLACE',=C'ZEDSMSG ',DWD,MESSAGE)                04050000
+         STRING 'TOTAL RECORDS: ',(MAXRECNO,F,L),                      X04060000
+               ' RECORDS PROCESSED: ',((R3),,L),                       X04070000
+               ' CUSHION: ',((R2),,L),'K',                             X04080000
+               INTO=MESSAGE                                             04090000
+         ST    R15,DWD                 LENGTH OF LONG MESSAGE           04100000
+         ISPLINK (=C'VREPLACE',=C'ZEDLMSG ',DWD,MESSAGE)                04110000
+         ISPLINK (=C'SETMSG ',=C'ISRZ001 ')                             04120000
+*                                                                       04130000
+         ST    R3,MAXRECNO             NO, TRUNCATE DATA SET            04140000
+         L     R0,RECSIZE              RECORD LENGTH                    04150000
+         LA    R2,MESSAGE              POINT TO MESSAGE AREA            04160000
+         STRING '++++++ DATA TRUNCATED ++++++',INTO=((R2),(R0))         04170000
+         B     READVS77                PASS MESSAGE TO EDIF             04180000
+*                                                                       04190000
+READVS17 FREEMAIN RC,LV=(0),A=(1)      FREE UP THE CUSHION              04200000
+*                                                                       04210000
+READVS20 GET   RPL=IFGRPL              GET NEXT RECORD                  04220000
+         LTR   R15,R15                 OK?                              04230000
+         BZ    READVS70                YES, JUMP                        04240000
+*                                                                       04250000
+*        ACTUAL END OF DATA (SHOULD ONLY OCCUR WHEN SHOWCB              04260000
+*        RETURNED MAXRECNO=0)                                           04270000
+*                                                                       04280000
+         CLI   RPLRTNCD,X'08'          IS THIS A LOGICAL ERROR?         04290000
+         BNE   READVS90                NO, QUIT                         04300000
+         CLI   RPLFDB3,X'04'           END OF DATA?                     04310000
+         BE    READVS80                YES, EXIT                        04320000
+*                                                                       04330000
+*        THE FIRST TIME A SPANNED RECORD IS READ (FDBK=X'84'),          04340000
+*        SWITCH IFGRPL FROM OPTCD=LOC TO OPTCD=MVE.                     04350000
+*        FROM THAT POINT ON, ALL GETS WILL BE MOVE MODE.                04360000
+*        NOTE THAT A CLUSTER DEFINED WITH THE SPANNED ATTRIBUTE         04370000
+*        DOES NOT NECESSARILY CONTAIN SPANNED RECORDS (IE RECORDS       04380000
+*        MADE UP OF MORE THAN ONE SEGMENT).                             04390000
+*                                                                       04400000
+READVS34 CLI   RPLFDB3,X'48'           OPTCD=KEY WITH DATA COMPONENT?   04410000
+         BE    READVS35                YES, JUMP                        04420000
+*                                                                       04430000
+         CLI   RPLFDB3,X'84'           OPTCD=LOC WITH SPANNED RECORDS?  04440000
+         BNE   READVS90                NO, ERROR                        04450000
+*                                                                       04460000
+         NI    RPLOPT1,255-RPLLOC      OPTCD=MVE                        04470000
+         L     R0,MAXLRECL             MAX RECORD SIZE                  04480000
+         GETMAIN RU,LV=(0),LOC=ANY     ALLOC BUFFER FOR SPANNED RECORDS 04490000
+         ST    R0,RPLBUFL              AREALEN=MAXLRECL                 04500000
+         ST    R1,RPLAREA              STORE AREA ADDRESS INTO RPL      04510000
+         B     READVS40                                                 04520000
+*                                                                       04530000
+READVS35 MVI   VS_TYPE,C'E'            CLUSTER IS AN ESDS               04540000
+         MVI   RPLOPT2,RPLADR          OPTCD=ADR                        04550000
+*                                                                       04560000
+*        RE-READ A RECORD AFTER X'48' OR X'84'                          04570000
+*                                                                       04580000
+READVS40 EQU   *                                                        04590000
+         GET   RPL=IFGRPL              RE-READ RECORD AFTER 48 OR 84    04600000
+         LTR   R15,R15                 OK?                              04610000
+         BNZ   READVS90                NO, QUIT                         04620000
+*                                                                       04630000
+*        RETURN RECORD JUST READ TO EDIF                                04640000
+*                                                                       04650000
+READVS70 CL    R3,RECSKIP              SHOULD I SKIP THIS RECORD?       04660000
+*STRING ((R3)),(RECSKIP,F),INTO=MESSAGE                                 04670000
+*TPUT MESSAGE,44                                                        04680000
+*CL R3,RECSKIP                                                          04690000
+         BNH   READVS10                YES, READ ANOTHER                04700000
+*ENDLOOP                                                                04710000
+         L     R0,RPLRLEN              PICK UP RECORD LENGTH            04720000
+         L     R2,RPLAREA              NO, GET RECORD ADDR (OPTCD=MVE)  04730000
+         TM    RPLOPTCD,RPLLOC         OPTCD=MVE?                       04740000
+         BZ    READVS77                YES, JUMP                        04750000
+         L     R2,0(,R2)               GET RECORD ADDR (OPTCD=LOC)      04760000
+*                                                                       04770000
+READVS77 ST    R2,0(,R4)               PASS RECORD ADDRESS TO EDIF      04780000
+         ST    R0,0(,R5)               PASS RECORD LENGTH TO EDIF       04790000
+         L     R13,4(,R13)                                              04800000
+         RETURN (14,12),RC=00                                           04810000
+*                                                                       04820000
+*        RECORD NUMBER TOO HIGH, RETURN NUMBER OF HIGHEST RCD TO EDIF   04830000
+*                                                                       04840000
+READVS80 MVC   0(4,R6),MAXRECNO        RETURN MAX RECORD NUMBER         04850000
+         TM    RPLOPT1,RPLLOC          OPTCD=LOC                        04860000
+         BO    READVS81                YES, JUMP                        04870000
+         L     R0,RPLBUFL              R0=AREALEN                       04880000
+         FREEMAIN RU,LV=(0),A=RPLAREA  FREE MOVE MODE BUFFER            04890000
+READVS81 CLOSE MF=(E,OPENLIST)         CLOSE THE ACB                    04900000
+         L     R13,4(,R13)                                              04910000
+         RETURN (14,12),RC=8                                            04920000
+*                                                                       04930000
+*        ERROR IN GET MACRO, SHOW FEEDBACK CODE                         04940000
+*                                                                       04950000
+READVS90 STRING '** ERROR ** RPLFDBWD=',(RPLFDBWD,,X),                 X04960000
+               ' REQ=',(RPLREQ,,X),' OPTCD=',(RPLOPTCD,2,X),           X04970000
+               ' RRN=',((R3),,L),' MAXRECNO=',(MAXRECNO,F,L),          X04980000
+               INTO=MESSAGE                                             04990000
+         ST    R3,0(,R6)               END OF FILE                      05000000
+         ST    R3,MAXRECNO             END OF FILE                      05010000
+         LA    R15,008                 RC=8 (EOF)                       05020000
+.@TEST2 SR 15,15                                                        05030000
+*                                                                       05040000
+*        RETURN ERROR MESSAGE TO EDIF                                   05050000
+*                                                                       05060000
+READVS95 LA    R0,MESSAGE              MESSAGE                          05070000
+         ST    R0,0(,R4)               PASS ADDRESS                     05080000
+         LA    R0,L'MESSAGE            LENGTH                           05090000
+         ST    R0,0(,R5)               PASS LENGTH                      05100000
+         L     R13,4(,R13)                                              05110000
+         RETURN (14,12),RC=(15)                                         05120000
+*---------------------------------------------------------------------* 05130000
+*        DUMMY WRITE ROUTINE                                          * 05140000
+*---------------------------------------------------------------------* 05150000
+WRITERTN SAVE  (14,12),,WRITERTN                                        05160000
+         RETURN (14,12),RC=16                                           05170000
+*---------------------------------------------------------------------* 05180000
+*        CONSTANTS                                                      05190000
+*---------------------------------------------------------------------* 05200000
+$ISPLINK DC    C'ISPLINK '             ISPF COMMAND INTERFACE           05210000
+$SELECT  DC    C'SELECT'               SERVICE                          05220000
+$CONTROL DC    C'CONTROL'              FUNCTION                         05230000
+$ERRORS  DC    C'ERRORS'               OPTION                           05240000
+$RETURN  DC    C'RETURN'               OPTION                           05250000
+         PRINT NOGEN                                                    05260000
+ACB1_M   ACB   MACRF=SEQ,RMODE31=ALL,BUFSP=200000                       05270000
+ACB1_L   EQU   *-ACB1_M                                                 05280000
+RPL1_M   RPL   ACB=*-*,OPTCD=(SEQ,LOC),AREA=*-*,AREALEN=4               05290000
+RPL1_L   EQU   *-RPL1_M                                                 05300000
+*********************************************************************** 05310000
+*                                                                     * 05320000
+*        DYNAMIC STORAGE           <-- R13                            * 05330000
+*                                                                     * 05340000
+*********************************************************************** 05350000
+DYNAM    DSECT                                                          05360000
+         DS    18F                     SAVE AREA (MAIN LINE)            05370000
+SAVERRTN DS    18F                     SAVE AREA (READ ROUTINE)         05380000
+BASEREGS DS    A(VSAMVIEW,VSAMVIEW+4095)                                05390000
+TENWORDS DS    10F                                                      05400000
+DWD      DS    D                                                        05410000
+OWNNAME  DS    CL8                     MY OWN NAME                      05420000
+ZERRMSG  DS    C'12345678'             ERROR MESSAGE                    05430000
+RECSIZE  DS    F                       INVOCATION PARAMETER             05440000
+RECSKIP  DS    F                       INVOCATION PARAMETER             05450000
+RECCOUNT DS    F                       INVOCATION PARAMETER             05460000
+ISPLINK@ DS    V(ISPLINK)              ISPF INTERFACE                   05470000
+UNDOSIZE DS    F                       STORAGE FOR SETUNDO STG          05480000
+DYNANSWR DS    F                       PARSE                            05490000
+ECB1     DS    F                       PARSE                            05500000
+VS_TYPE  DS    C'K'                    VSAM TYPE: K E R                 05510000
+OPENLIST OPEN  IFGACB,MF=L                                              05520000
+         IFGACB DSECT=NO                                                05530000
+         IFGRPL DSECT=NO                                                05540000
+RECAD    DS    A                       RECORD ADDRESS                   05550000
+CURRECNO DS    F'12345678'             CURRENT RECORD NUMBER            05560000
+SPANBUFF DS    F,A                     VBS BUFFER                       05570000
+*                                                                       05580000
+MAXRECNO DS    F'12345678'          +0 MAX RECORD NUMBER                05590000
+MAXLRECL DS    F'32760'             +4 MAX LRECL                        05600000
+*                                                                       05610000
+S99RBPTR DS    A(S99RB+X'80000000')                                     05620000
+S99RB    DS    A(X'14012000',0,S99TUPTR,0,0)                            05630000
+S99TUPTR DS    4A                                                       05640000
+S99T1    DS    X'0055,0001',AL2(L'DDNAME)   RETURN DDNAME               05650000
+DDNAME   DS    CL8       '                                              05660000
+S99T2    DS    X'0002,0001',AL2(L'DSNAME)   DSNAME                      05670000
+DSNAME   DS    CL44,C                       DATA SET NAME               05680000
+*                                                                       05690000
+MESSAGE  DS    CL120                                                    05700000
+DYNAML   EQU   *-DYNAM                                                  05710000
+         STRING GENERATE                                                05720000
+*********************************************************************** 05730000
+*                                                                     * 05740000
+*        DEFINE INPUT PARAMETERS FOR IKJPARS                          * 05750000
+*                                                                     * 05760000
+*********************************************************************** 05770000
+PCLCSECT IKJPARM                                                        05780000
+DSNPCE   IKJPOSIT DSNAME,LIST,USID,PROMPT='DATA SET NAME',             X05790000
+               HELP='NAME OF THE VSAM DATA SET TO BE EDITED'            05800000
+RECSZPCE IKJKEYWD                                                       05810000
+         IKJNAME 'RECSIZE',SUBFLD=RECSZPCL                              05820000
+SKIPPCE  IKJKEYWD                                                       05830000
+         IKJNAME 'SKIP',SUBFLD=SKIPPCL                                  05840000
+COUNTPCE IKJKEYWD                                                       05850000
+         IKJNAME 'COUNT',SUBFLD=COUNTPCL                                05860000
+*SUB-FIELDS                                                             05870000
+RECSZPCL IKJSUBF                                                        05880000
+RECSZIDL IKJIDENT 'NUMBER',MAXLNTH=5,FIRST=NUMERIC,OTHER=NUMERIC,      X05890000
+               PROMPT='RECORD SIZE',                                   X05900000
+               HELP='RECORD SIZE FOR EDIT'                              05910000
+SKIPPCL IKJSUBF                                                         05920000
+SKIPIDL IKJIDENT 'NUMBER',MAXLNTH=8,FIRST=NUMERIC,OTHER=NUMERIC,       X05930000
+               PROMPT='RECORD SKIP',                                   X05940000
+               HELP='NUMBER OF RECORDS TO SKIP'                         05950000
+COUNTPCL IKJSUBF                                                        05960000
+COUNTIDL IKJIDENT 'NUMBER',MAXLNTH=8,FIRST=NUMERIC,OTHER=NUMERIC,      X05970000
+               PROMPT='RECORD COUNT',                                  X05980000
+               HELP='NUMBER OF RECORDS TO EDIT'                         05990000
+         IKJENDP                                                        06000000
+*                                                                       06010000
+         IKJCPPL                       COMMAND BUFFER PARM LIST         06020000
+         IKJPPL                        PARSE PARM LIST (IKJPARS)        06030000
+         YREGS                                                          06040000
+         IHACDE                                                         06050000
+         END                                                            06060000
+//SYSLIB   DD DSN=SYS1.MACLIB,DISP=SHR            DIV                   06070000
+//         DD DSN=SYS1.MODGEN,DISP=SHR            IFGACB/IFGRPL         06080000
+//         DD DSN=CBTTAPE.FILE183.PDS,DISP=SHR    STRING                06090000
+//SYSUT1   DD UNIT=VIO,SPACE=(CYL,2)                                    06100000
+//SYSPRINT DD SYSOUT=*                                                  06110000
+//SYSLIN   DD UNIT=VIO,SPACE=(TRK,1),DISP=(,PASS),DCB=BLKSIZE=3200      06120000
+//*-------------------------------------------------------------------  06130000
+//LKED    EXEC PGM=HEWL,PARM='LIST,MAP,RENT'                            06140000
+//SYSLIN   DD DSN=*.ASMH.SYSLIN,DISP=(OLD,PASS)                         06150000
+//SYSLMOD  DD DSN=CBTTAPE.FILE183.LOAD(VSAMVIEW),DISP=SHR               06160000
+//SYSPRINT DD SYSOUT=*                                                  06170000

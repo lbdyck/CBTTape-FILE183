@@ -1,0 +1,563 @@
+//GILBERTR JOB (ACCT#),RECALL,                                          00010005
+//*RESTART=HMIG,                                                        00020000
+// NOTIFY=&SYSUID,                                                      00030008
+// CLASS=A,MSGCLASS=H,COND=(1,LT)                                       00040004
+//HLASM EXEC PGM=ASMA90,PARM=(OBJECT,NODECK,NOESD,NORLD,NOXREF)         00050009
+*PROCESS USING(WARN(8))                                                 00060009
+*********************************************************************** 00070000
+*                                                                     * 00080000
+* MODULE NAME = RECALL                                                * 00090003
+*                                                                     * 00100000
+* DESCRIPTIVE NAME = Data Set RECALL Utility                          * 00110003
+*                                                                     * 00120000
+* FUNCTION = The "RECALL" program recalls migrated data sets          * 00130003
+*            that will be used in subsequent steps of the JOB         * 00140003
+*            in which it is executed.  Pre-staging data sets          * 00150003
+*            in this manner reduces HSM tape mount activity.          * 00160003
+*                                                                     * 00170000
+* STATUS = R209                                                       * 00180009
+*                                                                     * 00190000
+* AUTHOR = Gilbert Saint-Flour <carlos@gsf-soft.com>                  * 00200008
+*          http://gsf-soft.com/Freeware/                              * 00210009
+*                                                                     * 00220000
+* NOTES = SEE BELOW                                                   * 00230003
+*                                                                     * 00240000
+*    DEPENDENCIES = MVS/XA, MVS/ESA, OS/390, DFHSM                    * 00250009
+*                   STRING macro R400                                 * 00260006
+*                                                                     * 00270000
+*    AUTHORIZATION = NONE                                             * 00280003
+*                                                                     * 00290000
+*    RESTRICTIONS = NONE                                              * 00300003
+*                                                                     * 00310000
+* MODULE TYPE = PROCEDURE, (BATCH PROGRAM)                            * 00320003
+*                                                                     * 00330000
+*    PROCESSOR = IBM OS/ASSEMBLER H VERSION 2 OR                      * 00340003
+*                IBM HIGH LEVEL ASSEMBLER/MVS                         * 00350003
+*                                                                     * 00360000
+*    MODULE SIZE = 4K                                                 * 00370003
+*                                                                     * 00380000
+*    ATTRIBUTES = REENTERABLE, RMODE 24, AMODE 31,                    * 00390003
+*                 PROBLEM STATE, KEY 8                                * 00400003
+*                                                                     * 00410000
+* OPERATION = See Below                                               * 00420003
+*                                                                     * 00430000
+*         o  RECALL scans the SWA control blocks of every step        * 00440003
+*            of your job for data sets migrated by DFHSM.             * 00450003
+*                                                                     * 00460000
+*         o  A sub-task is created for each migrated data set;        * 00470008
+*            this sub-task issues a LOCATE macro with the             * 00480008
+*            CAMHSMRC bit on.                                         * 00490008
+*                                                                     * 00500000
+*         o  Then, RECALL waits for the sub-tasks to complete         * 00510005
+*            and terminates.                                          * 00520005
+*                                                                     * 00530000
+* RESTRICTIONS                                                        * 00540006
+*                                                                     * 00550006
+*         RECALL does NOT process the following data sets:            * 00560006
+*                                                                     * 00570006
+*         o  GDG ALL                                                  * 00580007
+*                                                                     * 00590000
+* INVOCATION JCL                                                      * 00600003
+*                                                                     * 00610000
+*            //MYJOB   JOB (ACCT#),'JOHN DOE', . . .                  * 00620000
+*            //*                                                      * 00630000
+*            //JOBLIB   DD . . . .                                    * 00640000
+*            //*                                                      * 00650000
+*            //RECALL EXEC PGM=RECALL                                 * 00660003
+*            //*                                                      * 00670000
+*            //STEP1   EXEC PROC=MYPROC, . . .                        * 00680000
+*                                                                     * 00690000
+* RETURN CODES                                                        * 00700003
+*                                                                     * 00710000
+*            Always zero                                              * 00720006
+*                                                                     * 00730000
+*                                                                     * 00740000
+* Messages = RECALL Activity log on DDname $$RECALL                   * 00750006
+*                                                                     * 00760000
+* CHANGE ACTIVITY                                                     * 00770003
+*                                                                     * 00780000
+*   203  New packaging for the CBT tape                               * 00790003
+*   204  XCTL to HRECALL if I've been invoked as a TSO command        * 00800004
+*   205  Create sub-tasks and use WAIT=YES on ARCHRCAL macros         * 00810005
+*   206  Write out messages to //$$RECALL DD                          * 00820006
+*   207  Process referback dsnames (VOL=REF, DCB, LIKE)               * 00830007
+*        Process generation data sets (GDS)                           * 00840007
+*   208  Replace ARCHRCAL with LOCATE macro                           * 00850008
+*   209  Use QNAME outside of the DCB to prevent ENQ errors           * 00860009
+*                                                                     * 00870000
+&REL     SETC  'R209'                                                 * 00880009
+*********************************************************************** 00890000
+RECALL   CSECT                                                          00900003
+RECALL   AMODE 31                                                       00910006
+         SAVE  (14,12),,'GSF Utilities - RECALL &REL'                   00920009
+         LR    R12,R15                                                  00930009
+         USING RECALL,R12                                               00940009
+*                                                                       00950000
+*        XCTL to HRECALL if I've been invoked as a TSO command          00960004
+*                                                                       00970000
+         CLI   0(R1),X'80'             invoked as a batch pgm?          00980004
+         BE    INIT20                  yes, proceed further             00990004
+         XCTL  (2,12),EP=HRECALL       no, exit to HSM HRECALL command  01000009
+*                                                                       01010000
+INIT20   GETMAIN RU,LV=DYNAML,LOC=BELOW,BNDRY=PAGE                      01020006
+         ST    R13,4(,R1)                                               01030000
+         ST    R1,8(,R13)                                               01040000
+         LM    R13,R1,8(R13)                                            01050000
+         USING DYNAM,R13                                                01060000
+         MVC   JCLPARM,0(R1)           SAVE THE PARM ADDR               01070000
+         GETMAIN RU,LV=8192*L'DSNAME,LOC=ANY                            01080007
+         ST    R1,TABLE1               save table address               01090007
+*---------------------------------------------------------------------* 01100000
+*                                                                     * 01110000
+*        Set up scan from first step after ours.                      * 01120000
+*                                                                     * 01130000
+*---------------------------------------------------------------------* 01140000
+INIT50   L     R3,540(,0)              MY TCB (PSATOLD-PSA)             01150009
+         L     R4,TCBJSCB-TCB(,R3)     MY JSCB                          01160000
+         USING IEZJSCB,R4                                               01170000
+         L     R5,JSCSCT               CURRENT STEP'S SCT PREFIX        01180000
+         USING SCT,R5                                                   01190000
+         SLR   R10,R10                 SET RC=00 (NOTHING RECALLED)     01200000
+*                                                                       01210007
+         LM    R14,R1,CAMLST$          MODEL CAMLST                     01220007
+         LA    R15,DSNAME              Data set name                    01230007
+         LA    R1,WORK265              WORK AREA                        01240007
+         STM   R14,R1,CAMLST2          UPDATE CAMLST IN DYNAMIC STRGE   01250007
+*                                                                       01260008
+         IDENTIFY EPLOC=SUB_TASK,ENTRY=SUB_TASK+8                       01270008
+ LR R2,R15                                                              01280008
+ LOAD EPLOC=SUB_TASK                                                    01290008
+*********************************************************************** 01300000
+*                                                                     * 01310000
+*        SCAN SCT/SIOT CHAINS                                         * 01320000
+*                                                                     * 01330000
+*           1. Select data sets that have DISP=OLD or DISP=MOD        * 01340000
+*                                                                     * 01350000
+*           2. Checks if the data sets have been migrated by DFHSM    * 01360000
+*              (i.e. cataloged on VOL=MIGRAT)                         * 01370008
+*                                                                     * 01380000
+*           3. Issue an internal HRECALL command for each migrated    * 01390000
+*              data set                                               * 01400000
+*                                                                     * 01410000
+*********************************************************************** 01420000
+*LOOP                                                                   01430000
+LOOPSCT  ICM   R1,B'0111',SCTFSIOT     PREFIX OF 1ST SIOT               01440007
+         BZ    NEXTSTEP                NO DD STATEMENTS, TRY NEXT SCT   01450000
+*--LOOP                                                                 01460000
+LOOPSIOT BAL   R11,SWAREQ              CONVERT SVA TO 31-BIT ADDRESS    01470009
+         LR    R6,R1                   PASS SIOT ADDRESS                01480007
+         USING SIOT,R6                                                  01490007
+*                                                                       01500007
+*        process refer-backs (VOL=REF, DCB, LIKE)                       01510007
+*                                                                       01520007
+REFBACK  ICM   R0,B'0001',SIOVDSNL     length of VOL=REF dsname         01530007
+         BZ    REFBACK2                zero, ignore                     01540007
+         LH    R1,SIOVDSNT             offset in DSNTABLE               01550007
+         SYNCH SCAN_DSNTABLE           extract dsname from DSNT         01560007
+         SYNCH PROCESS_DSNAME          process dsname                   01570007
+REFBACK2 EQU   *                                                        01580007
+         ICM   R0,B'0001',SIODDSNL     length of DCB dsname             01590007
+         BZ    REFBACK3                zero, ignore                     01600007
+         LH    R1,SIODSNTE             offset in DSNTABLE               01610007
+         SYNCH SCAN_DSNTABLE           extract dsname from DSNT         01620007
+         SYNCH PROCESS_DSNAME          process dsname                   01630007
+REFBACK3 EQU   *                                                        01640007
+         ICM   R1,B'1111',SIOTSWB      First SWB                        01650007
+         BZ    REFBACK4                zero, ignore                     01660007
+         BAL   R11,SWAREQ              CONVERT SVA TO 31-BIT ADDRESS    01670009
+         LR    R7,R1                   PASS JFCB ADDRESS                01680007
+         USING SWB,R7                                                   01690007
+         MVC   DSNAME,SWBDATA+48       move LIKE dsname                 01700007
+         SYNCH PROCESS_DSNAME          process dsname                   01710007
+REFBACK4 EQU   *                                                        01720007
+*                                                                       01730007
+*        process JFCB                                                   01740007
+*                                                                       01750007
+         TM    SCTSBYT3,SCTSOLD+SCTSMOD   DISP=OLD/SHR/MOD ?            01760000
+         BZ    NEXTSIOT                NO, JUMP                         01770007
+         ICM   R1,B'0111',SCTPJFCB     JFCB PREFIX                      01780000
+         BAL   R11,SWAREQ              CONVERT SVA TO 31-BIT ADDRESS    01790009
+         LR    R7,R1                   PASS JFCB ADDRESS                01800007
+         USING JFCB,R7                                                  01810007
+         TM    JFCBIND2,JFCTEMP        temporary data set?              01820007
+         BO    NEXTSIOT                YES, IGNORE                      01830007
+         CLI   JFCBELNM,C'+'           DSNAME(+1)  ?                    01840001
+         BE    NEXTSIOT                YES, IGNORE                      01850007
+         MVC   DSNAME,JFCBDSNM         move data set name               01860007
+         CLI   JFCBELNM,C'0'           dsname(0) ?                      01870007
+         BE    GDS3                    yes, jump                        01880007
+         CLI   JFCBELNM,C'-'           dsname(-1) ?                     01890007
+         BNE   GDS4                    no, jump                         01900007
+GDS3     STRING (JFCBDSNM,,T),'(',(JFCBELNM,,T),')',INTO=DSNAME         01910007
+         LOCATE CAMLST2                convert (0) to G0010V00          01920007
+         LTR   R15,R15                 IS IT CATALOGED?                 01930007
+         BNZ   NEXTSIOT                NO, IGNORE                       01940007
+GDS4     EQU   *                                                        01950007
+         SYNCH PROCESS_DSNAME          process dsname                   01960007
+*                                                                       01970000
+NEXTSIOT ICM   R1,B'0111',SCTPSIOT     NEXT SIOT'S PREFIX               01980000
+         BNZ   LOOPSIOT                PROCESS NEXT DD CARD IN STEP     01990000
+*--ENDLOOP                                                              02000006
+NEXTSTEP ICM   R5,B'0111',SCTANSCT     NEXT SCT PREFIX                  02010000
+         BNZ   LOOPSCT                 PROCESS NEXT STEP                02020000
+*ENDLOOP                                                                02030006
+*                                                                       02040000
+*        wait for completion of all sub-tasks                           02050005
+*                                                                       02060000
+         LTR   R10,R10                 any sub-task attached?           02070008
+         BZ    GOBACK                  no, quit                         02080005
+*                                                                       02090000
+*        Close/open the DCB to make messages visible in SDSF            02100007
+*                                                                       02110007
+         ENQ   MF=(E,DYNAMENQ)         serialize DCB                    02120006
+         CLOSE MF=(E,OPENLIST)         CLOSE the DCB                    02130006
+         OPEN  MF=(E,OPENLIST)         re-open the DCB                  02140006
+         DEQ   MF=(E,DYNAMENQ)         free DCB                         02150006
+*                                                                       02160000
+         WAIT  1,ECB=ECB1              wait for all subtasks to end     02170005
+         CLOSE MF=(E,OPENLIST)         CLOSE the DCB                    02180006
+         FREEPOOL DYNAMDCB             free the buffers                 02190006
+*                                                                       02200000
+GOBACK   L     R13,4(,R13)             CALLER'S SAVE AREA               02210000
+         RETURN (14,12),RC=0                                            02220006
+*********************************************************************** 02230007
+*                                                                     * 02240007
+*        Process a dsname                                             * 02250007
+*                                                                     * 02260007
+*        1. eliminate duplicates                                      * 02270007
+*        2. retrieve catalog information                              * 02280007
+*        3. select migrated data sets                                 * 02290007
+*        4. count sub-tasks and issue message                         * 02300007
+*        5. attach HRECALL sub-task                                   * 02310007
+*                                                                     * 02320007
+*********************************************************************** 02330007
+PROCESS_DSNAME EQU *                                                    02340007
+*                                                                       02350007
+*        check if this dsname has already been processed                02360007
+*                                                                       02370007
+SCANTBL1 L     R1,TABLE1               start of dsn table               02380007
+*LOOP                                                                   02390007
+SCANTBL2 CLI   0(R1),0                 end of table ?                   02400007
+         BE    SCANTBL8                yes, exit                        02410007
+         CLC   0(L'DSNAME,R1),DSNAME   dsname already processed?        02420007
+         BE    PROCESS9                YES, IGNORE                      02430007
+         LA    R1,L'DSNAME(,R1)        next entry in TABLE1             02440007
+         B     SCANTBL2                check next entry                 02450007
+*ENDLOOP                                                                02460007
+SCANTBL8 MVC   0(L'DSNAME,R1),DSNAME   save dsname address              02470007
+         LR    R7,R1                   address of dsname                02480007
+*                                                                       02490007
+*        Retrieve catalog information and select migrated data sets     02500007
+*                                                                       02510007
+         LOCATE CAMLST2                GET VOLSER                       02520007
+         LTR   R15,R15                 IS IT CATALOGED?                 02530007
+         BNZ   PROCESS9                NO, IGNORE                       02540007
+         CLC   =C'MIGRAT',VOLSER       is it archived?                  02550007
+         BNE   PROCESS9                NO, IGNORE                       02560007
+*                                                                       02570007
+         MVI   ML$,C'1'                ML1                              02580007
+         CLI   DEVTYPE+2,X'20'         ML1?                             02590007
+         BE    *+8                     yes, jump                        02600007
+         MVI   ML$,C'2'                no, ML2                          02610007
+*                                                                       02620007
+*        Count sub-tasks                                                02630007
+*                                                                       02640007
+BUMPCNT  L     R1,SUBTASKS             COUNT SUB-TASKS                  02650007
+         LA    R10,1(,R1)              COUNT SUB-TASKS                  02660007
+         CS    R1,R10,SUBTASKS         COUNT SUB-TASKS                  02670007
+         BNZ   BUMPCNT                 try again                        02680007
+*                                                                       02690007
+         BAL   R11,OPENDCB             alloc/open message DCB           02700009
+*                                                                       02710007
+*        Issue message                                                  02720007
+*                                                                       02730007
+         ENQ   MF=(E,DYNAMENQ)         serialize DCB                    02740007
+         STRING 1X,%TIME,'Task ',((R10),,L),                           X02750008
+               ' Recalling ',((R7),L'DSNAME,T),                        X02760008
+               ' from ML',ML$,                                         X02770007
+               INTO=LINE                                                02780007
+         LA    R15,*+6                 switch to AMODE24 for PUT        02790007
+         BSM   0,R15                   switch to AMODE24 for PUT        02800007
+         PUT   DYNAMDCB,LINE           write message                    02810007
+         L     R15,=A(*+X'80000006')   switch to AMODE31                02820007
+         BSM   0,R15                   switch to AMODE31                02830007
+         DEQ   MF=(E,DYNAMENQ)         free DCB                         02840007
+*---------------------------------------------------------------------* 02850007
+*                                                                     * 02860007
+*        attach HRECALL sub-task                                      * 02870007
+*                                                                     * 02880007
+*---------------------------------------------------------------------* 02890007
+         L     R14,16                  CVTPTR                           02900007
+         L     R0,8(,R14)              CVTLINK                          02910007
+         IC    R2,ML$                  mig level                        02920007
+         LA    R3,ECB1                 point at ECB and SUBTASKS        02930007
+         ATTACH EPLOC=SUB_TASK,        attach HRECALL sub-task         X02940007
+               SZERO=YES,              Share sub-pool zero             X02950007
+               TASKLIB=(R0),           LINK-LIST DCB                   X02960007
+               ETXR=ETXR00,            end-of-task exit routine        X02970007
+               SF=(E,ATTACHL)                                           02980007
+PROCESS9 SVC   3                       GOBACK                           02990007
+*********************************************************************** 03000007
+*                                                                     * 03010007
+*        Extract dsname from DSNT                                     * 03020007
+*                                                                     * 03030007
+*********************************************************************** 03040007
+SCAN_DSNTABLE LA R3,255                mask for NR                      03050007
+         NR    R3,R0                   length of dsname in DSNT         03060007
+         LR    R7,R1                   offset to dsn in DSNT            03070007
+         ICM   R1,B'0111',SCTADSTB     SVA OF DSNT                      03080007
+         BZ    SCAN_D99                NO DSNT, EXIT                    03090007
+*LOOP                                                                   03100007
+SCAN_D2  BAL   R11,SWAREQ              CONVERT SVA TO 31-BIT ADDRESS    03110009
+         USING DSNTABLE,R1                                              03120007
+         SH    R7,=AL2(L'DSNENTRY)     DSNT                             03130007
+         BM    SCAN_D4                 DSNT                             03140007
+         ICM   R1,B'0111',DSNTNSVA     SVA OF DSNT                      03150007
+         BNZ   SCAN_D2                 NO DD CARDS, RETURN              03160007
+*ENDLOOP                                                                03170007
+         MVI   DSNAME,0                DSN NOT FOUND                    03180007
+         B     SCAN_D99                EXIT                             03190007
+SCAN_D4  LA    R2,DSNENTRY+L'DSNENTRY(R7) point at dsname               03200007
+         STRING ((R2),(R3)),INTO=DSNAME                                 03210007
+SCAN_D99 SVC   3                       GOBACK                           03220007
+         DROP  R4,R5,R6,R7,R1          JSCB, SCT, SIOT, JFCB, DSNT      03230007
+*---------------------------------------------------------------------* 03240006
+*                                                                     * 03250000
+*        Allocate/OPEN message DCB                                    * 03260006
+*                                                                     * 03270000
+*---------------------------------------------------------------------* 03280006
+OPENDCB  TM    DYNAMDCB+48,X'10'       DCB open already?                03290006
+         BOR   R11                     yes, goback                      03300009
+*                                                                       03310000
+         LA    R1,DYNAMDCB             WORK AREA FOR DYNALLOC           03320006
+         MVI   0(R1),20                LENGTH                           03330006
+         MVI   1(R1),1                 VERB=ALLOC                       03340006
+         LA    R0,=A(INIT9901,INIT9902,INIT9918,INIT9952+X'80000000')   03350009
+         ST    R0,8(,R1)               S99TUPTR                         03360006
+         ST    R1,20(,R1)              WORK AREA ADDRESS                03370006
+         LA    R1,20(,R1)              S99RBPTR                         03380006
+         OI    0(R1),X'80'             S99RBPTR                         03390006
+         DYNALLOC                      ALLOCATE //$$RECALL DD SYSOUT=*  03400008
+*                                                                       03410000
+         MVC   DYNAMDCB,MODELDCB       move model DCB                   03420006
+         MVC   DYNAMENQ,MODELENQ       move model ENQ                   03430006
+         LA    R0,DYNAMDCB             build OPEN list                  03440006
+         ST    R0,OPENLIST             build OPEN list                  03450006
+         MVI   OPENLIST,X'8F'          build OPEN list                  03460006
+         OPEN  MF=(E,OPENLIST)         OPEN the DCB                     03470006
+         STRING '1RECALL Utility &REL',                                X03480008
+               INTO=LINE                                                03490008
+         PUT   DYNAMDCB,LINE           write title line                 03500008
+         BR    R11                                                      03510009
+*                                                                       03520000
+MODELDCB  DCB  DSORG=PS,MACRF=PM,DDNAME=$$RECALL,RECFM=FBA,LRECL=L'LINE 03530008
+MODELDCBL EQU  *-MODELDCB                                               03540006
+MODELENQ  ENQ  ($$RECALL,$$RECALL,E),MF=L                               03550006
+MODELENQL EQU  *-MODELENQ                                               03560006
+CAMLST$  CAMLST NAME,*-*,,*-*          CAMLST FOR LOCATE MACRO          03570000
+FIVESEC  DC    F'500'                  500 1/100th of a second          03580000
+INIT9901 DC    AL2(1,1,L'$$RECALL)     DDNAME                           03590009
+$$RECALL DC    CL8'$$RECALL'           DDNAME                           03600009
+INIT9902 DC    AL2(2,1,L'$$RECALL2)    DSN=&&$$RECALL                   03610009
+$$RECALL2 DC   C'&&&&$$RECALL'         DSNAME                           03620009
+INIT9918 DC    X'0018,0000'            SYSOUT=*                         03630006
+INIT9952 DC    X'0052,0000'            PERMANENTLY ALLOCATED            03640006
+*---------------------------------------------------------------------* 03650000
+*                                                                     * 03660000
+*        SUB-ROUTINE USED TO ACCESS THE SWA MANAGER                   * 03670000
+*                                                                     * 03680000
+*---------------------------------------------------------------------* 03690000
+SWAREQ   LA    R2,WORK265              WORK AREA                        03700000
+         ST    R2,EPAPTR               STORE POINTER                    03710000
+         USING ZB505,R2                                                 03720000
+         XC    SWAEPAX,SWAEPAX         CLEAR 32 BYTES                   03730000
+         STCM  R1,B'0111',SWVA         STORE 3-BYTE SVA                 03740000
+         SWAREQ FCODE=RL,EPA=EPAPTR,MF=(E,SWAREQL1),UNAUTH=YES          03750000
+         L     R1,SWBLKPTR             LOAD SWA CONTROL BLOCK ADDRESS   03760000
+         BR    R11                                                      03770009
+         DROP  R13                                                      03780005
+*********************************************************************** 03790005
+*                                                                     * 03800000
+*        HRECALL sub-task                                             * 03810005
+*                                                                     * 03820006
+*        1. allocate 24-bit work area                                 * 03830006
+*        2. move dsname from TABLE1 to work area                      * 03840007
+*        3. issue LOCATE with CAMHSMRC bit on                         * 03850008
+*        4. format completion message and write it out                * 03860006
+*        5. terminate                                                 * 03870006
+*                                                                     * 03880000
+*********************************************************************** 03890005
+         CNOP  0,8                                                      03900005
+SUB_TASK DC    C'/HRECALL'                                              03910005
+         ST    R3,0(,R13)              save A(ECB1) for ETXR            03920008
+         USING ECB1,R3                                                  03930008
+*                                                                       03940000
+         GETMAIN RU,LV=TASKWORKL       get work area                    03950008
+         LR    R4,R1                   pass addr of work area           03960005
+         USING TASKWORK,R4                                              03970006
+         MVC   TASKDSN,0(R7)           move dsname to 24-bit area       03980007
+         STC   R2,TASKML$              same mig lvl                     03990006
+*                                                                       04000000
+         LM    R14,R1,CAMLST$          MODEL CAMLST                     04010008
+         LA    R15,TASKDSN             Data set name                    04020008
+         LA    R1,TASKW265             WORK AREA                        04030008
+         STM   R14,R1,TASKCAML         UPDATE CAMLST IN DYNAMIC STRGE   04040008
+         OI    CAMOPTN3,CAMHSMRC       HSM RECALL                       04050008
+         LOCATE TASKCAML               LOCATE/RECALL                    04060008
+         STM   R15,R0,TASKRETC         return code, reason code         04070006
+*                                                                       04080000
+*        Issue completion message                                       04090008
+*                                                                       04100000
+         ENQ   MF=(E,DYNAMENQ)         serialize DCB                    04110006
+         STRING 1X,%TIME,'Task ',((R10),,L),                           X04120008
+               1X,(TASKDSN,,T),' recalled from ML',TASKML$,            X04130008
+               INTO=LINE                                                04140006
+         L     R15,TASKRETC            return code                      04150006
+         A     R15,TASKRETC+4          reason code                      04160006
+         BZ    SUBT084                 all zero, jump                   04170006
+         STRING 1X,%TIME,'Task ',((R10),,L),                           X04180008
+               ' HRECALL failed for ',(TASKDSN,,T),                    X04190006
+               ', RC=',(TASKRETC+2,2,X),',REASON=',(TASKRETC+6,2,X),   X04200006
+               INTO=LINE                                                04210006
+*                                                                       04220006
+SUBT084  LA    R15,SUBT085             switch to AMODE24 for PUT        04230006
+         BSM   0,R15                   switch to AMODE24 for PUT        04240006
+SUBT085  PUT   DYNAMDCB,LINE           write message                    04250006
+         DEQ   MF=(E,DYNAMENQ)         free DCB                         04260006
+*                                                                       04270000
+         FREEMAIN RU,LV=TASKWORKL,A=(R4) free work area                 04280008
+         LR    R15,R6                  return code                      04290006
+         SVC   3                       exit                             04300005
+         DROP                                                           04310005
+*********************************************************************** 04320006
+*                                                                     * 04330000
+*        End of task exit routine; invoked via an IRB under           * 04340006
+*        the main task's TCB.                                         * 04350006
+*                                                                     * 04360000
+*        1. detach the sub-task                                       * 04370006
+*        2. decrement the number of active sub-tasks (SUBTASKS field) * 04380006
+*        3. post the main task if the SUBTASKS field is zero          * 04390006
+*                                                                     * 04400000
+*********************************************************************** 04410006
+ETXR00   L     R13,TCBFSA-TCB(,R1)     point to subtask's FSA           04420005
+         L     R12,0(,R13)             get A(ECB1)                      04430006
+         USING ECB1,R12                                                 04440006
+         BALR  R11,0                                                    04450006
+         USING *,R11                                                    04460006
+         ST    R1,0(,R13)              store TCB address                04470006
+         DETACH (R13)                  detach sub-task                  04480005
+*                                                                       04490000
+*        decrement sub-task count, post ECB1 if count reaches zero      04500006
+*                                                                       04510000
+ETXR21   L     R6,SUBTASKS             sub-task count                   04520005
+         LR    R7,R6                   sub-task count                   04530005
+         BCT   R7,ETXR22               decrement, br if not zero        04540005
+         POST  ECB1,0                  post ECB1 if R7=0                04550005
+ETXR22   CS    R6,R7,SUBTASKS          update sub-task count            04560005
+         BNE   ETXR21                  do it again                      04570005
+*                                                                       04580000
+         SVC   3                       exit                             04590005
+*---------------------------------------------------------------------* 04600005
+*                                                                     * 04610000
+*        Dynamic storage (main task)                                  * 04620006
+*                                                                     * 04630000
+*---------------------------------------------------------------------* 04640005
+DYNAM    DSECT                                                          04650000
+         DS    18F                                                      04660000
+JCLPARM  DS    A                       JCL PARM field                   04670000
+CAMLST2  CAMLST NAME,DSNAME,,WORK265   CAMLST FOR LOCATE MACRO          04680007
+SWAREQL1 SWAREQ MF=L                   PARM LIST FOR SWAREQ             04690000
+EPAPTR   DS    F                       POINTER TO EPA (ZB505)           04700000
+DSNAME   DS    CL44                    DSNAME                           04710007
+WORK265  DS    CL265                   LOCATE COMMAND                   04720007
+DEVTYPE  EQU   WORK265+2,4,C'X'        device type                      04730002
+VOLSER   EQU   WORK265+6,6,C'C'        volser                           04740002
+ML$      DS    C'1'                                                     04750006
+ATTACHL  ATTACH SF=L                                                    04760005
+OPENLIST OPEN  (DYNAMDCB,OUTPUT),MF=L                                   04770006
+*                                                                       04780000
+*        data accessible from the sub-task and ETXR exit                04790006
+*                                                                       04800000
+ECB1     DS    F                       comm ECB                         04810005
+SUBTASKS DS    F                       sub-task counter                 04820005
+DYNAMDCB DS    XL(MODELDCBL)           DCB                              04830006
+DYNAMENQ DS    XL(MODELENQL)           ENQ list                         04840006
+LINE     DS    CL80                    print line                       04850006
+*                                                                       04860000
+TABLE1   DS    A(DSNAME)               data sets already processed      04870007
+*                                                                       04880000
+DYNAML   EQU   *-DYNAM                                                  04890000
+*---------------------------------------------------------------------* 04900006
+*                                                                     * 04910000
+*        SUB-TASK WORK AREA                                           * 04920006
+*                                                                     * 04930000
+*---------------------------------------------------------------------* 04940006
+TASKWORK DSECT                                                          04950006
+TASKDSN  DS    CL44                    dsname                           04960006
+TASKML$  DS    C                       ML1/ML2                          04970006
+TASKRETC DS    F,F                     return code, reason code         04980006
+TASKW265 DS    XL265                   LOCATE work area                 04990008
+TASKCAML CAMLST NAME,TASKDSN,,TASKW265 CAMLST FOR LOCATE MACRO          05000008
+CAMOPTN3 EQU   TASKCAML+2,1,C'X'       THIRD OPTION BYTE                05010008
+CAMHSMRC EQU   X'20'                   HSM RECALL                       05020008
+TASKWORKL EQU  *-TASKWORK                                               05030006
+*---------------------------------------------------------------------* 05040005
+*                                                                     * 05050000
+*        DSECTS FOR VARIOUS MVS CONTROL BLOCKS                        * 05060005
+*                                                                     * 05070000
+*---------------------------------------------------------------------* 05080005
+         PRINT NOGEN                                                    05090005
+PRINT    OPSYN ANOP                                                     05100000
+         IKJTCB LIST=NO                SYS1.MODGEN                      05110000
+         IEZJSCB                       SYS1.MODGEN                      05120007
+SCT      DSECT                         Step Control Table               05130000
+         DS    XL16                    PREFIX                           05140000
+         IEFASCTB                      SYS1.MODGEN                      05150007
+         IEFDSNT                       SYS1.MODGEN                      05160007
+SIOT     DSECT                         Step I/O Table                   05170000
+         IEFASIOT                      SYS1.MODGEN                      05180007
+JFCB     DSECT                         Job File Control Block           05190000
+         IEFJFCBN                      SYS1.MODGEN                      05200007
+         IEFSWB                        SYS1.MODGEN                      05210007
+         CVT   LIST=NO,DSECT=YES       COMMUNICATION VECTOR TABLE       05220000
+         IEFZB505 LOCEPAX=YES          EPA MAPPING FOR SWAREQ           05230000
+         IEFJESCT TYPE=DSECT           JES CONTROL TABLE                05240000
+         YREGS                         SYS1.MACLIB                      05250000
+         STRING GENERATE                                                05260006
+         END   RECALL                                                   05270006
+//SYSLIB   DD DSN=SYS1.MODGEN,DISP=SHR                                  05280000
+//         DD DSN=SYS1.MACLIB,DISP=SHR                                  05290000
+//         DD DSN=CBTTAPE.FILE183.PDS,DISP=SHR    STRING                05300009
+//SYSUT1   DD UNIT=VIO,SPACE=(CYL,2)                                    05310000
+//SYSPRINT DD SYSOUT=*                                                  05320000
+//SYSLIN   DD UNIT=VIO,SPACE=(TRK,1),DISP=(,PASS),BLKSIZE=3200          05330009
+//*                                                                     05340000
+//LKED    EXEC PGM=IEWL,PARM=(MAP,RENT)                                 05350003
+//SYSLIN   DD DSN=*.HLASM.SYSLIN,DISP=(OLD,PASS)                        05360009
+//SYSLMOD  DD DSN=CBTTAPE.FILE183.LOAD(RECALL),DISP=SHR                 05370009
+//SYSPRINT DD SYSOUT=*                                                  05380000
+//*                                                                     05390000
+//GO      EXEC PGM=RECALL                                               05400005
+//STEPLIB  DD DSN=*.LKED.SYSLMOD,DISP=SHR                               05410005
+//SYSDEBUG DD SYSOUT=*                                                  05420000
+//ABNLIGNR DD DUMMY                                                     05430005
+//SYSUDUMP DD SYSOUT=*                                                  05440000
+//*                                                                     05450000
+//STEP99 EXEC PGM=IEFBR14,COND=(99,NE)                                  05460005
+//DD1 DD    LIKE=GILBERT.XREF32.DJCLIPT                                 05470008
+//    DD VOL=REF=GILBERT.XREF32.DJCLRDR,                                05480008
+//           DCB=GILBERT.XREF32.DJCLSET                                 05490008
+//DD2 DD    LIKE=GILBERT.XREF32.DASMMAC                                 05500008
+//    DD VOL=REF=GILBERT.XREF32.DASMMOD,                                05510008
+//           DCB=GILBERT.XREF32.DASMCOP                                 05520008
+//TAPEOUT DD DSN=GILBERT.RECALL1,DISP=(MOD,CATLG),                      05530009
+// UNIT=VIO,SPACE=(TRK,1)                                               05540000
+//TAPEOUT DD DCB=GILBERT.RECALL2,                                       05550007
+// UNIT=VIO,SPACE=(TRK,1)                                               05560005
+//*                                                                     05570000
+//HMIG    EXEC PGM=IKJEFT01,COND=EVEN                                   05580003
+//SYSTSPRT DD SYSOUT=*                                                  05590000
+//SYSTSIN  DD *                                                         05600000
+HMIG 'GILBERT.RECALL1' WAIT                                             05610009
+HMIG 'GILBERT.RECALL2' WAIT                                             05620009
+HMIG 'GILBERT.XREF32.*' WAIT                                            05630009

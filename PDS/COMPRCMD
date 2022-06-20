@@ -1,0 +1,1365 @@
+//GILBERTK JOB (ACCT#),COMPRESS,                                        00010000
+//*RESTART=GO,                                                          00020005
+// NOTIFY=&SYSUID,                                                      00030008
+// CLASS=A,MSGCLASS=H,COND=(0,NE)                                       00040009
+//HLASM EXEC PGM=ASMA90,PARM=(OBJECT,NODECK,NOESD,NORLD,NOXREF)         00050018
+*********************************************************************** 00060000
+*                                                                     * 00070000
+* MODULE NAME = COMPRESS                                              * 00080011
+*                                                                     * 00090000
+* DESCRIPTIVE NAME = COMPRESS a PDS with DISP=SHR                     * 00100014
+*                                                                     * 00110000
+* STATUS = R323                                                       * 00120023
+*                                                                     * 00130000
+* FUNCTION = This TSO/E command allows you to compress a partitionned * 00140011
+*            data set with DISP=SHR using a protection scheme         * 00150012
+*            compatible with ISPF and the linkage-editor.             * 00160012
+*            It also allows you to compress several data sets with a  * 00170011
+*            single command by specifying a generic data set name     * 00180011
+*            such as 'SYS2.*'.  Together with the command itself,     * 00190011
+*            there is an edit macro particularly handy when abend     * 00200011
+*            SD37 strikes the PDS you're editing.                     * 00210011
+*                                                                     * 00220000
+* AUTHOR = Gilbert Saint-Flour <carlos@gsf-soft.com>                  * 00230019
+*          http://gsf-soft.com/Freeware/                              * 00240021
+*                                                                     * 00250000
+* NOTES = SEE BELOW                                                   * 00260011
+*                                                                     * 00270000
+*    DEPENDENCIES = MVS/ESA 4.3                                       * 00280018
+*                   DFSMS/MVS                                         * 00290018
+*                   TSO/E 1.3                                         * 00300014
+*                   STRING macro R400                                 * 00310014
+*                                                                     * 00320000
+*    AUTHORIZATION = NONE                                             * 00330011
+*                                                                     * 00340000
+*    RESTRICTIONS = NONE                                              * 00350011
+*                                                                     * 00360000
+* MODULE TYPE = PROCEDURE, (TSO Command Processor)                    * 00370011
+*                                                                     * 00380000
+*    PROCESSOR = IBM OS/ASSEMBLER H VERSION 2 OR                      * 00390011
+*                IBM HIGH LEVEL ASSEMBLER/MVS                         * 00400011
+*                                                                     * 00410000
+*    MODULE SIZE = 4K                                                 * 00420011
+*                                                                     * 00430000
+*    ATTRIBUTES = REENTERABLE, RMODE 24, AMODE 31,                    * 00440011
+*                 PROBLEM STATE, KEY 8                                * 00450011
+*                                                                     * 00460000
+* SYNTAX = See Below                                                  * 00470011
+*                                                                     * 00480000
+*            COMPRESS 'data-set-name'                                 * 00490007
+*                      VOLUME('volser')                               * 00500007
+*                      CHECK/NOCHECK                                  * 00510007
+*                      SHR/OLD/LLAREFRESH                             * 00520021
+*                      CHANGED/NOCHANGED                              * 00530007
+*                      SETMSG                                         * 00540013
+*                                                                     * 00550000
+*            'data-set-name' is the dsname of the data set or         * 00560007
+*            a generic dsname like 'ISP.V2R3M0.*'.                    * 00570007
+*            If you specify a generic name, "COMPRESS" retrieves      * 00580011
+*            the full data sets names from the catalog.               * 00590007
+*            If the dsname is not enclosed in apostrophes,            * 00600011
+*            it is prefixed with your userid.                         * 00610014
+*            A list of data set names enclosed in parentheses         * 00620019
+*            can also be specified.                                   * 00630019
+*                                                                     * 00640000
+*            'volser' is the volume serial number of the data set     * 00650007
+*            when the data set is not cataloged or is cataloged on    * 00660007
+*            another volume.                                          * 00670007
+*                                                                     * 00680000
+*            'OLD' specifies that the data-set(s) should be allo-     * 00690007
+*            cated with DISP=OLD instead of SHR, which is the         * 00700007
+*            default.  During a generic compress, 'OLD' allows you    * 00710007
+*            to make sure that the data sets currently allocated      * 00720007
+*            by other jobs are not compressed.                        * 00730007
+*                                                                     * 00740000
+*            'LLAREFRESH' instructs COMPRESS to issue LLACOPY for     * 00750021
+*            each member in the compressed PDS to refresh LLA         * 00760021
+*            directory pointers. To satisfy LLACOPY authorisation     * 00770021
+*            requirements, COMPRESS must be specified in the          * 00780021
+*            AUTHTSF section of the IKJTSOxx member.                  * 00790021
+*                                                                     * 00800000
+*            CHECK/NOCHECK are key-words that only apply to           * 00810007
+*            MVS systems with ASM2 installed.                         * 00820007
+*            'CHECK' is the default and indicates that during a       * 00830007
+*            generic compress operation, a data set should not        * 00840007
+*            be compressed if its asm2id (ds1syscd+8 in the           * 00850007
+*            f1-dscb) is identical to the job name; in other          * 00860007
+*            words, if the PDS hasn't been updated since the last     * 00870007
+*            time your job processed it, there's no need to           * 00880007
+*            compress it again.                                       * 00890007
+*            'NOCHECK' indicates that the PDS should be               * 00900007
+*            compressed regardless of what ASM2ID contains.           * 00910007
+*                                                                     * 00920000
+*            'CHANGED' indicates that during a generic compress       * 00930007
+*            operation, a data set should not be compressed if its    * 00940007
+*            DS1DSCHA bit is off, in other words, if the PDS          * 00950007
+*            hasn't been updated since the last time it's been        * 00960007
+*            backed up.  This is the default.                         * 00970016
+*            'NOCHANGED' indicates that the PDS should be             * 00980007
+*            compressed regardless of the setting of the changed bit. * 00990007
+*                                                                     * 01000000
+*            'SETMSG' is an option used by the COMPRESS edit macro.   * 01010013
+*                                                                     * 01020000
+* OPERATION = See Below                                               * 01030011
+*                                                                     * 01040000
+*           1. The "COMPRESS" command requires no APF authorization   * 01050000
+*              and can be executed out of any load library.           * 01060000
+*              "COMPRESS" uses the TSO/E service routine (IKJEFTSR)   * 01070000
+*              to create the authorized environment required to       * 01080000
+*              execute IEBCOPY.  The default IKJEFTAP table           * 01090000
+*              is set up for this purpose (and so is the IKJTSOxx     * 01100007
+*              parmlib member if your system supports it).            * 01110007
+*                                                                     * 01120000
+*           2. The protection scheme used by "COMPRESS" is            * 01130007
+*              similar to the one implemented by ISPF/PDF V2 and      * 01140007
+*              protects against simultaneous updates by ISPF and      * 01150022
+*              the linkage editor.  However, when you compress a      * 01160007
+*              PDS with DISP=SHR you don't have any read              * 01170007
+*              integrity.  This is particularly critical for          * 01180007
+*              load libraries and compressing one while it is         * 01190007
+*              used may cause S106 abends.                            * 01200007
+*                                                                     * 01210000
+*           3. If you specify a volser together with a generic        * 01220007
+*              data set name, "COMPRESS" looks in the catalog for     * 01230007
+*              the full data set names, skipping the data sets that   * 01240007
+*              are cataloged on other disk packs.  "COMPRESS"         * 01250007
+*              does not read the VTOC: if uncataloged data sets that  * 01260007
+*              satisfy the generic name requirement exist on the      * 01270007
+*              pack, they are not processed.                          * 01280007
+*                                                                     * 01290000
+*           4. If you intend to use the "COMPRESS" edit macro,        * 01300007
+*              copy it to a clist library such as IPO1.CMDPROC        * 01310007
+*              or ISR.V2R3M0.ISRCLIB.  That's all you need to be      * 01320007
+*              able to invoke it as an edit primary commands like     * 01330007
+*              'CANCEL' or 'RESET'.                                   * 01340007
+*              At any moment while you're editing a member, you       * 01350007
+*              may enter 'COMPRESS' to compress the PDS.  When        * 01360007
+*              it is compressed, the edit macro returns an ISPF       * 01370007
+*              message that indicates how full the PDS now is.        * 01380007
+*                                                                     * 01390000
+*           5. The TSO/E service routine creates a parallel TMP       * 01400007
+*              to invoke IEBCOPY.                                     * 01410007
+*              This is what the TCB structure looks like while        * 01420007
+*              IEBCOPY is executing:                                  * 01430007
+*                                                                     * 01440000
+*                IKJEFT01           TMP INIT (JSTCB)                  * 01450003
+*                  IKJEFT02         TMP MAINLINE                      * 01460003
+*                    IKJEFT09       TMP SECOND LEVEL                  * 01470003
+*                      COMPRESS     COMMAND PROCESSOR                 * 01480003
+*                  IKJEFT02         TMP MAINLINE (PARALLEL TMP)       * 01490003
+*                    IKJEFT09       TMP SECOND LEVEL (PARALLEL TMP)   * 01500003
+*                      IEBCOPY      IEBCOPY                           * 01510003
+*                                                                     * 01520000
+*           6. The STTMPMD (set TMP mode) macro is used to disable    * 01530007
+*              the attention and PA1 keys.  This prevents users       * 01540015
+*              from destroying their PDS which can so easily happen   * 01550015
+*              when they use ISPF compress services.                  * 01560015
+*                                                                     * 01570000
+* CHANGE ACTIVITY                                                     * 01580011
+*                                                                     * 01590000
+*260 MODIFIED FOR TSO/E VERSION 2 (AMODE=31)                     1992 * 01600000
+*261 SHR/OLD, Statistics                                              * 01610001
+*262 Ignore migrated data sets                                        * 01620002
+*263 STOP Command                                                     * 01630003
+*264 CHANGED/NOCHANGED                                                * 01640004
+*266 Check for PDSEs and do not compress them                    1993 * 01650006
+*267 Refresh display if invoked from PDF 3.4 panel - ZDLREF           * 01660007
+*310 Change numbering scheme                                     1994 * 01670010
+*311 Goback with non-zero return-code after PARSE failure        1995 * 01680011
+*    Small changes to the REXX EXEC for ISPF 4.1                      * 01690011
+*312 Add SPACE=(TRK,10) to SYSIN/SYSPRINT allocation and              * 01700012
+*    invoke DAIRFAIL if it fails.                                     * 01710012
+*313 Add SETMSG option which sets ZMSG000S and ZMSG000L and issues    * 01720013
+*    SETMSG(ISPZ000) instead of the normal completion message;        * 01730013
+*    the COMPRESS EDIT macro no longer needs to use OUTTRAP.          * 01740013
+*314 Replace IKJTSMSG macros with STRING; issue statistics in long    * 01750014
+*    message when SETMSG option is used.                              * 01760014
+*315 Move STTMPMD macros around IEBCOPY invocation to make sure  1996 * 01770015
+*    that STTMPMD OFF is executed.                                    * 01780015
+*316 Retrieve volser from ZDLVOL when invoked from PDF 3.4       1998 * 01790016
+*    Minor technical changes                                          * 01800016
+*317 Copy DYNALLOC Return Code to MAXCC                          2003 * 01810017
+*    Replace PUT24 with GET/PUT                                       * 01820017
+*318 Force RECFM=FB,LRECL=80 in SYSIN DCB (PDSMAN/PM74127).           * 01830018
+*    Add VOLSER to MSG28                                         2004 * 01840018
+*319 Data Set List                                               2005 * 01850019
+*320 Re-read F1-DSCB in case ENQ had to wait                     2006 * 01860020
+*321 LLAREFRESH                                                       * 01870021
+*322 Add vol(volser) to final message when VOL was supplied      2009 * 01880022
+*323 Convert PARM to CPPL when invoked as a program              2010 * 01890023
+&REL     SETC  'R323'                                                 * 01900023
+*********************************************************************** 01910000
+&DATE    SETC  '&SYSDATE'(7,2)'-'.'&SYSDATE'(1,2)'-'.'&SYSDATE'(4,2)    01920022
+COMPRESS CSECT                                                          01930000
+COMPRESS AMODE 31                                                       01940000
+         SAVE (14,12),,'GSF Utilities - COMPRESS &REL 20&DATE &SYSTIME' 01950022
+         LR    R12,R15                 BASE REGISTER                    01960016
+         USING COMPRESS,R12                                             01970016
+*********************************************************************** 01980000
+*        ALLOCATE DYNAMIC STORAGE AREA                                * 01990001
+*********************************************************************** 02000000
+         LA    R0,DYNAML               SIZE OF DYNAMIC AREA             02010014
+         GETMAIN R,LV=(0)              ACQUIRE DYNAMIC STORAGE          02020014
+         ST    R13,4(,R1)                                               02030000
+         ST    R1,8(,R13)                                               02040000
+         LM    R13,R1,8(R13)           load R13, reload R1              02050023
+         USING DYNAM,R13                                                02060014
+         LR    R11,R1                  A(CPPL)                          02070023
+         USING CPPL,R11                                                 02080023
+         LA    R14,DYNAM+72            CLEAR DYNAMIC STORAGE AREA       02090014
+         LA    R15,DYNAML-72           CLEAR DYNAMIC STORAGE AREA       02100014
+         SLR   R3,R3                   CLEAR DYNAMIC STORAGE AREA       02110023
+         MVCL  R14,R2                  CLEAR DYNAMIC STORAGE AREA       02120023
+*********************************************************************** 02130021
+*        Check for re-entry via AUTHTSF(COMPRESS)                     * 02140021
+*********************************************************************** 02150021
+CHKAUTH  EQU   *                                                        02160021
+         L     R2,540(,0)              PSATOLD (own TCB)                02170021
+         L     R2,0(,R2)               TCBRBP (own PRB)                 02180021
+         ICM   R2,B'0111',RBCDE1-RBBASIC(R2) (own CDE)                  02190021
+         MVC   OWNNAME,CDNAME-CDENTRY(R2) own name                      02200021
+*                                                                       02210023
+         MVI   DYNENQL,X'80'           EOL                              02220021
+         ENQ  (OWNNAME,OWNNAME,E,L'OWNNAME,STEP),MF=(E,DYNENQL),RET=USE 02230021
+         LTR   R15,R15                 first time?                      02240021
+         BNZ   LLACOPY                 no, must be auth call from TSR   02250021
+         EXTRACT ADDRTIOT,FIELDS=TIOT,MF=(E,EXTRACTL)                   02260016
+         EXTRACT ADDRCOMM,FIELDS=COMM,MF=(E,EXTRACTL)                   02270016
+*********************************************************************** 02280023
+*        Convert PARM to CPPL when invoked as a program               * 02290023
+*********************************************************************** 02300023
+         TM    CPPL+0,X'80'            CPPL or PARM ?                   02310023
+         BZ    BLDCPPLX                CPPL, jump                       02320023
+BLDCPPL  EQU   *                                                        02330023
+         L     R1,CPPL+0               A(PARM)                          02340023
+         LH    R2,0(,R1)               R2: length of PARM field         02350023
+         STRING X'0100,0009',OWNNAME,1X,(2(R1),(R2)),                  X02360023
+               INTO=PGM_CBUF                                            02370023
+         STH   R15,PGM_CBUF+0          4+length                         02380023
+         LA    R11,DYN_CPPL            point at CPPL                    02390023
+         LA    R1,PGM_CBUF             command buffer                   02400023
+         ST    R1,CPPLCBUF             command buffer                   02410023
+         L     R1,X'0224'(0,0)         PSAAOLD   A(ASCB)                02420023
+         L     R1,X'006C'(,R1)         ASCBASXB  A(ASXB)                02430023
+         L     R1,X'0014'(,R1)         ASXBLWA   A(LWA)                 02440023
+         L     R2,X'0020'(,R1)         LWAPECT   A(ECT)                 02450023
+         ST    R2,CPPLECT              Store ECT address                02460023
+         L     R1,X'0018'(,R1)         LWAPSCB   A(PSCB)                02470023
+         ST    R1,CPPLPSCB             A(PSCB)                          02480023
+         MVC   CPPLUPT,X'0034'(R1)     PSCBUPT   A(UPT)                 02490023
+BLDCPPLX EQU   *                                                        02500023
+*********************************************************************** 02510000
+*        BUILD PARAMETER LIST FOR IKJEFF02                            * 02520000
+*********************************************************************** 02530000
+         ST    R11,MTCPPLP             STORE CPPL ADDRESS IN MTPL       02540000
+         LA    R0,MTCSECTP             MESSAGE SECTION                  02550000
+         ST    R0,MTPLPTR              STORE ADDR IN MTPL               02560000
+         LA    R0,DYNECB               EVENT CONTROL BLOCK              02570000
+         ST    R0,MTECBP               STORE ECB IN MTPL                02580000
+         L     R0,=A(MSGCSECT)         MESSAGE CSECT                    02590000
+         ST    R0,MTCSECTP             STORE ECT IN PPL                 02600000
+         OI    MTSW1,MTPUTLSW          PUTLINE IS NEEDED                02610000
+         OI    MTSW2,MTFMT             31-BIT PARM LIST                 02620000
+         USING PPL,DYNPPL              SET UP ADDRESSABILITY TO PPL     02630021
+*********************************************************************** 02640000
+*        BUILD PARSE PARM LIST, CALL IKJPARS                          * 02650000
+*********************************************************************** 02660000
+PARSE000 EQU   *                                                        02670021
+         L     R0,CPPLUPT              USER PROFILE TABLE               02680000
+         ST    R0,PPLUPT               STORE UPT ADDRESS IN PPL         02690000
+         L     R0,CPPLECT              ENVIRONMENT CONTROL TABLE        02700000
+         ST    R0,PPLECT               STORE ECT IN PPL                 02710000
+         LA    R0,DYNECB               EVENT CONTROL BLOCK              02720000
+         ST    R0,PPLECB               STORE ECB IN PPL                 02730000
+         MVC   PPLPCL,=A(PCLCSECT)     STORE PCL ADDR INTO PPL          02740002
+         LA    R0,DYNANSWR             ANSWER AREA                      02750000
+         ST    R0,PPLANS               STORE ANSWER ADDRESS IN PPL      02760000
+         L     R0,CPPLCBUF             COMMAND BUFFER                   02770000
+         ST    R0,PPLCBUF              STORE BUFFER ADDRESS IN PPL      02780000
+         L     R15,CVTPTR(,0)          ADDR OF CVT                      02790014
+         L     R15,CVTPARS-CVTMAP(,R15) ADDR OF IKJPARS                 02800014
+         LA    R1,PPL                  ADDR OF PPL                      02810021
+         SYNCH (R15)                <- CALL THE TSO PARSE ROUTINE       02820014
+         ST    R15,MAXCC               SAVE RETURN CODE                 02830011
+         LTR   R15,R15                 CHECK FOR ZERO PARSE RETURN      02840011
+         BNZ   FINISH                  GO AWAY UPSET                    02850000
+*********************************************************************** 02860000
+*        PROCESS PARSED PARAMETERS                                    * 02870000
+*********************************************************************** 02880000
+         L     R7,DYNANSWR             LOAD PDL ADDRESS                 02890019
+         USING IKJPARMD,R7             SET UP ADDRESSABILITY TO PDL     02900019
+PARSE200 MVI   CHECK,C'C'              DEFAULT IS 'CHECK'               02910001
+         CLI   CHKPCE+1,2              CHECK FOR 2ND IKJPNAME           02920000
+         BNE   PARSE220                JUMP IF NOT THE 2ND              02930004
+         MVI   CHECK,C'N'              2ND IS 'NOCHECK'                 02940000
+PARSE220 MVI   CHANGED,C'C'            DEFAULT IS 'CHANGED'             02950004
+         CLI   CHNGPCE+1,2             CHECK FOR 2ND IKJPNAME           02960004
+         BNE   PARSE230                JUMP IF NOT THE 2ND              02970013
+         MVI   CHANGED,C'N'            2ND IS 'NOCHANGED'               02980004
+PARSE230 CLI   SETMPCE+1,1             SETMSG option specified?         02990013
+         BNE   PARSE300                no, jump                         03000013
+         MVI   SETMSG,C'Y'             yes, remember it                 03010013
+*                                                                       03020021
+PARSE300 LA    R0,=AL2(DALSTATS,1,1,X'0800') DISP=SHR KEY               03030001
+         CLI   STATPCE+1,2             CHECK FOR 2ND IKJPNAME           03040001
+         BNE   PARSE310                JUMP IF NOT THE 2ND              03050001
+         LA    R0,=AL2(DALSTATS,1,1,X'0100') DISP=OLD KEY               03060001
+PARSE310 ST    R0,STATUS               STORE ADDRESS OF STATUS FIELD    03070001
+*                                                                       03080021
+PARSE500 TM    VOLPCE2+6,X'80'         CHECK VOLSER SUBPARAMETER        03090001
+         BZ    PARSE599                JUMP IF NO SUBPARAM SPECIFIED    03100019
+         L     R1,VOLPCE2+00           GET SUBPARAM ADDRESS             03110001
+         MVC   VOLSER,0(R1)            MOVE 6-BYTE VOLUME SERIAL        03120001
+         MVI   VOLGIVEN,C'Y'           SHOW VOL HAS BEEN GIVEN L        03130001
+PARSE599 EQU   *                                                        03140019
+         LA    R7,DSNPCE               FIRST DSNAME                     03150019
+         USING PCE7,R7                                                  03160019
+*********************************************************************** 03170000
+*                                                                     * 03180019
+*        PROCESS DATA SET LIST                                        * 03190019
+*                                                                     * 03200019
+*********************************************************************** 03210000
+*LOOP                                                                   03220019
+GETDSN   EQU   *                                                        03230019
+         L     R0,PCE7ADDR             GET ADDRESS OF DSNAME            03240019
+         LH    R1,PCE7LEN              ACTUAL LENGTH OF DSNAME          03250019
+         STRING ((R0),(R1)),INTO=DSNAME COPY DSNAME INTO 44-CHAR FLD    03260019
+         MVI   MODE,C'S'               DEFAULT IS MODE=SINGLE           03270019
+*                                                                       03280019
+*        EXTRACT DATA SET NAMES FROM CATALOG                            03290019
+*                                                                       03300019
+         LA    R15,DSNAME-1(R1)        point R15 at last character      03310014
+         CLI   0(R15),C'*'             generic dsname?                  03320014
+         BNE   PROCESS2                NO, USE MODE=SINGLE              03330014
+         BCTR  R1,0                    length(dsname)-1 for LISTCAT     03340014
+         STC   R1,WK265                STORE LENGTH                     03350014
+         MVC   WK265+1(44),DSNAME      MOVE PARTIAL NAME                03360014
+         LA    R0,WK265                ENTRY NAME                       03370002
+         ST    R0,CTGENT               ENTRY ADDRESS                    03380000
+         MVI   CTGOPTN1,CTGNAME        CTGENT POINTS TO ENTRY NAME      03390000
+         OI    CTGOPTN1,CTGGENLD       GENERIC LOCATE REQUEST           03400000
+         MVI   CTGOPTN3,CTGAM0         OS/VS2 CATALOG MGMT REQUEST      03410000
+         OI    CTGOPTN3,CTGSUPLT       SUPER LOCATE REQUEST             03420000
+         MVI   CTGTYPE,CTGTALIN        ENTRY TYPE IS NONVSAM            03430000
+         OI    CTGOPTNS,CTGF2WKA       FORMAT-2 WORK AREA               03440000
+         ICM   R1,B'1111',CTGWKA       FIRST TIME?                      03450019
+         BNZ   GETWKA2                 NO, SKIP GETMAIN                 03460019
+         GETMAIN RC,LV=45*10000        WORK AREA FOR GENERIC LOCATE     03470000
+         LTR   R15,R15                 CHECK COMPLETION                 03480000
+         BNZ   MSGGETM                 GETMAIN FAILED, EXIT             03490000
+         ST    R1,CTGWKA               STORE ADDRESS INTO CTGPL         03500000
+         ST    R0,0(,R1)               FORMAT WORK AREA HEADER          03510000
+GETWKA2  EQU   *                                                        03520019
+         XC    4(4,R1),4(R1)           FORMAT WORK AREA HEADER          03530000
+         LOCATE CTGPL                  REQUEST CATALOG MGMT SERVICES    03540000
+         LTR   R15,R15                 CHECK COMPLETION                 03550000
+         BNZ   NEXTDSN                 GENERIC LOCATE FAILED, IGNORE    03560019
+         MVI   MODE,C'C'               MODE IS "CATALOG"                03570000
+         L     R8,CTGWKA               SVC 26 WORK AREA ADDRESS         03580000
+         LM    R0,R1,0(R8)             SVC 26 WORK AREA HEADER          03590000
+         LA    R1,7(,R1)               USED LENGTH                      03600000
+         SRL   R1,3                     ROUNDED UP                      03610000
+         SLL   R1,3                      TO A MULTIPLE OF 8             03620000
+         SR    R0,R1                   COMPUTE UNUSED LENGTH            03630000
+         LA    R1,0(R1,R8)             ADDRESS OF UNUSED PORTION        03640000
+         FREEMAIN RU,LV=(0),A=(1)      FREE UNUSED PORTION              03650000
+         LNR   R0,R0                   GET NEGATIVE LENGTH              03660000
+         A     R0,0(,R8)               ADD INITIAL LENGTH               03670000
+         ST    R0,0(,R8)               STORE CURRENT LENGTH             03680000
+         LA    R8,8(,R8)               FIRST DATA SET NAME              03690000
+*********************************************************************** 03700000
+*        OBTAIN VOLUME AND DSCB INFORMATION                           * 03710000
+*********************************************************************** 03720000
+*--LOOP                                                                 03730019
+PROCESS  CLI   0(R8),C'A'              NVSAM ENTRY?                     03740004
+         BNE   NEXTDSN4                NO, SKIP IT                      03750004
+         MVC   DSNAME,1(R8)            MOVE DATA SET NAME               03760004
+PROCESS2 MVI   PRINTMSG,C'N'           RESET INDICATOR                  03770000
+         L     R0,=A(1000000)          ONE MEG                          03780000
+         GETMAIN RC,LV=(0),LOC=(BELOW,ANY) GET ONE MEG FOR IEBCOPY      03790000
+         LTR   R15,R15                 CHECK COMPLETION                 03800000
+         BNZ   MSGGETM                 GETMAIN FAILED, EXIT             03810000
+         FREEMAIN RU,LV=(0),A=(1)      FREE ONE MEG FOR IEBCOPY         03820000
+         CLI   VOLGIVEN,C'Y'           CHECK IF VOLSER WAS SUPPLIED     03830001
+         BE    OBTAIN00                JUMP IF IT WAS                   03840001
+*********************************************************************** 03850016
+*        retrieve DSLIST volser                                       * 03860016
+*********************************************************************** 03870016
+         ICM   R15,B'1111',=A(ISPQRY)  ISPQRY AVAILABLE?                03880016
+         BZ    ZDLVOL9                 NO, QUIT                         03890016
+         BALR  R14,R15              <- CALL ISPQRY                      03900016
+         LTR   R15,R15                 ISPF SERVICES AVAILABLE?         03910016
+         BNZ   ZDLVOL9                 NO, QUIT                         03920016
+         WXTRN ISPQRY,ISPLINK          THEY ARE OPTIONAL                03930016
+         CLI   MODE,C'S'               MODE=SINGLE?                     03940016
+         BNE   ZDLVOL9                 NO, QUIT                         03950016
+*VCOPY (ZDLDSN,ZDLVOL)                                                  03960016
+         LA    R14,L'ZDLDSN            max length                       03970016
+         LA    R15,L'ZDLVOL            max length                       03980016
+         STM   R14,R15,DEVT1           length array                     03990016
+*******  ISPLINK ($VCOPY,=C'(ZENVIR ZAPPLID ZUSER ZSCREEN)',           X04000016
+               SIXWORDS,ZENVIR,$MOVE)                                   04010016
+         LA    R14,=C'VCOPY '          FUNCTION                         04020016
+         LA    R15,=C'(ZDLDSN ZDLVOL)' VARIABLE NAME                    04030016
+         LA    R0,DEVT1                length array                     04040016
+         LA    R1,ZDLDSN               value array                      04050016
+         LA    R2,=C'MOVE '            mode                             04060016
+         STM   R14,R2,EFTPARM          STORE PARM LIST                  04070016
+         OI    EFTPARM+16,X'80'        MARK END OF LIST                 04080016
+         L     R15,=A(ISPLINK)         ISPF SERVICES                    04090016
+         LA    R1,EFTPARM              PARM LIST ADDRESS                04100016
+         BALR  R14,R15              <- ISSUE VCOPY                      04110016
+         LTR   R15,R15                 WENT OK?                         04120016
+         BNZ   ZDLVOL9                 NO, QUIT                         04130016
+         CLC   DSNAME,ZDLDSN           same dsname?                     04140016
+         BNE   ZDLVOL9                 NO, QUIT                         04150016
+         CLI   ZDLVOL,C'*'             ALIAS?                           04160016
+         BE    ZDLVOL9                 YES, QUIT                        04170016
+         MVC   VOLSER,ZDLVOL           yes, keep volser                 04180016
+         MVI   VOLGIVEN,C'Y'           VOLSER was supplied by DSLIST    04190016
+         B     OBTAIN00                skip LOCATE                      04200016
+ZDLVOL9  EQU   *                                                        04210016
+*                                                                       04220016
+*        Retrieve volser from the catalog and ignore migrated data sets 04230014
+*                                                                       04240014
+         L     R14,CAML26              CAMLST 1ST WORD                  04250000
+         LA    R15,DSNAME              DATA SET NAME                    04260000
+         SLR   R0,R0                                                    04270000
+         LA    R1,WK265                WORK AREA                        04280002
+         STM   R14,R1,EFTPARM          STORE RELOCATED CAMLST           04290000
+         LOCATE EFTPARM                GET VOLSER AND DEVICE TYPE       04300000
+         LTR   R15,R15                 CHECK FOR SUCCESSFUL COMPLETION  04310000
+         BNZ   MSG26                   LOCATE FAILED, EXIT              04320000
+         CLI   WK265+2+2,UCB3DACC      CHECK DEVICE CLASS               04330002
+         BNE   MSG26B                  NOT DASD, EXIT                   04340000
+         MVC   VOLSER,WK265+2+4        KEEP VOLSER                      04350002
+         CLC   =C'MIGRAT',VOLSER       CHECK VOLSER                     04360002
+         BE    MSG26C                  MIGRATED BY HSM, EXIT            04370002
+*                                                                       04380014
+*        Read the F1-DSCB                                               04390014
+*                                                                       04400014
+OBTAIN00 L     R14,CAML28F1            CAMLST 1ST WORD                  04410001
+         LA    R15,DSNAME              DATA SET NAME                    04420000
+         LA    R0,VOLSER               VOL SERIAL                       04430000
+         LA    R1,DS1FMTID             FORMAT-1                         04440001
+         STM   R14,R1,EFTPARM          STORE RELOCATED CAMLST           04450000
+         OBTAIN EFTPARM                READ F1-DSCB                     04460000
+         LTR   R15,R15                 CHECK FOR SUCCESSFUL COMPLETION  04470000
+         BNZ   MSG28                   OBTAIN FAILED, EXIT              04480000
+*                                                                       04490014
+*        Skip data set if not a 100% pure PDS                           04500014
+*                                                                       04510014
+         TM    DS1DSORG+0,DS1DSGPO     CHECK THAT DSORG=PO              04520000
+         BNO   MSG28B                  EXIT IF DSORG IS NOT PO          04530000
+         TM    DS1SMSFG,DS1PDSE        IS THIS A PDSE?            @PDSE 04540006
+         BO    MSG28E                  YES, DO NOT PROCESS        @PDSE 04550006
+         MVC   RECFM,DS1RECFM          KEEP RECFM FOR LATER USE         04560000
+         CLI   MODE,C'S'               CHECK MODE                       04570000
+         BE    ALLOC000                JUMP IF MODE=SINGLE              04580000
+         OC    DS1EXPDT,DS1EXPDT       CHECK NON-ZERO EXPDT             04590000
+         BNZ   MSG28C                  NON ZERO EXPDT, JUMP             04600000
+*                                                                       04610000
+*        Skip data set if option "CHANGED" is specified                 04620014
+*        and the "data set changed" indicator is off                    04630014
+*                                                                       04640000
+         CLI   CHANGED,C'N'            LOOK FOR "NOCHANGED" OPTION      04650004
+         BE    OBTAIN45                BRANCH IF "NOCHANGED"            04660004
+         TM    DS1DSIND,DS1DSCHA       CHECK FOR CHANGED BIT            04670004
+         BNO   MSG28F                  JUMP IF CHANGED FLAG IS OFF      04680004
+*                                                                       04690000
+*        Skip data set if option "CHECK" is specified and the           04700014
+*        job name stored by ASM2 is the same as my job's                04710014
+*                                                                       04720000
+OBTAIN45 CLI   CHECK,C'N'              LOOK FOR "NOCHECK" OPTION        04730004
+         BE    ALLOC000                BRANCH IF "NOCHECK"              04740000
+         CLI   DS1SYSCD+8,X'FF'        CHECK FOR ASM2 SIGNATURE         04750000
+         BNE   ALLOC000                JUMP IF NO ASM2                  04760000
+         L     R14,ADDRTIOT            GET TIOT ADDRESS                 04770000
+         CLC   DS1SYSCD(8),0(R14)      CHECK JOB NAME                   04780000
+         BE    MSG28D                  JUMP IF SAME JOBNAME             04790000
+*********************************************************************** 04800000
+*                                                                     * 04810000
+*        ALLOCATE DATA SET TO BE COMPRESSED                           * 04820001
+*                                                                     * 04830000
+*********************************************************************** 04840000
+ALLOC000 BAL   R14,INIT99RB         <- INITIALIZE SVC99 RB              04850000
+         USING S99RB,R3                                                 04860019
+         OI    S99FLG11,S99NOCNV       DO NOT USE EXISTING DD           04870000
+         OI    S99FLG11,S99NOMNT       DO NOT MOUNT VOLUMES             04880000
+         LA    R14,TU55DDN             DDNAME TEXT UNIT                 04890000
+         MVC   0(6,R14),=AL2(DALRTDDN,1,8)  RETURN DDNAME KEY           04900000
+         LA    R15,TU02DSN             DSNAME TEXT UNIT                 04910000
+         MVC   0(6,R15),=AL2(DALDSNAM,1,44) DSNAME KEY                  04920000
+         L     R0,STATUS               ADDRESS OF STATUS KEY            04930002
+         STM   R14,R0,S99RBEND+00      FIRST TO THIRD TEXT UNIT PTRS    04940003
+         LA    R14,TU10VOL             VOLSER TEXT UNIT                 04950003
+         MVC   0(6,R14),=AL2(DALVLSER,1,6)  VOL SER KEY                 04960003
+         BAL   R15,ALLOC110         <-                                  04970003
+         DC    AL2(DALUNIT,1,L'ALLOC109)                                04980003
+ALLOC109 DC    C'SYSALLDA',0H'0'                                        04990003
+ALLOC110 STM   R14,R15,S99RBEND+12     4TH, 5TH TEXT UNIT PTRS          05000003
+         OI    S99RBEND+16,X'80'       END OF LIST                      05010018
+         LA    R1,DFS99RBP             S99RBPTR                         05020003
+         DYNALLOC ,                    ISSUE SVC 99 (ALLOCATE)          05030000
+         LTR   R15,R15                                                  05040000
+         BNZ   MSG99                   ALLOCATION FAILED, EXIT          05050000
+         DROP  R3                      WAS S99RB                        05060019
+         MVC   DDNAME,TU55DDN+6        SAVE RETURNED DDNAME             05070000
+         DEVTYPE DDNAME,DEVT1,DEVTAB   GET DEVICE CHARACTERISTICS       05080001
+*********************************************************************** 05090000
+*                                                                     * 05100014
+*        ALLOCATE SYSIN AND SYSPRINT DATA SETS.                       * 05110000
+*                                                                     * 05120014
+*********************************************************************** 05130000
+ALLOC200 CLI   TEMPALL,C'Y'            CHECK DDNAME ALREADY ALLOCATED   05140000
+         BE    SYSINOK                 DD ALREADY ALLOCATED, OPEN IT    05150000
+         MVI   TEMPALL,C'Y'            SHOW DDNAME ALREADY ALLOCATED    05160000
+         BAL   R14,INIT99RB         <- INITIALIZE SVC99 RB              05170000
+         USING S99RB,R3                                                 05180019
+         LA    R14,ALLOC215            DSNAME=&&SYSIN                   05190019
+         LA    R15,TU55DDN             DDNAME TEXT UNIT (ALREADY OK)    05200019
+         LA    R0,=AL2(DALTRK,0)       SPACE=TRK                        05210019
+         LA    R1,ALLOC217             SPACE=(TRK,10)                   05220019
+         BAL   R2,ALLOC210          <-                                  05230019
+         DC    AL2(DALUNIT,1,8),CL8'SYSDA'                              05240012
+ALLOC210 STM   R14,R2,S99RBEND+00      STORE TEXT UNIT PTRS             05250019
+         LA    R1,DFS99RBP             S99RBPTR                         05260003
+         DYNALLOC ,                    ISSUE SVC 99 (ALLOCATE SYSIN)    05270000
+         LTR   R15,R15                                                  05280000
+         BNZ   ALLOC255                ALLOCATION FAILED, EXIT          05290012
+         MVC   IEBDDIN,TU55DDN+6       MOVE SYSIN DDNAME                05300000
+         LA    R14,ALLOC216            DSNAME=&&SYSPRINT                05310019
+         ST    R14,S99RBEND+00         STORE TEXT UNIT PTR              05320019
+         LA    R1,DFS99RBP             S99RBPTR                         05330003
+         DYNALLOC ,                    ISSUE SVC 99 (ALLOCATE SYSPRINT) 05340000
+         LTR   R15,R15                                                  05350000
+         BNZ   ALLOC255                ALLOCATION FAILED, EXIT          05360012
+         MVC   IEBDDPRT,TU55DDN+6      MOVE SYSPRINT DDNAME             05370000
+         B     SYSINOK                                                  05380012
+ALLOC215 DC    AL2(DALDSNAM,1,6),C'&&SYSIN'                             05390019
+ALLOC216 DC    AL2(DALDSNAM,1,9),C'&&SYSPRINT'                          05400019
+ALLOC217 DC    AL2(DALPRIME,1,3),AL3(10)           SPACE=(TRK,10)       05410019
+         DROP  R3                      WAS S99RB                        05420019
+ALLOC255 ST    R15,MAXCC               RC=8                             05430012
+         BAL   R14,DAIRFAIL         <- Issue dynalloc error message     05440012
+         B     FINISH                  exit                             05450012
+*********************************************************************** 05460000
+*                                                                     * 05470014
+*        WRITE SYSIN FILE AND BUILD PARAMETER LIST FOR IEBCOPY.       * 05480000
+*                                                                     * 05490014
+*********************************************************************** 05500000
+SYSINOK  EQU   *                                                        05510021
+         USING IHADCB,DYNAMDCB                                          05520021
+         MVC   IHADCB(DCBLEN),MODELDCB MOVE MODEL DCB                   05530000
+         MVC   DCBDDNAM,IEBDDIN        MOVE SYSIN DDNAME                05540000
+         MVI   DCBRECFM,DCBRECF        RECFM=F                          05550000
+ ORG *-4                                                 PDSMAN/PM74127 05560018
+         MVI   DCBRECFM,DCBRECF+DCBRECBR RECFM=FB        PDSMAN/PM74127 05570018
+         MVC   DCBLRECL,=H'80'         LRECL=80          PDSMAN/PM74127 05580018
+         MVC   DCBBLKSI,=H'80'         BLKSIZE=80                       05590000
+         MVI   DCBBUFNO,01             BUFNO=1                          05600000
+         LA    R0,IHADCB               BUILD OPEN LIST                  05610021
+         ST    R0,OPENLIST             BUILD OPEN LIST                  05620021
+         MVI   OPENLIST,X'8F'          OPEN MODE IS OUTPUT              05630000
+         OPEN  MF=(E,OPENLIST)         OPEN IEBSYSIN                    05640000
+         LTR   R15,R15                 CHECK OPEN OK                    05650000
+         BNZ   FINISH                  OPEN FAILED, EXIT                05660000
+         PUT   IHADCB                  LOCATE OUTPUT RECORD             05670017
+         STRING ' COPY I=',(DDNAME,,T),',O=',(DDNAME,,T),',LIST=NO',   X05680014
+               INTO=((R1),80)                                           05690014
+         CLOSE MF=(E,OPENLIST)         CLOSE IEBSYSIN                   05700002
+         FREEPOOL IHADCB               FREE BUFFERS                     05710002
+*********************************************************************** 05720000
+*                                                                     * 05730014
+*        SCAN TIOT TO GET UCB ADDRESS.                                * 05740000
+*                                                                     * 05750014
+*********************************************************************** 05760000
+ENQ      SLR   R0,R0                   WORK REGISTER                    05770004
+         L     R1,ADDRTIOT             GET TIOT ADDRESS                 05780004
+         USING TIOT1,R1                                                 05790000
+ENQ015   AR    R1,R0                   BUMP UP TO NEXT ENTRY            05800004
+         IC    R0,TIOELNGH             LENGTH OF CURRENT ENTRY          05810004
+         CLC   DDNAME,TIOEDDNM         SAME DDNAME?                     05820004
+         BNE   ENQ015                  LOOP THROUGH TIOT                05830004
+         ICM   R0,B'0111',TIOEFSRT     GET 24-BIT UCB ADDRESS           05840004
+         ST    R0,ADDRUCB              STORE UCB ADDRESS FOR RESERVE    05850001
+         DROP  R1                      WAS TIOT1                        05860004
+*********************************************************************** 05870000
+*        ENQ/RESERVE WITH ISPF/HEWL CONVENTIONS                       * 05880000
+*********************************************************************** 05890000
+         MVC   DYNENQL(16),ENQMODEL    MOVE PATTERN ENQ LIST            05900000
+         TM    RECFM,DS1RECFU          CHECK RECFM                      05910000
+         BO    ENQLKED                 RECFM=U, ASSUME LOAD LIBRARY     05920000
+         RESERVE (SPFEDIT,DSNAME,E,44,SYSTEMS),UCB=ADDRUCB,            X05930000
+               MF=(E,DYNENQL)                                           05940000
+         B     ENQDONE                 ENQ DONE FOR RECFM=F/V           05950000
+SPFEDIT  DC    C'SPFEDIT '             QNAME FOR ISPF V2 ENQUEUES       05960000
+SYSLMOD  DC    C'SYSIEWLP'             QNAME FOR LINK-EDIT              05970002
+ENQLKED  L     R1,ADDRUCB              LOAD UCB ADDRESS                 05980001
+         TM    UCBTBYT2-UCBOB(R1),UCBRR SHARED DASD?                    05990001
+         BO    ENQLKEDR                IF SHARED, DO A RESERVE          06000000
+         ENQ   (SYSLMOD,DSNAME,E,44,SYSTEM),MF=(E,DYNENQL)              06010000
+         B     ENQDONE                                                  06020000
+ENQLKEDR RESERVE (SYSLMOD,DSNAME,E,44,SYSTEMS),UCB=ADDRUCB,            X06030000
+               MF=(E,DYNENQL)                                           06040000
+ENQDONE  EQU   *                                                        06050015
+*                                                                       06060020
+*        Re-read the F1-DSCB in case ENQ/RESERVE had to wait            06070020
+*                                                                       06080020
+         L     R14,CAML28F1            CAMLST 1ST WORD                  06090020
+         LA    R15,DSNAME              DATA SET NAME                    06100020
+         LA    R0,VOLSER               VOL SERIAL                       06110020
+         LA    R1,DS1FMTID             FORMAT-1                         06120020
+         STM   R14,R1,EFTPARM          STORE RELOCATED CAMLST           06130020
+         OBTAIN EFTPARM                RE-READ F1-DSCB                  06140020
+*********************************************************************** 06150000
+*                                                                     * 06160000
+*        CALL IEBCOPY VIA IKJEFTSR                                    * 06170000
+*                                                                     * 06180000
+*        If RECFM=U and LLAREFRESH is specified, COMPRCMD does NOT    * 06190021
+*        invoke IEBCOPY; instead, it re-invokes itself via the TSR to * 06200021
+*        execute the LLACOPY section, from which IEBCOPY is executed. * 06210021
+*                                                                     * 06220000
+*********************************************************************** 06230000
+TSR11    EQU   *                                                        06240021
+         MVI   IEBDD+1,IEBDDLEN        DDNAME LIST LENGTH               06250002
+         LA    R0,=H'0'                IEBCOPY PARM                     06260000
+         LA    R1,IEBDD                DDN LIST                         06270002
+         STM   R0,R1,IEBPARM           BUILD PARAMETER LIST             06280002
+         OI    IEBPARM+04,X'80'        MARK END OF LIST                 06290002
+*                                                                       06300014
+*        BUILD PARM LIST FOR THE TSO/E SERVICE ROUTINE (IKJEFTSR)       06310014
+*                                                                       06320014
+         LA    R14,=X'0000,0102'       FLAGS                            06330021
+         LA    R15,IEBCOPY             PGM=IEBCOPY                      06340021
+         TM    RECFM,DS1RECFU          RECFM=U ?                        06350021
+         BNO   TSR23                   no, call IEBCOPY                 06360021
+         L     R1,DYNANSWR             LOAD PDL ADDRESS                 06370021
+         CLI   STATPCE+1-IKJPARMD(R1),3 LLAREFRESH option specified?    06380021
+         BNE   TSR23                   no, call IEBCOPY                 06390021
+         LA    R15,OWNNAME             PGM=COMPRESS                     06400021
+TSR23    EQU   *                                                        06410021
+         LA    R0,=F'8'                LENGTH OF COMMAND BUFFER         06420000
+         LA    R1,RETCODE              RETURN CODE                      06430021
+         LA    R2,RSNCODE              REASON CODE                      06440021
+         LA    R3,ABNDCODE             ABEND CODE                       06450021
+         LA    R4,IEBPARM              IEBCOPY PARM                     06460021
+         STM   R14,R4,EFTPARM          build parm list                  06470021
+         OI    EFTPARM+24,X'80'        END OF LIST                      06480000
+*                                                                       06490000
+         STTMPMD ON,KEYS=ALL           TRAP CLEAR AND PA1 KEYS          06500015
+         LA    R1,EFTPARM              PARM FOR IKFEFTSR                06510015
+         L     R15,CVTPTR(,0)          ADDR OF CVT                      06520014
+         L     R15,CVTTVT-CVTMAP(,R15) ADDR OF TSVT                     06530014
+         L     R15,TSVTASF-TSVT(,R15)  ADDR OF IKJEFTSR/TSOLNK          06540014
+         SYNCH (R15)                <- CALL THE TSO SERVICE ROUTINE     06550014
+         LTR   R15,R15                 CHECK RETURN CODE                06560000
+         BZ    DEQUEUE                 NOT HIGHER, JUMP                 06570000
+         MVI   PRINTMSG,C'Y'           PRINT IEBCOPY MESSAGES           06580000
+         CLC   MAXCC,RETCODE           HIGHEST SO FAR?                  06590000
+         BH    DEQUEUE                 MAXCC HIGHER, JUMP               06600000
+         MVC   MAXCC,RETCODE           KEEP MAXCC                       06610000
+DEQUEUE  DEQ   MF=(E,DYNENQL)          DEQ/RELEASE                      06620000
+         STTMPMD OFF                   ALLOW CLEAR AND PA1 KEYS AGAIN   06630015
+         ICM   R15,B'1111',RETCODE     RC=0 from TSR ?                  06640021
+         BZ    TSR99                   YES, JUMP                        06650021
+**        STRING 'MSG009 COMPRESS is not authorised, option LLAREFRESH X06660021
+               is ignored.',INTO=MESSAGE                                06670021
+         STRING  'MSG009 Error during processing of LLAREFRESH option, X06680021
+               RC=',(RETCODE,F,L),', RSN=',(RSNCODE,,X),               X06690021
+               INTO=MESSAGE                                             06700021
+         L     R1,DYNANSWR             LOAD PDL ADDRESS                 06710021
+         MVI   STATPCE+1-IKJPARMD(R1),1 Change LLAREFRESH to SHR        06720021
+         BAL   R14,PUTLINE          <- write message                    06730021
+TSR99    EQU   *                                                        06740021
+*********************************************************************** 06750000
+*        Free the PDS that has just been compressed                   * 06760014
+*********************************************************************** 06770000
+         BAL   R14,INIT99RB         <- INITIALIZE SVC99 RB              06780000
+         USING S99RB,R3                                                 06790019
+         MVI   S99VERB,S99VRBUN        VERB IS "UNALLOCATE"             06800000
+         LA    R14,TU55DDN             DDNAME TEXT UNIT                 06810000
+         MVC   0(6,R14),=AL2(DUNDDNAM,1,8)  DDNAME KEY                  06820001
+         MVC   6(8,R14),DDNAME         DDNAME                           06830000
+         ST    R14,S99RBEND+00         1ST & ONLY TEXT UNIT PTR         06840000
+         OI    S99RBEND+00,X'80'       END OF LIST                      06850000
+         LA    R1,DFS99RBP             S99RBPTR                         06860003
+         DYNALLOC ,                    ISSUE SVC 99 (FREE PDS)          06870000
+         DROP  R3                      WAS S99RB                        06880019
+*********************************************************************** 06890000
+*        COMPUTE PERCENTAGE OF SPACE USED AFTER COMPRESSION           * 06900001
+*********************************************************************** 06910000
+         OC    RETCODE,RETCODE         CHECK IEBCOPY RETURN CODE        06920000
+         BNZ   MSG08                   JUMP IF RC=00                    06930001
+         SLR   R1,R1                   make it relative to zero         06940014
+         ICM   R1,B'0011',DS1LSTAR     last track used (relative to 0)  06950014
+         LA    R2,1(,R1)               number of tracks used (before)   06960014
+USED00   L     R14,CAML28F1            CAMLST 1ST WORD                  06970001
+         LA    R15,DSNAME              DATA SET NAME                    06980001
+         LA    R0,VOLSER               VOL SERIAL                       06990001
+         LA    R1,DS1FMTID             FORMAT-1                         07000001
+         STM   R14,R1,EFTPARM          STORE RELOCATED CAMLST           07010001
+         OBTAIN EFTPARM                READ F1-DSCB                     07020001
+         LTR   R15,R15                 CHECK FOR SUCCESSFUL COMPLETION  07030001
+         BNZ   USED99                  OBTAIN FAILED, EXIT              07040001
+         SLR   R1,R1                   make it relative to zero         07050014
+         ICM   R1,B'0011',DS1LSTAR     last track used (relative to 0)  07060014
+         LA    R1,1(,R1)               number of tracks used            07070014
+         STM   R1,R2,TRKSUSED          tracks used (after,before)       07080014
+         SLR   R3,R3                   PREPARE IC                       07090001
+         IC    R3,DS1NOEPV             NUMBER OF EXTENTS                07100001
+         LA    R4,DS1EXT1              ADDR OF 1ST EXTENT DESCRIPTOR    07110001
+         SLR   R5,R5                   TRACK COUNTER                    07120001
+USED20   LA    R0,DS1EXT3+L'DS1EXT3    ADDR OF 3RD EXTENT DESCRIPTOR    07130001
+         CR    R4,R0                                                    07140001
+         BNE   USED40                  JUMP IF NOT END OF F1-DSCB       07150001
+USED30   L     R14,CAML28F3            CAMLST 1ST WORD                  07160001
+         LA    R15,DS1PTRDS            PTR TO F3-DSCB                   07170001
+         LA    R0,VOLSER               VOL SERIAL                       07180001
+         LA    R1,IECSDSL3             FORMAT-3                         07190001
+         STM   R14,R1,EFTPARM          STORE RELOCATED CAMLST           07200001
+         OBTAIN EFTPARM                READ F1-DSCB                     07210001
+         LTR   R15,R15                 CHECK FOR SUCCESSFUL COMPLETION  07220001
+         BNZ   USED99                  OBTAIN FAILED, EXIT              07230001
+         LA    R4,DS3EXTNT             FIRST 4 EXTENTS OF F3-DSCB       07240001
+         B     USED50                  GO PROCESS IT                    07250001
+USED40   LA    R0,DS3FMTID             1ST EXTENT DESC IN F3-DSCB       07260001
+         CR    R4,R0                                                    07270001
+         BNE   USED50                  JUMP IF FIRST 4 DESC PROC'D      07280001
+         LA    R4,DS3ADEXT             9 ADDITIONAL EXTENTS OF F3-DSCB  07290001
+USED50   SLR   R0,R0                                                    07300021
+         ICM   R0,B'0011',2(R4)        GET START CYL                    07310021
+         MH    R0,DEVT1+10             NUMBER OF TRKS PER CYL           07320001
+         AH    R0,4(,R4)               ADD START TRACK                  07330001
+         SLR   R1,R1                                                    07340021
+         ICM   R1,B'0011',6(R4)        GET END CYL                      07350021
+         MH    R1,DEVT1+10             NUMBER OF TRKS PER CYL           07360001
+         AH    R1,8(,R4)               END TRACK                        07370001
+         LA    R1,1(,R1)               END TRK +1                       07380014
+         SLR   R1,R0                   number of tracks in this extent  07390014
+         LR    R0,R5                   save first track number          07400014
+         ALR   R5,R1                   tally allocated tracks           07410014
+         CL    R0,TRKSUSED             EOF IN THIS EXTENT?              07420014
+         BNL   USED57                  NO, JUMP                         07430014
+         CL    R5,TRKSUSED             EOF IN THIS EXTENT?              07440014
+         BL    USED57                  NO, JUMP                         07450014
+         LA    R0,1                    increment                        07460014
+         AH    R0,0(,R4)               current extent number            07470014
+         STC   R0,XTNTUSED             SAVE NUMBER OF LAST EXTENT USED  07480014
+USED57   LA    R4,L'DS1EXT1(,R4)       NEXT EXTENT DESC                 07490014
+         BCT   R3,USED20               LOOP UNTIL ALL EXTENTS PROCESSED 07500001
+USED90   SLR   R0,R0                   PREPARE DR                       07510001
+         LA    R1,1                    PREPARE AH                       07520001
+         AH    R1,DS1LSTAR+0           LAST TT USED                     07530001
+         MH    R1,=H'100'              PREPARE PERCENTAGE CALC          07540001
+         DR    R0,R5                   PCT=(USED*100)/TOTAL             07550014
+         LTR   R1,R1                   0% ==> 1%                        07560014
+         BNZ   *+8                     0% ==> 1%                        07570014
+         LA    R1,1                    0% ==> 1%                        07580014
+         ST    R1,RETCODE              PERCENTAGE FOR MSG00             07590001
+USED99   STRING 'MSG000 COMPRESS successful for ',(DSNAME,,T),         X07600014
+               ', now ',(RETCODE,F,L),'% full.',INTO=MESSAGE            07610014
+*********************************************************************** 07620000
+*        check if we're running under ISPF in "single" mode           * 07630013
+*********************************************************************** 07640000
+         ICM   R15,B'1111',=A(ISPQRY)  ISPQRY AVAILABLE?                07650013
+         BZ    ISSUEMSG                NO, QUIT                         07660013
+         BALR  R14,R15              <- CALL ISPQRY                      07670013
+         LTR   R15,R15                 ISPF SERVICES AVAILABLE?         07680013
+         BNZ   ISSUEMSG                NO, QUIT                         07690013
+         CLI   MODE,C'S'               MODE=SINGLE?                     07700013
+         BNE   ISSUEMSG                NO, QUIT                         07710013
+*********************************************************************** 07720000
+*        REFRESH DISPLAY WHEN INVOKED FROM PDF 3.4 PANEL              * 07730007
+*********************************************************************** 07740000
+*        ISPLINK VREPLACE ZDLREF Y                                      07750007
+ZDLREF10 LA    R14,=C'VREPLACE'        SERVICE                          07760007
+         LA    R15,=C'ZDLREF  '        VARIABLE NAME                    07770007
+         LA    R0,=F'1'                VALUE LENGTH                     07780007
+         LA    R1,=C'Y'                ADDR OF VARIABLE VALUE           07790007
+         STM   R14,R1,EFTPARM          STORE PARM LIST                  07800007
+         OI    EFTPARM+12,X'80'        MARK END OF LIST                 07810007
+         L     R15,=A(ISPLINK)         ISPF SERVICES                    07820007
+         LA    R1,EFTPARM              PARM LIST ADDRESS                07830007
+         BALR  R14,R15              <- ISSUE VREPLACE                   07840010
+         LTR   R15,R15                 WENT OK?                         07850010
+         BNZ   ZDLREF99                NO, QUIT                         07860007
+*        ISPLINK VPUT (ZDLREF)                                          07870007
+ZDLREF20 LA    R14,=C'VPUT'            SERVICE                          07880007
+         LA    R15,=C'ZDLREF  '        VARIABLE NAME                    07890007
+         STM   R14,R15,EFTPARM         STORE PARM LIST                  07900007
+         OI    EFTPARM+04,X'80'        MARK END OF LIST                 07910007
+         L     R15,=A(ISPLINK)         ISPF SERVICES                    07920007
+         LA    R1,EFTPARM              PARM LIST ADDRESS                07930007
+         BALR  R14,R15              <- ISSUE VPUT                       07940010
+ZDLREF99 EQU   *                                                        07950013
+*********************************************************************** 07960000
+*        SETMSG function                                              * 07970013
+*********************************************************************** 07980000
+SETMSG00 CLI   SETMSG,C'Y'             SETMSG option specified?         07990013
+         BNE   SETMSG99                no, exit                         08000013
+*        ISPLINK VREPLACE ZMSG000S                                      08010013
+SETMSG10 STRING 'Now ',(RETCODE,F,L),'% full',INTO=MESSAGE              08020014
+         ST    R15,LENGTH              no, exit                         08030014
+         LA    R14,=C'VREPLACE'        SERVICE                          08040013
+         LA    R15,=C'ZMSG000S'        VARIABLE NAME                    08050013
+         LA    R0,LENGTH               VALUE LENGTH                     08060014
+         LA    R1,MESSAGE              VALUE                            08070014
+         STM   R14,R1,EFTPARM          STORE PARM LIST                  08080013
+         OI    EFTPARM+12,X'80'        MARK END OF LIST                 08090013
+         L     R15,=A(ISPLINK)         ISPF SERVICES                    08100013
+         LA    R1,EFTPARM              PARM LIST ADDRESS                08110013
+         BALR  R14,R15              <- ISSUE VREPLACE                   08120013
+         LTR   R15,R15                 WENT OK?                         08130013
+         BNZ   SETMSG99                NO, QUIT                         08140013
+*        ISPLINK VREPLACE ZMSG000S                                      08150013
+SETMSG20 LM    R1,R2,TRKSUSED          tracks used (after,before)       08160014
+         SLR   R2,R1                   R2=tracks recovered by IEBCOPY   08170014
+         STRING (DSNAME,,T),' successfully compressed',                X08180014
+               ', tracks_recovered=',((R2),,L),'.',                    X08190014
+               ' Total_tracks=',((R5),,L),                             X08200014
+               ',Tracks_used=',(TRKSUSED,F,L),                         X08210014
+               ',Total_extents=',(DS1NOEPV,FL1,L),                     X08220014
+               ',Extents_used=',(XTNTUSED,FL1,L),                      X08230014
+               INTO=WK265                                               08240014
+         CLI   VOLGIVEN,C'Y'           CHECK IF VOLSER WAS SUPPLIED     08250022
+         BNE   SETMSG25                NO, JUMP                         08260022
+         STRING (DSNAME,,T),' successfully compressed',                X08270022
+               ' on vol(',VOLSER,')',                                  X08280022
+               ', tracks_recovered=',((R2),,L),'.',                    X08290022
+               ' Total_tracks=',((R5),,L),                             X08300022
+               ',Tracks_used=',(TRKSUSED,F,L),                         X08310022
+               ',Total_extents=',(DS1NOEPV,FL1,L),                     X08320022
+               ',Extents_used=',(XTNTUSED,FL1,L),                      X08330022
+               INTO=WK265                                               08340022
+SETMSG25 EQU   *                                                        08350022
+         ST    R15,LENGTH              no, exit                         08360014
+         LA    R14,=C'VREPLACE'        SERVICE                          08370014
+         LA    R15,=C'ZMSG000L'        VARIABLE NAME                    08380013
+         LA    R0,LENGTH               VALUE LENGTH                     08390014
+         LA    R1,WK265                VALUE                            08400014
+         STM   R14,R1,EFTPARM          STORE PARM LIST                  08410013
+         OI    EFTPARM+12,X'80'        MARK END OF LIST                 08420013
+         L     R15,=A(ISPLINK)         ISPF SERVICES                    08430013
+         LA    R1,EFTPARM              PARM LIST ADDRESS                08440013
+         BALR  R14,R15              <- ISSUE VREPLACE                   08450013
+         LTR   R15,R15                 WENT OK?                         08460013
+         BNZ   SETMSG99                NO, QUIT                         08470013
+*        ISPLINK SETMSG(ISPZ000)                                        08480013
+SETMSG80 LA    R14,=C'SETMSG'          SERVICE                          08490013
+         LA    R15,=C'ISPZ000 '        VARIABLE NAME                    08500013
+         STM   R14,R1,EFTPARM          STORE PARM LIST                  08510013
+         OI    EFTPARM+04,X'80'        MARK END OF LIST                 08520013
+         L     R15,=A(ISPLINK)         ISPF SERVICES                    08530013
+         LA    R1,EFTPARM              PARM LIST ADDRESS                08540013
+         BALR  R14,R15              <- ISSUE VREPLACE                   08550013
+         LTR   R15,R15                 WENT OK?                         08560013
+         BZ    FINISH                  YES, EXIT                        08570013
+SETMSG99 EQU   *                                                        08580013
+         B     ISSUEMSG                VREPLACE/SETMSG failed           08590013
+*********************************************************************** 08600000
+*        ISSUE MESSAGES                                               * 08610001
+*********************************************************************** 08620000
+MSG08    STRING 'MSG008 COMPRESS failed for ',(DSNAME,,T),             X08630014
+               ', IEBCOPY return code is ',(RETCODE,F,L),'.',          X08640014
+               INTO=MESSAGE                                             08650014
+         B     ISSUEMSG                ISSUE MESSAGE                    08660000
+MSG26    ST    R15,RETCODE             RETURN CODE                      08670014
+         STRING 'MSG26 LOCATE failed for ',(DSNAME,,T),                X08680014
+               ', return code is ',(RETCODE,F,L),'.',                  X08690014
+               INTO=MESSAGE                                             08700014
+         B     CHECKSNG                ISSUE MESSAGE IF MODE=SINGLE     08710000
+MSG26B   STRING 'MSG26B ',(DSNAME,,T),' is not a disk data set.',      X08720014
+               INTO=MESSAGE                                             08730014
+         B     CHECKSNG                ISSUE MESSAGE IF MODE=SINGLE     08740000
+MSG26C   STRING 'MSG26C ',(DSNAME,,T),' is a migrated data set.',      X08750014
+               INTO=MESSAGE                                             08760014
+         B     CHECKSNG                ISSUE MESSAGE IF MODE=SINGLE     08770004
+MSG28    ST    R15,RETCODE             RETURN CODE                      08780014
+         STRING 'MSG28 OBTAIN failed for ',(DSNAME,,T),' on volume(',  X08790018
+               VOLSER,'), return code is ',(RETCODE,F,L),'.',          X08800018
+               INTO=MESSAGE                                             08810018
+         B     CHECKSNG                ISSUE MESSAGE IF MODE=SINGLE     08820000
+MSG28B  STRING 'MSG28B ',(DSNAME,,T),' is not a partitioned data set.',X08830014
+               INTO=MESSAGE                                             08840014
+         B     CHECKSNG                ISSUE MESSAGE IF MODE=SINGLE     08850000
+MSG28C   STRING 'MSG28C COMPRESS bypassed for ',(DSNAME,,T),           X08860014
+               ', EXPDT is non-zero.',INTO=MESSAGE                      08870014
+         B     ISSUEMSG                ISSUE MESSAGE                    08880000
+MSG28D   STRING 'MSG28D COMPRESS bypassed for ',(DSNAME,,T),           X08890014
+               ', same ASM2ID.',INTO=MESSAGE                            08900014
+         B     ISSUEMSG                ISSUE MESSAGE                    08910014
+MSG28E   STRING 'MSG28E ',(DSNAME,,T),' is a PDSE.',INTO=MESSAGE        08920014
+         B     ISSUEMSG                ISSUE MESSAGE              @PDSE 08930006
+MSG28F   STRING 'MSG28F COMPRESS bypassed for ',(DSNAME,,T),           X08940014
+               ', data set changed indicator off.',                    X08950014
+               INTO=MESSAGE                                             08960014
+         B     ISSUEMSG                ISSUE MESSAGE                    08970014
+MSG99    ST    R15,MAXCC               DYNALLOC Return Code             08980017
+         BAL   R14,DAIRFAIL         <- issue dynalloc error message     08990016
+****     STRING 'MSG99 DYNALLOC FAILED FOR ',(DSNAME,,T),              X09000014
+               ', return code is ',(RETCODE,F,L),'.',                  X09010014
+               INTO=MESSAGE                                             09020014
+****     B     ISSUEMSG                ISSUE MESSAGE                    09030014
+         B     FINISH                  EXIT (DAIRFAIL issued message)   09040014
+CHECKSNG CLI   MODE,C'S'               CHECK MODE                       09050000
+         BNE   PRINT000                JUMP IF MODE ^= SINGLE           09060002
+         MVI   MAXCC+L'MAXCC-1,08      RETURN CODE = 08                 09070002
+ISSUEMSG BAL   R14,PUTLINE          <- write message                    09080014
+*********************************************************************** 09090000
+*        READ IEBCOPY SYSPRINT IF THERE IS AN ERROR                   * 09100000
+*********************************************************************** 09110000
+PRINT000 CLI   PRINTMSG,C'Y'           CHECK IEBCOPY ERRORS             09120000
+         BNE   NEXTDSN                 JUMP IF RETCODE IS ZERO          09130013
+         MVC   IHADCB(DCBLEN),MODELDCB MOVE MODEL DCB                   09140000
+         MVC   DCBDDNAM,IEBDDPRT       MOVE SYSPRINT DDNAME             09150000
+         LA    R0,PRINT090             EODAD ROUTINE                    09160000
+         ST    R0,DCBEODAD             STORE IT INTO DCB                09170000
+         MVI   OPENLIST,X'80'          OPEN MODE IS INPUT               09180000
+         OPEN  MF=(E,OPENLIST)         OPEN SYSPRINT                    09190000
+         LTR   R15,R15                 CHECK OPEN OK                    09200000
+         BNZ   FINISH                  OPEN FAILED, EXIT                09210000
+PRINT040 GET   IHADCB                  LOCATE INPUT RECORD              09220017
+         CLI   0(R1),C'1'              CHECK CONTROL CHARACTER          09230000
+         BE    PRINT040                IGNORE TITLE LINE                09240000
+         STRING 'MSG062 ',(1(R1),120),INTO=MESSAGE                      09250014
+         BAL   R14,PUTLINE          <- write message                    09260014
+         B     PRINT040                LOOP UNTIL EODAD IS REACHED      09270000
+PRINT090 CLOSE MF=(E,OPENLIST)         CLOSE SYSPRINT                   09280000
+         FREEPOOL IHADCB               FREE BUFFERS                     09290000
+*********************************************************************** 09300000
+*        GET READY TO PROCESS NEXT DSNAME IN TABLE.                   * 09310000
+*********************************************************************** 09320000
+NEXTDSN  EQU   *                                                        09330019
+         CLI   ATTNFLAG,C'Y'           ATTENTION RECEIVED?              09340000
+         BE    FINISH                  EXIT IF ATTENTION RECEIVED       09350000
+         L     R2,ADDRCOMM             ECB/CIB POINTERS                 09360003
+         LM    R1,R2,0(R2)             PICK UP ECB/CIB ADDRESSES        09370003
+         TM    0(R1),X'40'             COMM ECB POSTED?                 09380003
+         BNO   NEXTDSN4                NO, CONTINUE                     09390003
+         CLI   CIBVERB-CIB(R2),CIBSTOP STOP COMMAND ENTERED?            09400003
+         BNE   NEXTDSN4                NO, CONTINUE                     09410003
+         STRING 'MSG60 COMPRESS terminated, STOP command received.',   X09420014
+               INTO=MESSAGE                                             09430014
+         BAL   R14,PUTLINE          <- write message                    09440014
+         LA    R15,20                  RETURN CODE                      09450014
+         ST    R15,RETCODE             RETURN CODE                      09460003
+         B     FINISH                  EXIT IF STOP RECEIVED            09470003
+*                                                                       09480000
+*        next dsname in catalog work area                               09490019
+*                                                                       09500019
+NEXTDSN4 EQU   *                                                        09510019
+         CLI   MODE,C'S'               MODE=SINGLE?                     09520019
+         BE    NEXTDSN5                YES, JUMP                        09530019
+         LA    R14,45                  LENGTH OF AN ENTRY               09540019
+         L     R15,CTGWKA              WORK AREA ADDRESS                09550000
+         A     R15,4(,R15)             POINT TO END OF WORK AREA        09560000
+         BCTR  R15,0                                                    09570000
+         BXLE  R8,R14,PROCESS          PROCESS ANOTHER DATA SET         09580000
+*--ENDLOOP                                                              09590019
+*                                                                       09600019
+*        next dsname in command                                         09610019
+*                                                                       09620019
+NEXTDSN5 EQU   *                                                        09630019
+         ICM   R7,B'1111',PCE7NEXT     GET ADDRESS OF NEXT DSNAME       09640019
+         BP    GETDSN                  NEXT DSNAME IN LIST              09650019
+*ENDLOOP                                                                09660019
+         B     FINISH                  CLEAN-UP, RETURN                 09670019
+         DROP  R7                      PCE7                             09680019
+*                                                                       09690019
+ATTNEXIT MVI   ATTNFLAG,C'1'           SHOW ATTENTION KEY PRESSED       09700000
+         BR    R14                                                      09710000
+*********************************************************************** 09720021
+*                                                                     * 09730000
+*        LLACOPY - re-entry from the TSR with AC=1                    * 09740021
+*                                                                     * 09750000
+*********************************************************************** 09760021
+LLACOPY  EQU   *                                                        09770021
+         TESTAUTH FCTN=1               CHECK AUTHORISATION              09780021
+         LTR   R15,R15                 Am I authorised?                 09790021
+         BNZ   LLACOPY9                no, error                        09800021
+*                                                                       09810021
+         MVC   IHADCB(DCBLEN),MODELDCB MOVE MODEL DCB                   09820021
+         MVI   DCBDSORG,DCBDSGPO       DSORG=PO                         09830021
+         MVI   DCBMACR1,DCBMRRD        MACRF=R                          09840021
+         MVI   DCBMACR2,0              MACRF=R                          09850021
+         L     R1,CPPL+4               A(IEBDD)                         09860021
+         MVC   DCBDDNAM,DDNAME-IEBDD(R1) move DDNAME to DCB             09870021
+         MVI   DCBRECFM,DCBRECU        RECFM=U                          09880021
+         MVC   DCBBLKSI,=H'256'        BLKSIZE=256                      09890021
+*                                                                       09900021
+         LA    R1,CPPL                 A(IEBPARM,IEBDD)                 09910021
+         LINK  EPLOC=IEBCOPY        <- call IEBCOPY (PARM in R1)        09920021
+         LTR   R15,R15                 IEBCOPY OK?                      09930021
+***      BNZ   LLACOPY899              IEBCOPY OK?                      09940021
+*                                                                       09950021
+         LA    R1,IHADCB               DCB ADDR                         09960021
+         ST    R1,OPENLIST             Build OPEN List                  09970021
+         MVI   OPENLIST,X'80'          OPEN INPUT                       09980021
+         OPEN  MF=(E,OPENLIST)         OPEN DIRECTORY                   09990021
+         LTR   R15,R15                 CHECK OPEN OK                    10000021
+         BNZ   LLACOPY9                OPEN FAILED, EXIT                10010021
+         MODESET MODE=SUP              MODE=SUP for LLACOPY             10020021
+*LOOP                                                                   10030021
+LLACOPY2 READ  DECB1,SF,IHADCB,WK265,'S',MF=E                           10040021
+         CHECK DECB1                                                    10050021
+         LA    R3,WK265+2              1ST ENTRY                        10060021
+*--LOOP                                                                 10070021
+LLACOPY4 CLI   0(R3),X'FF'             END OF DIRECTORY?                10080021
+         BE    LLACOPY7                YES, LEAVE                       10090021
+         MVC   BLDLAREA(4),=Y(1,62)    number,length                    10100021
+         MVC   BLDLAREA+4(8),0(R3)     MEMBER NAME                      10110021
+         LLACOPY DCB=IHADCB,                                           X10120021
+               BLDLLIST=BLDLAREA,                                      X10130021
+               MF=(E,LLACOPYL)                                          10140021
+***      LR    R3,R15                  SAVE RETURN CODE                 10150021
+         IC    R14,11(,R3)             "C" BYTE                         10160021
+         N     R14,=F'31'              NUMBER OF HALFWORDS              10170021
+         LA    R14,12(R14,R14)         ENTRY LENGTH IN R14              10180021
+         LH    R15,WK265               LENGTH USED IN DIR BLOCK         10190021
+         LA    R15,WK265-1(R15)        END OF DIR BLOCK                 10200021
+         BXLE  R3,R14,LLACOPY4                                          10210021
+*--ENDLOOP                                                              10220021
+         B     LLACOPY2                next directory block             10230021
+*ENDLOOP                                                                10240021
+LLACOPY7 EQU   *                                                        10250021
+         MODESET MODE=PROB             Back to MODE=PROB                10260021
+         CLOSE MF=(E,OPENLIST)         CLOSE DIRECTORY                  10270021
+         FREEPOOL IHADCB               FREE BUFFERS                     10280021
+         B     FINISH2                 Goback to TSR                    10290021
+LLACOPY9 EQU   *                                                        10300021
+**        STRING 'MSG009 COMPRESS is not authorised in AUTHTSR, option X10310021
+               LLAREFRESH is ignored.',INTO=MESSAGE                     10320021
+**       BAL   R14,PUTLINE          <- write message                    10330021
+         MVI   MAXCC+L'MAXCC-1,16      RETURN CODE = 16                 10340021
+         B     FINISH2                 Goback to TSR                    10350021
+IEBCOPY  DC    CL8'IEBCOPY'            PGM NAME                         10360021
+*********************************************************************** 10370000
+*        CLEAN UP, RETURN.                                            * 10380000
+*********************************************************************** 10390000
+MSGGETM  STRING 'MSG63 GETMAIN failed, increase region.',INTO=MESSAGE   10400014
+         BAL   R14,PUTLINE          <- write message                    10410014
+         MVI   MAXCC+L'MAXCC-1,20      RETURN CODE = 20                 10420000
+FINISH   EQU   *                                                        10430019
+         IKJRLSA DYNANSWR              RELEASE PDL                      10440019
+         ICM   R1,B'1111',CTGWKA       WORK AREA ADDRESS                10450019
+         BZ    FINISH2                 JUMP IF NOT ALREADY GOTTEN       10460019
+         L     R0,0(,R1)               WORK AREA LENGTH                 10470000
+         FREEMAIN RU,LV=(0),A=(1)      FREE GENERIC LOCATE WORK AREA    10480000
+FINISH2  EQU   *                                                        10490019
+         LA    R0,DYNAML               GET LENGTH OF DYNAMIC AREA       10500019
+         LR    R1,R13                  ADDRESS OF DYNAMIC AREA          10510000
+         L     R2,MAXCC                HIGHEST IEBCOPY RETURN CODE      10520000
+         L     R13,4(,R13)             CALLER'S SAVE AREA               10530000
+         FREEMAIN RU,LV=(0),A=(1)      FREE DYNAMIC STORAGE AREA        10540000
+         LR    R15,R2                  PASS RETURN CODE                 10550000
+         RETURN (14,12),RC=(15)        GOBACK TO CALLER                 10560000
+*********************************************************************** 10570000
+*        Write a message using IKJEFF02                               * 10580014
+*********************************************************************** 10590000
+PUTLINE  LA    R0,L'MESSAGE            LENGTH OF INSERT                 10600014
+         ST    R0,MTLEN+00             LENGTH OF INSERT                 10610014
+         LA    R0,MESSAGE              RETURN CODE                      10620014
+         ST    R0,MTADDR+00            ADDRESS OF INSERT                10630014
+         MVC   MTMSGID,=C'PRT '        MESSAGE ID                       10640014
+         L     R15,CVTPTR(,0)          ADDR OF CVT                      10650014
+         L     R15,CVTEFF02-CVTMAP(,R15) ADDR OF IKJEFF02               10660014
+         LA    R1,MTPARML              POINT TO PPL                     10670014
+         BR    R15                     XCTL to IKJEFF02                 10680014
+*********************************************************************** 10690000
+*        INITIALIZE A DYNALLOC REQUEST BLOCK                          * 10700000
+*********************************************************************** 10710000
+INIT99RB LA    R3,WK265                S99RB                            10720019
+         XC    0(S99RBEND-S99RB,R3),0(R3)  CLEAR DYNALLOC WORK SPACE    10730019
+         USING S99RB,R3                                                 10740019
+         MVI   S99RBLN,S99RBEND-S99RB  RB LENGTH                        10750000
+         MVI   S99VERB,S99VRBAL        VERB IS "ALLOCATE"               10760000
+         LA    R0,S99RBEND             END OF RB, START OF T.U. PTRS    10770000
+         ST    R0,S99TXTPP             TEXT UNIT POINTERS               10780000
+         ST    R3,DFS99RBP             S99RBPTR                         10790019
+         OI    DFS99RBP,X'80'          S99RBPND                         10800003
+         LA    R0,=AL1(0,DFSVC99)      PUTLINE ONLY, SVC99              10810003
+         ST    R0,DFIDP                BUILD PARML FOR DAIRFAIL         10820003
+         ST    R11,DFCPPLP             ADDR OF CPPL                     10830003
+         BR    R14                                                      10840000
+         DROP  R3                      S99RB                            10850019
+*********************************************************************** 10860000
+*        Invoke the DAIRFAIL routine                                    10870012
+*********************************************************************** 10880000
+DAIRFAIL ST    R15,RETCODE             RETURN CODE                      10890012
+         LA    R0,RETCODE              RETURN CODE                      10900012
+         ST    R0,DFRCP                RETURN CODE                      10910012
+         LA    R0,=A(0)                NO ADDR FOR IKJEFF02             10920012
+         ST    R0,DFJEFF02             RETURN CODE                      10930012
+         LOAD  EP=IKJEFF18             CALL DAIRFAIL                    10940012
+         LR    R15,R0                  pass EP addr                     10950012
+         LA    R1,DFPARMS              DAIRFAIL PARM LIST               10960012
+         BR    R15                     CALL DAIRFAIL                    10970012
+*********************************************************************** 10980000
+*        MODEL CONTROL BLOCKS, MOVED TO DYNAMIC STORAGE               * 10990000
+*********************************************************************** 11000000
+CAML26   CAMLST NAME,*-*,,*-*          CAMLST FOR LOCATE                11010000
+CAML28F1 CAMLST SEARCH,*-*,*-*,*-*     CAMLST FOR OBTAIN - F1-DSCB      11020001
+CAML28F3 CAMLST SEEK,*-*,*-*,*-*       CAMLST FOR OBTAIN - F3-DSCB      11030001
+ENQMODEL RESERVE (*-*,*-*,E,44,SYSTEMS),UCB=*-*,MF=L                    11040000
+MODELDCB DCB   DSORG=PS,MACRF=(GL,PL)                                   11050000
+DCBLEN   EQU   *-MODELDCB                                               11060000
+*********************************************************************** 11070000
+*        DEFINE MESSAGES TO BE ISSUED VIA IKJEFF02                    * 11080000
+*********************************************************************** 11090000
+MSGCSECT IKJTSMSG (,),PRT                                               11100014
+         IKJTSMSG                                                       11110000
+*********************************************************************** 11120000
+*        DEFINE INPUT PARAMETERS FOR IKJPARS                          * 11130000
+*********************************************************************** 11140000
+PCLCSECT IKJPARM                                                        11150000
+DSNPCE   IKJPOSIT DSTHING,USID,LIST,PROMPT='DATA SET NAME'              11160019
+CHKPCE   IKJKEYWD                                                       11170000
+         IKJNAME 'CHECK'                                                11180000
+         IKJNAME 'NOCHECK'                                              11190000
+CHNGPCE  IKJKEYWD                                                       11200004
+         IKJNAME 'CHANGED'                                              11210004
+         IKJNAME 'NOCHANGED'                                            11220004
+STATPCE  IKJKEYWD DEFAULT='SHR'                                         11230013
+         IKJNAME 'SHR'                 1                                11240001
+         IKJNAME 'OLD'                 2                                11250001
+         IKJNAME 'LLAREFRESH'          3                                11260021
+SETMPCE  IKJKEYWD                                                       11270013
+         IKJNAME 'SETMSG'                                               11280013
+VOLPCE   IKJKEYWD                                                       11290000
+         IKJNAME 'VOLUME',SUBFLD=VOLSUBF,ALIAS='VOLSER'                 11300000
+VOLSUBF  IKJSUBF                                                        11310000
+VOLPCE2  IKJIDENT 'VOLUME',MAXLNTH=6,FIRST=ALPHANUM,OTHER=ALPHANUM      11320000
+         IKJENDP                                                        11330000
+*********************************************************************** 11340000
+*        DYNAMIC STORAGE AREA                                         * 11350000
+*********************************************************************** 11360000
+DYNAM    DSECT                                                          11370014
+         DS    18F                     SAVE AREA                        11380000
+DYN_CPPL DS    4F                      CPPL                             11390023
+OWNNAME  DS    CL8'COMPRESS'           own name from CDNAME             11400021
+MAXCC    DS    F                       MAX RETURN CODE FROM IKJEFTSR    11410000
+ATTNFLAG DS    C                       ATTENTION KEY PRESSED            11420000
+RECFM    DS    C                       RECFM F/V/U                      11430000
+TEMPALL  DS    C                       TEMPORARY FILES ALLOCATED        11440000
+MODE     DS    C                       SINGLE, CATALOG, VTOC            11450000
+VOLGIVEN DS    C                       'Y' IF VOL PARAM SPECIFIED       11460000
+CHECK    DS    C                       Y/N MEANS CHECK/NOCHECK          11470000
+CHANGED  DS    C                       Y/N MEANS CHANGED/NOCHANGED      11480004
+SETMSG   DS    C                       Y/N MEANS SETMSG                 11490013
+PRINTMSG DS    C                       'Y' TO PRINT IEBCOPY MESSAGES    11500000
+RETCODE  DS    F                       RETURN CODE FROM IKJEFTSR        11510000
+RSNCODE  DS    F                       REASON CODE FROM IKJEFTSR        11520000
+ABNDCODE DS    F                       ABEND CODE FROM IKJEFTSR         11530000
+IEBPARM  DS    A(*-*,IEBDD)            PARM LIST FOR IEBCOPY            11540000
+IEBDD    DS    Y(IEBDDLEN)                                              11550000
+         DS    C'SYSLIN  '           1 SYSLIN                           11560000
+         DS    XL8'00'               2 N/A                              11570000
+         DS    XL8'00'               3 N/A                              11580000
+         DS    C'SYSLIB  '           4 SYSLIB                           11590000
+IEBDDIN  DS    C'SYSIN   '           5 SYSIN                            11600000
+IEBDDPRT DS    C'SYSPRINT'           6 SYSPRINT                         11610000
+         DS    C'SYSPUNCH'           7 SYSPUNCH                         11620000
+IEBDDUT1 DS    C'SYSUT1  '           8 SYSUT1                           11630000
+IEBDDUT2 DS    C'SYSUT2  '           9 SYSUT2                           11640000
+         DS    C'SYSUT3  '          10 SYSUT3                           11650000
+         DS    C'SYSUT4  '          11 SYSUT4                           11660000
+IEBDDLEN EQU   *-(IEBDD+2)                                              11670000
+DYNENQL  RESERVE (SYSLMOD,DSNAME,E,44,SYSTEMS),UCB=0,MF=L               11680000
+DYNANSWR DS    F                       ANSWER AREA FOR PARSE            11690000
+DYNUWA   DS    4F                      USER WORK AREA FOR PARSE         11700000
+DYNPPL   DS    8F                      PPL FOR USE WITH PARSE           11710000
+DYNECB   DS    F                       ECB FOR USE WITH PARSE           11720015
+STATUS   DS    A                       STATUS KEY, SHR OR OLD           11730001
+DSNPCE7  DS    A(PCE7)                 CURRENT DSNAME PCE               11740019
+OPENLIST OPEN  IHADCB,MF=L             OPEN LIST                        11750016
+DYNAMDCB DCB   DSORG=PS,MACRF=(GL,PL)                                   11760021
+         READ  DECB1,SF,MF=L                                            11770021
+EXTRACTL EXTRACT ADDRTIOT,FIELDS=TIOT,MF=L                              11780016
+ADDRTIOT DS    A(TIOT)                 TIOT ADDRESS                     11790016
+ADDRCOMM DS    A                       COMM AREA ADDRESS                11800003
+ADDRUCB  DS    A(UCBOB)                UCB ADDRESS FOR RESERVE          11810016
+DEVT1    DS    5F                      DEVICE CHARACTERISTICS           11820001
+EFTPARM  DS    8A                      PARM LIST FOR IKJEFTSR           11830000
+DDNAME   DS    CL8                     DD NAME                          11840000
+TU02DSN  DS    AL2(DALDSNAM,1,44)   +0 DATA SET NAME KEY                11850000
+DSNAME   DS    CL44                 +6 DATA SET NAME                    11860000
+TU10VOL  DS    AL2(DALVLSER,1,6)    +0 VOLSER KEY                       11870000
+VOLSER   DS    CL6                  +6 VOLUME SERIAL                    11880000
+TU55DDN  DS    AL2(DALRTDDN,1,8),CL8   RETURN DDNAME                    11890000
+LENGTH   DS    F                       message length                   11900014
+TRKSUSED DS    F,F                     tracks used (after,before)       11910014
+XTNTUSED DS    FL1                     number of extents used           11920014
+ZDLDSN   DS    CL44                    DSLIST dsname                    11930016
+ZDLVOL   DS    CL6                     DSLIST volser                    11940016
+*                                                                       11950021
+         LLACOPY MF=(L,LLACOPYL)                                        11960021
+BLDLAREA DS    Y(1,62),62X             LLACOPY                          11970021
+*                                                                       11980021
+         IKJEFFMT MTDSECT=NO,MTFORMAT=NEW                               11990000
+         IKJEFFDF DFDSECT=NO,DFDSEC2=NO                                 12000003
+*@@      IEZCTGPL DSECT=NO             CATALOG PARAMETER LIST           12010014
+CTGPL    DS    0F                                                       12020000
+CTGOPTN1 DS    B              FIRST OPTION BYTE:                        12030000
+CTGNAME  EQU   X'04' .... .1..  CTGENT CONTAINS DSNAME                  12040000
+CTGGENLD EQU   X'01' .... ...1  GENERIC LOCATE REQUEST                  12050000
+CTGOPTN2 DS    B              SECOND OPTION BYTE                        12060000
+CTGOPTN3 DS    B              THIRD OPTION BYTE                         12070000
+CTGSUPLT EQU   X'10' ...1 ....  SUPERLOCATE FUNCTION                    12080000
+CTGAM0   EQU   X'01' .... ...1  OS/VS2 CATALOG MANAGMENT REQUEST        12090000
+CTGOPTN4 DS    B              FOURTH OPTION BYTE                        12100000
+CTGENT   DS    A              ADDRESS OF CATALOG RECORD IDENTIFIER      12110000
+CTGCAT   DS    A              ADDRESS OF CATALOG DSNAME OR ACB          12120000
+CTGWKA   DS    A              ADDRESS OF CALLER'S WORK AREA             12130000
+CTGOPTNS DS    B              CATALOG MANAGMENT SERVICES REQUEST OPTION 12140000
+CTGF2WKA EQU   X'04' 0000 01..  FORMAT-2 WORK AREA                      12150000
+         DS    B                                                        12160000
+CTGTYPE  DS    C              TYPE OF CATALOG RECORD:                   12170000
+CTGTALIN EQU   C'A'             NON-VSAM DATA SET                       12180000
+CTGNOFLD DS    FL1            NUMBER OF ENTRIES IN CTGFIELD             12190000
+CTGFDBK  DS    XL2            FEEDBACK AREA                             12200000
+CTGFBFLG DS    B,B            FLAGS (SUPERLOCATE)                       12210000
+         DS    2A             UNUSED HERE                               12220000
+CTGPLLEN EQU   *-CTGPL                                                  12230000
+WK265    DS    XL265                   WORK AREA FOR LOCATE             12240002
+MESSAGE  DS    CL100                   WORK AREA IKJEFF02               12250014
+         ORG   DYNAM+(((*+15-DYNAM)/16)*16)                             12260014
+         IECSDSL1 (1,3)                FORMAT-1 AND FORMAT-3 DSCB MAPS  12270001
+         AIF   (D'DS1SMSFG).SMS2                                  @PDSE 12280006
+         ORG   IECSDSL1+X'4E'                                     @PDSE 12290006
+DS1SMSFG DS    XL1                 SYSTEM MANAGED STORAGE INDICATORS    12300006
+DS1SMSDS EQU   X'80'  1... ....    SYSTEM MANAGED DATA SET              12310006
+DS1PDSE  EQU   X'08'  .... 1...    DATA SET IS A PDSE                   12320006
+         ORG   ,                                                  @PDSE 12330006
+.SMS2    ANOP                                                     @PDSE 12340006
+         DS    0F                                                       12350023
+PGM_CBUF DS    CL256                   CBUF built when called as a pgm  12360023
+DYNAML   EQU   *-DYNAM                 LENGTH OF WORK AREA              12370014
+*                                                                       12380000
+*              MACROS FROM SYS1.MACLIB                                  12390002
+*                                                                       12400000
+         IKJPPL                        PARSE PARAMETER LIST             12410000
+         IKJCPPL                       COMMAND PROCESSOR PARM LIST      12420000
+         IEFZB4D0                      DYNALLOC REQUEST BLOCK           12430000
+         IEFZB4D2                      DYNALLOC TEXT UNIT KEYS          12440000
+         DCBD  DSORG=PS,DEVD=DA        DCB DSECT                        12450000
+         YREGS                         REGISTER EQUATES                 12460000
+*                                                                       12470019
+*        PCE7 DSECT (dsname)                                            12480019
+*                                                                       12490019
+PCE7     DSECT                                                          12500019
+PCE7ADDR DS    A                       STRING ADDRESS                   12510019
+PCE7LEN  DS    H                       STRING LENGTH                    12520019
+         DS    X                       IKJPARSE FLAGS                   12530019
+PCE7LEN2 DS    FL1                     len of non-generic part of name  12540019
+         ORG   PCE7+24                                                  12550019
+PCE7NEXT DS    A(PCE7)                 next PCE7 or zero                12560019
+*                                                                       12570000
+*              MACROS FROM SYS1.MODGEN                                  12580006
+*                                                                       12590000
+TIOT     DSECT                                                          12600001
+         IEFTIOT1                      TIOT DSECT                       12610014
+*@@@     IEFUCBOB                      UCB DSECT                        12620014
+UCBOB    DSECT                                                          12630004
+UCBTBYT2 EQU   *+17,1                  UCB TYPE BYTE 2                  12640004
+UCBRR    EQU   X'20'                   RESERVE/RELEASE (SHARED DASD)    12650004
+UCBTBYT3 EQU   *+18,1                  UCB TYPE BYTE 3                  12660004
+UCB3DACC EQU   X'20'                   DASD DEVICE CLASS                12670004
+CIB      DSECT                                                          12680003
+         IEZCIB                        COMMAND INPUT BUFFER             12690003
+         CVT   DSECT=YES,LIST=NO       CVT                              12700014
+         IKJTSVT                       TSO VECTOR TABLE                 12710014
+         IKJRB                         PRB                              12720021
+         IHACDE                        CDE                              12730021
+         STRING (GENERATE,,LOCTR)                                       12740022
+         END   COMPRESS                                                 12750007
+//SYSLIB   DD DSN=SYS1.MACLIB,DISP=SHR                                  12760000
+//         DD DSN=SYS1.MODGEN,DISP=SHR                                  12770007
+//         DD DSN=GILBERT.FILE183.PDS(STRING),DISP=SHR                  12780018
+//SYSUT1   DD UNIT=VIO,SPACE=(CYL,5)                                    12790004
+//SYSPRINT DD SYSOUT=*                                                  12800000
+//SYSLIN   DD UNIT=VIO,SPACE=(TRK,1),DISP=(,PASS),BLKSIZE=3200          12810019
+//*                                                                     12820000
+//LKED    EXEC PGM=HEWL,PARM=(LIST,MAP,RENT)                            12830022
+//SYSLIN   DD DSN=*.HLASM.SYSLIN,DISP=(OLD,PASS)                        12840021
+//         DD *                                                         12850007
+ INCLUDE ISPLOAD(ISPLINK)                                               12860007
+//ISPLOAD  DD DSN=ISP.SISPLOAD,DISP=SHR                                 12870016
+//SYSLMOD  DD DSN=GILBERT.FILE183.LOAD(COMPRESS),DISP=SHR               12880023
+//SYSPRINT DD SYSOUT=*                                                  12890000
+//*                                                                     12900003
+//GO      EXEC PGM=IKJEFT1B,REGION=2M                                   12910021
+//STEPLIB  DD DSN=*.LKED.SYSLMOD,DISP=SHR                               12920014
+//SYSTSPRT DD SYSOUT=*                                                  12930000
+//SYSPRINT DD SYSOUT=*                                                  12940000
+//SYSDEBUG DD SYSOUT=*                                                  12950016
+//SYSUDUMP DD SYSOUT=*                                                  12960000
+//SYSTSIN  DD *                                                         12970023
+CALL *(COMPRESS) '''GILBERT.EXEC'''                                     12980023
+COMPRESS ('GILBERT.EXEC' 'GILBERT.CLIST') NOCHECK                       12990023
+//                                                                      13000023
+                                                                        13010007
+                                                                        13020007
+/*                                                                      13030003
+/*        THIS IS THE "COMPRESS" EDIT MACRO.   21JAN89                  13040003
+/*                                                                      13050003
+ISREDIT MACRO (DSN BATCH)                                               13060003
+IF &STR(&DSN) = &STR() OR &STR(&DSN) = BATCH THEN -                     13070003
+  DO                                                                    13080003
+    SET BATCH = &STR(&DSN)                   /* SAVE POSSIBLE BATCH OPT 13090003
+    ISREDIT (ID1) = DATAID                                              13100003
+    ISPEXEC LMQUERY DATAID(&ID1) DATASET(DSN) VOLUME(VOL) -             13110003
+                    PROJECT(PROJECT) GROUP1(GROUP1) TYPE(TYPE)          13120003
+    SET DSN     = &DSN                       /* TRUNCATE TRAILING SPACES13130003
+    SET PROJECT = &PROJECT                   /* TRUNCATE TRAILING SPACES13140003
+    SET GROUP1  = &GROUP1                    /* TRUNCATE TRAILING SPACES13150003
+    IF &STR(&DSN) = &STR() THEN -                                       13160003
+      SET DSN   = &PROJECT..&GROUP1..&TYPE                              13170003
+    ELSE -                                                              13180003
+      DO                                                                13190003
+        IF &SUBSTR(1:1,&DSN) NE &STR(') THEN -                          13200003
+          IF &SYSPREF NE &STR() THEN SET DSN = '&SYSPREF..&DSN'         13210003
+        IF  &VOL ^= &STR() THEN SET &VOL = VOLUME(&VOL)                 13220003
+      END                                                               13230003
+  IF &BATCH ^= BATCH THEN -                                             13240003
+    DO                                                                  13250003
+      SET ZEDSMSG = COMPRESS IN PROGRESS                                13260003
+      ISPEXEC CONTROL DISPLAY LOCK                                      13270003
+      ISPEXEC DISPLAY MSG(ISRZ001)                                      13280003
+      SET &SYSOUTTRAP = 1                                               13290003
+      COMPRESS &DSN &VOL              /* INVOKE THE "COMPRESS" COMMAND  13300007
+      IF &LASTCC = 0 THEN -                                             13310003
+        DO                                                              13320003
+          SET &ZEDLMSG = &SYSOUTLINE1                                   13330003
+          SET &I = &SYSINDEX(NOW,&STR(&ZEDLMSG))                        13340003
+          SET ZEDSMSG = &SUBSTR(&I:&LENGTH(&ZEDLMSG)-1,&ZEDLMSG)        13350003
+          ISPEXEC SETMSG MSG(ISRZ001)                                   13360003
+        END                                                             13370003
+      ELSE -                                                            13380003
+        WRITE &SYSOUTLINE1            /* ERROR MESSAGE                  13390003
+    END                                                                 13400003
+  END                                                                   13410003
+IF &BATCH = BATCH THEN -                                                13420003
+  DO                                                                    13430003
+    SETVAR1                        /* RETRIEVE ACCT, NAME  */           13440003
+    SET JOBNM = &SUBSTR(1:8,&SYSUID.CPR   )                             13450003
+    SUBMIT * END(ZZ)                                                    13460003
+    //&JOBNM JOB &ACCOUNT,'&PRGNM',                                     13470003
+    // NOTIFY=&SYSUID,CLASS=Z,MSGCLASS=H,COND=(4,LT)                    13480006
+    &STR(//*) COMPRESS DSN=&DSN                                         13490003
+    &STR(//*) SUBMITTED &SYSDATE &SYSTIME                               13500003
+    //COMPRESS EXEC PGM=IKJEFT01,REGION=2M                              13510003
+    //SYSTSPRT DD  SYSOUT=*                                             13520003
+    //SYSTSIN  DD  *                                                    13530003
+    COMPRESS &DSN &VOL                                                  13540007
+    //COND99  EXEC PGM=CANMSGCL,PARM=1 PURGE THE JOB AFTER 1 HOUR       13550003
+    //STEPLIB  DD  DSN=SYS2.LINKLIB,DISP=SHR    APF LIB                 13560007
+    ZZ                                                                  13570003
+  END                                                                   13580003
+ELSE -                                                                  13590003
+  COMPRESS &DSN                     /* USER SPECIFIED A DATA SET NAME   13600007
+                                                                        13610007
+                                                                        13620007
+                                                                        13630007
+   >>>>>>>>> The REXX EDIT macro is in the COMPRESS member <<<<<<<<<    13640016
+                                                                        13650014

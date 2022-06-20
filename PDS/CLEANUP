@@ -1,0 +1,524 @@
+//GILBERTC JOB (ACCT#),CLEANUP,                                         00010005
+//*RESTART=HMIG,                                                        00020000
+// NOTIFY=&SYSUID,                                                      00030000
+// CLASS=A,MSGCLASS=H,COND=(1,LT)                                       00040000
+//HLASM EXEC PGM=ASMA90,PARM=(OBJECT,NODECK,NOESD,NORLD,NOXREF)         00050005
+*********************************************************************** 00060000
+*                                                                     * 00070000
+* MODULE NAME = CLEANUP                                               * 00080003
+*                                                                     * 00090003
+* DESCRIPTIVE NAME = Data Set Clean-up Utility                        * 00100003
+*                                                                     * 00110003
+* FUNCTION = The "CLEANUP" program deletes existing data sets         * 00120003
+*            created and/or used in your job.  It has three modes     * 00130003
+*            of operation:  Job restart, Job Clean-up, Never-open.    * 00140003
+*                                                                     * 00150000
+* STATUS = R407                                                       * 00160007
+*                                                                     * 00170003
+* AUTHOR = Gilbert Saint-Flour <carlos@gsf-soft.com>                  * 00180005
+*          http://gsf-soft.com/Freeware/                              * 00190006
+*                                                                     * 00200003
+* NOTES = SEE BELOW                                                   * 00210003
+*                                                                     * 00220003
+*    DEPENDENCIES = MVS/XA, MVS/ESA, DFHSM                            * 00230003
+*                                                                     * 00240003
+*    AUTHORIZATION = NONE                                             * 00250003
+*                                                                     * 00260003
+*    RESTRICTIONS = NONE                                              * 00270003
+*                                                                     * 00280003
+* MODULE TYPE = PROCEDURE, (BATCH PROGRAM)                            * 00290003
+*                                                                     * 00300003
+*    PROCESSOR = IBM OS/ASSEMBLER H VERSION 2 OR                      * 00310003
+*                IBM HIGH LEVEL ASSEMBLER/MVS                         * 00320003
+*                                                                     * 00330003
+*    MODULE SIZE = 4K                                                 * 00340003
+*                                                                     * 00350003
+*    ATTRIBUTES = REUSABLE, RMODE 24, AMODE 31,                       * 00360005
+*                 PROBLEM STATE, KEY 8                                * 00370003
+*                                                                     * 00380003
+* OPERATION = See Below                                               * 00390003
+*                                                                     * 00400003
+*        1. Job restart                                               * 00410000
+*                                                                     * 00420000
+*            When executed at the beginning of the job you're         * 00430000
+*            re-starting or re-running, CLEANUP deletes non-gdg       * 00440000
+*            data sets that were created by a previous run of the     * 00450000
+*            same job.  This prevents Job failures that would         * 00460000
+*            result from "NOT CATLG 2" and IGD17001I messages.        * 00470000
+*                                                                     * 00480000
+*            Sample JCL :                                             * 00490000
+*                                                                     * 00500000
+*              //MYJOB   JOB (ACCT#),'JOHN DOE', . . .                * 00510000
+*              //*                                                    * 00520000
+*              //CLEANUP EXEC PGM=CLEANUP                             * 00530000
+*              //*                                                    * 00540000
+*              //STEP1   EXEC PROC=MYPROC, . . .                      * 00550000
+*                                                                     * 00560000
+*            Notes:                                                   * 00570000
+*                                                                     * 00580000
+*              o  no DD statements, control cards or PARM are         * 00590000
+*                 necessary.  CLEANUP automatically retrieves data    * 00600000
+*                 set names from in-storage images of the job's JCL.  * 00610000
+*                                                                     * 00620000
+*              o  CLEANUP may be executed more than once in a job.    * 00630000
+*                 Each execution will consider data sets created      * 00640000
+*                 in subsequent steps.                                * 00650000
+*                                                                     * 00660000
+*              o  If PARM=RECALL is specified, CLEANUP invokes        * 00670002
+*                 the RECALL utility after it has completed its       * 00680002
+*                 clean-up work.                                      * 00690002
+*                                                                     * 00700000
+*        2. Job clean-up                                              * 00710000
+*                                                                     * 00720000
+*            When executed as the very last step of a job,            * 00730000
+*            CLEANUP deletes non-gdg data sets that were created      * 00740000
+*            during the job's execution.                              * 00750000
+*                                                                     * 00760000
+*            Sample JCL :                                             * 00770000
+*                                                                     * 00780000
+*              //MYJOB   JOB (ACCT#),'JOHN DOE', . . .                * 00790000
+*              //*                                                    * 00800000
+*              //STEP1   EXEC PROC=MYPROC, . . .                      * 00810000
+*              //*                                                    * 00820000
+*              //CLEANUP EXEC PGM=CLEANUP                             * 00830000
+*              //                                                     * 00840000
+*                                                                     * 00850000
+*        3. Never-OPEN                                                * 00860000
+*                                                                     * 00870000
+*            When executed with PARM=NEVEROPEN, CLEANUP deletes       * 00880000
+*            data sets that have been allocated but have not been     * 00890000
+*            opened for output by any program.  DD statements must    * 00900000
+*            be explicitely specified in CLEANUP's step for the       * 00910000
+*            data sets to delete.                                     * 00920000
+*                                                                     * 00930000
+*            Sample JCL :                                             * 00940000
+*                                                                     * 00950000
+*              //MYJOB   JOB (ACCT#),'JOHN DOE', . . .                * 00960000
+*              //*                                                    * 00970000
+*              //STEP1   EXEC PGM=MYPROG1, . . .                      * 00980000
+*              //OUTDD    DD  DSN=SELDOM.OPEN1(+1),DISP=(,CATLG)      * 00990000
+*              //*                                                    * 01000000
+*              //STEP2   EXEC PGM=MYPROG2, . . .                      * 01010000
+*              //OUTDD    DD  DSN=SELDOM.OPEN2,DISP=(,CATLG)          * 01020000
+*              //*                                                    * 01030000
+*              //CLEANUP EXEC PGM=CLEANUP,PARM=NEVEROPEN              * 01040000
+*              //DD1      DD  DSN=SELDOM.OPEN1(+1),DISP=OLD           * 01050000
+*              //DD2      DD  DSN=SELDOM.OPEN2,DISP=OLD               * 01060000
+*                                                                     * 01070000
+* Method of Operation (functions 1 & 2)                               * 01080003
+*                                                                     * 01090000
+*         o  CLEANUP scans the SWA control blocks of every step       * 01100000
+*            of your job for non-GDG data sets that will be           * 01110000
+*            (function 1) or have been (function 2) created           * 01120000
+*            with DISP=(NEW,CATLG) or DISP=(MOD,CATLG).               * 01130000
+*                                                                     * 01140000
+*         o  Any of these data sets currently catalogued are          * 01150000
+*            dynamically allocated and deleted.                       * 01160000
+*                                                                     * 01170000
+*         o  Data sets migrated by HSM are deleted                    * 01180000
+*            with an HDELETE command.                                 * 01190000
+*                                                                     * 01200000
+* PARAMETERS = PARM=NEVEROPEN indicates that CLEANUP should only      * 01210003
+*              delete those data sets that are allocated in its own   * 01220003
+*              step and have a null BLKSIZE (i.e. have never been     * 01230003
+*              OPEN'd for output).                                    * 01240003
+*                                                                     * 01250005
+*              PARM=RECALL indicates that CLEANUP should invoke       * 01260005
+*              the RECALL utility at the end of its own processing.   * 01270005
+*                                                                     * 01280000
+* Return codes = See below                                            * 01290003
+*                                                                     * 01300000
+*            00     Normal end                                        * 01310000
+*            16     Parm is invalid                                   * 01320000
+*                                                                     * 01330000
+* Messages = See below                                                * 01340003
+*                                                                     * 01350000
+*            PARM FIELD IS INVALID, when the PARM specifies           * 01360000
+*              something other than NEVEROPEN.                        * 01370000
+*                                                                     * 01380000
+*            CLEANUP - data-set-name DELETED (volser)                 * 01390000
+*              for each data set deleted                              * 01400000
+*                                                                     * 01410000
+*            CLEANUP - data-set-name DELETED (MIGRAT)                 * 01420000
+*              for each migrated data set deleted with HDELETE        * 01430000
+*                                                                     * 01440000
+* Change Activity                                                     * 01450000
+*                                                                     * 01460000
+*402 XCTL to PGM=RECALL at EOJ if PARM=RECALL                         * 01470002
+*403 IGNORE DISP=(MOD,DELETE) DATA SETS WITH PARM=NEVEROPEN           * 01480003
+*404 Increase message length to 80 characters.                        * 01490004
+*405 Pass PARM='' to RECALL program                              1996 * 01500005
+*406 Check that GDG base is DEFINE'd                             2008 * 01510006
+*407 Change 5X to 7X for z/OS R10                                2009 * 01520007
+*********************************************************************** 01530000
+CLEANUP  CSECT                                                          01540000
+CLEANUP  AMODE 31                      SWAUP                            01550003
+CLEANUP  RMODE 24                      HDEL                             01560003
+         SAVE  (14,12),,'GSF Utilities - CLEANUP R407'                  01570007
+         LR    R12,R15                                                  01580005
+         USING CLEANUP,R12                                              01590005
+         GETMAIN R,LV=DYNAML                                            01600000
+         ST    R13,4(,R1)                                               01610000
+         ST    R1,8(,R13)                                               01620000
+         LM    R13,R1,8(R13)                                            01630000
+         USING DYNAM,R13                                                01640000
+         L     R9,0(,R1)               SAVE THE PARM ADDR               01650000
+*---------------------------------------------------------------------* 01660003
+*                                                                     * 01670003
+*        Set up SWA scan from first step after our own.               * 01680003
+*                                                                     * 01690003
+*        If we're the last step of the job, set up scan               * 01700003
+*        from beginning of job.                                       * 01710003
+*                                                                     * 01720003
+*---------------------------------------------------------------------* 01730003
+INIT50   L     R3,540(,0)              MY TCB (PSATOLD-PSA)             01740005
+         L     R4,TCBJSCB-TCB(,R3)     MY JSCB                          01750000
+         USING IEZJSCB,R4                                               01760000
+         L     R5,JSCSCT               CURRENT STEP'S SCT PREFIX        01770000
+         USING SCT,R5                                                   01780000
+         MVI   MODE,C'F'               processing mode is "FIRST"       01790001
+         ICM   R1,B'0111',SCTANSCT     last step of this job?           01800000
+         BNZ   INIT59                  no, jump                         01810000
+         L     R1,JSCBJCT              yes, point to JCT                01820000
+         ICM   R5,B'0111',JCTSDKAD-JCT(R1) SCT of first step to be run  01830000
+         MVI   MODE,C'L'               processing mode is "LAST"        01840001
+*                                                                       01850000
+INIT59   SLR   R10,R10                 SET RC=00 (NOTHING DELETED)      01860000
+         MVI   DO_RECALL,C'N'          No XCTL to PGM=RECALL at EOJ     01870002
+*---------------------------------------------------------------------* 01880003
+*                                                                     * 01890003
+*        FIND RESTART STEP, IF SPECIFIED IN THE PARM                  * 01900003
+*                                                                     * 01910003
+*---------------------------------------------------------------------* 01920003
+INIT60   LTR   R9,R9                   PARM FROM JCL OR CPPL            01930001
+         BNM   LOOPSCT                 no parm or TMP-INVOKED           01940000
+         CLI   1(R9),0                 PARM=""                          01950000
+         BE    LOOPSCT                 yes, jump                        01960000
+INIT63   CLI   1(R9),6                 PARM=RECALL   ?                  01970002
+         BNE   INIT64                  no, jump                         01980001
+         CLC   =C'RECALL',2(R9)        PARM=RECALL   ?                  01990002
+         BNE   BADPARM                 no, parm is invalid              02000001
+         MVI   DO_RECALL,C'Y'          XCTL to PGM=RECALL at EOJ        02010002
+         B     LOOPSCT                                                  02020002
+INIT64   CLI   1(R9),9                 PARM=NEVEROPEN?                  02030001
+         BNE   BADPARM                 no, parm is invalid              02040000
+         CLC   =C'NEVEROPEN',2(R9)     PARM=NEVEROPEN?                  02050000
+         BNE   BADPARM                 no, parm is invalid              02060000
+         MVI   MODE,C'O'               processing mode is "OPEN"        02070002
+         L     R5,JSCSCT               CURRENT STEP'S SCT PREFIX        02080000
+         B     LOOPSCT                                                  02090000
+*                                                                       02100000
+BADPARM  WTO   'CLEANUP - Parm Field is invalid',ROUTCDE=(2,11)         02110000
+         LA    R10,16                  RC=16                            02120000
+         B     GOBACK                                                   02130000
+*********************************************************************** 02140000
+*                                                                     * 02150003
+*        SCAN SCT/SIOT CHAINS                                         * 02160003
+*                                                                     * 02170003
+*           1. SELECT NON-GDG DATA SETS THAT HAVE DISP=(NEW,CATLG)    * 02180003
+*              OR DISP=(MOD,CATLG)                                    * 02190003
+*                                                                     * 02200003
+*           2. ALLOCATE SELECTED DATA SETS WITH DISP=(OLD,DELETE)     * 02210003
+*                                                                     * 02220003
+*           3. UNALLOCATE DATA SETS THAT WERE SUCCESSFULLY ALLOCATED  * 02230003
+*              TO DELETE THEM                                         * 02240003
+*                                                                     * 02250003
+*********************************************************************** 02260000
+*LOOP                                                                   02270000
+LOOPSCT  ICM   R1,B'0111',SCTFSIOT     SVA OF 1ST SIOT                  02280000
+         BZ    NEXTSTEP                NO DD STATEMENTS, TRY NEXT SCT   02290000
+*--LOOP                                                                 02300000
+LOOPSIOT BAL   R9,SWAREQ               CONVERT SVA TO 31-BIT ADDRESS    02310000
+         LR    R6,R1                   PASS SIOT ADDRESS                02320000
+         USING INDMSIOT,R6                                              02330000
+         ICM   R1,B'0111',SCTPJFCB     SVA OF JFCB                      02340000
+         BAL   R9,SWAREQ               CONVERT SVA TO 31-BIT ADDRESS    02350000
+         LR    R7,R1                   LOAD JFCB ADDRESS                02360000
+         USING INFMJFCB,R7                                              02370000
+*                                                                       02380000
+*        Set-up message                                                 02390000
+*                                                                       02400000
+SETUPMSG MVC   DSNAME,JFCBDSNM         MOVE DSN TO UNPROTECTED STORAGE  02410000
+         MVC   WTO1TEXT,WTO1TEXT-1     clear work area                  02420000
+         MVC   WTO1TEXT(L'DSNAME),DSNAME move dsname                    02430000
+         LA    R2,WTO1TEXT             start of dsname                  02440000
+         LA    R2,1(,R2)             - BUMP POINTER                     02450000
+         CLI   0(R2),C' '            - END OF MSG?                      02460000
+         BNE   *-8                   - NOT YET, TRY NEXT CHARACTER      02470000
+         MVC   1(7,R2),=C'deleted'     action taken                     02480000
+         CLI   MODE,C'O'               PARM=NEVEROPEN?                  02490001
+         BE    NO_OPEN                 yes, bypass filters              02500000
+*                                                                       02510000
+*        Filter data sets: DSN=A.B.C(+1),DISP=(,CATLG)                  02520000
+*                                                                       02530000
+FILTER   TM    SCTSDISP,SIOTCTLG       DISP=(,CATLG) ?                  02540000
+         BNO   NEXTSIOT                NO, JUMP                         02550000
+         TM    SCTSBYT3,SCTSNEW+SCTSMOD   DISP=NEW/MOD ?                02560000
+         BZ    NEXTSIOT                NO, JUMP                         02570000
+         TM    JFCBIND1,JFCGDG         CHECK FOR (+1)                   02580000
+         BO    GDG1                    JUMP, THIS IS A GDG              02590006
+         CLI   MODE,C'L'               MODE=LAST?                       02600001
+         BE    ALLOC                   yes, bypass catalog search       02610001
+*                                                                       02620000
+*        Look-up data set name in the catalog                           02630000
+*                                                                       02640000
+LOCATE   LM    R14,R1,CAMLST26         MODEL CAMLST                     02650000
+         SLR   R0,R0                   no CVOL ptr                      02660000
+         LA    R1,WORK265              WORK AREA                        02670000
+         STM   R14,R1,CAMLST2          UPDATE CAMLST IN DYNAMIC STRGE   02680000
+         LOCATE CAMLST2                GET VOLSER                       02690000
+         LTR   R15,R15                 IS IT CATALOGED?                 02700000
+         BNZ   NEXTSIOT                NO, IGNORE                       02710000
+         MVI   09(R2),C'('             surround volser with parentheses 02720000
+         MVC   10(6,R2),WORK265+6      yes, move volser                 02730000
+         MVI   16(R2),C')'             surround volser with parentheses 02740000
+*                                                                       02750000
+*        If the data set has been migrated by HSM,                      02760000
+*        issue an HDELETE command.                                      02770000
+*                                                                       02780000
+HDELETE  CLC   =C'MIGRAT',WORK265+6    cataloged on MIGRAT ?            02790000
+         BNE   ALLOC                   no, jump                         02800000
+         ARCHDEL DSN=DSNAME,WKAREA=WORK265,WAIT=YES                     02810000
+         LTR   R15,R15                 HDELETE OK?                      02820000
+         BNZ   ALLOC                   no, jump                         02830000
+         B     WTO1                    yes, issue WTO                   02840000
+*                                                                       02850000
+*        PARM=NEVEROPEN                                                 02860000
+*                                                                       02870000
+NO_OPEN  TM    SCTSDISP,SIOTDLET       DISP=(,DELETE)?                  02880003
+         BO    NEXTSIOT                YES, JUMP                        02890003
+         LM    R14,R1,CAMLST28         MODEL CAMLST                     02900003
+         LA    R0,JFCBVOLS             volser                           02910000
+         LA    R1,DS1FMTID             WORK AREA                        02920000
+         STM   R14,R1,CAMLST2          UPDATE CAMLST IN DYNAMIC STRGE   02930000
+         OBTAIN CAMLST2                GET F1-DSCB                      02940000
+         LTR   R15,R15                 found on disk?                   02950000
+         BNZ   NEXTSIOT                NO, IGNORE                       02960000
+         OC    DS1BLKL,DS1BLKL         BLKSIZE=0?                       02970000
+         BNZ   NEXTSIOT                NO, IGNORE                       02980000
+         MVC   09(12,R2),=C'(Never OPEN)'                               02990000
+*                                                                       03000000
+*        ALLOCATE                                                       03010000
+*                                                                       03020000
+ALLOC    MVI   S99RB+1,1               FUNCTION=ALLOC                   03030000
+         NI    S99TUPTR,255-X'80'      USE ALL OF THE KEYS              03040000
+         LA    1,=A(S99RB+VL)          SVC99 REQUEST BLOCK              03050000
+         SVC   99                      ALLOCATE THE DATA SET            03060000
+         LTR   R15,R15                 ALLOC OK?                        03070000
+         BNZ   NEXTSIOT                NO, JUMP                         03080000
+*                                                                       03090000
+*        UNALLOCATE                                                     03100000
+*                                                                       03110000
+         MVI   S99RB+1,2               FUNCTION=UNALLOC                 03120000
+         OI    S99TUPTR,X'80'          KEEP ONLY THE DDNAME KEY         03130000
+         LA    1,=A(S99RB+VL)          SVC99 REQUEST BLOCK              03140000
+         SVC   99                      ALLOCATE THE DATA SET            03150000
+*                                                                       03160000
+WTO1     EQU   *                                                        03170006
+         WTO   MF=(E,WTO1L)            CLEANUP - data.set (Never OPEN)  03180006
+         B     NEXTSIOT                                                 03190006
+*                                                                       03200006
+*        Check GDG BASE defined                                         03210006
+*                                                                       03220006
+GDG1     EQU   *                                                        03230006
+         XC    CTGPL(CTGPLLEN),CTGPL   CLEAR OPTION BYTES               03240006
+         LA    R0,DSNAME               ENTRY NAME OR CI NUMBER          03250006
+         ST    R0,CTGENT               POINTER TO ENTRY NAME OR CI#     03260006
+         OI    CTGOPTN1,CTGNAME        CTGENT POINTS TO ENTRY NAME      03270006
+**       LA    R0,CATNAME              CATALOG NAME OR ACB ADDRESS      03280006
+**       ST    R0,CTGCAT               POINTER TO CATALOG NAME/ACB      03290006
+**       OI    CTGOPTN1,CTGCNAME       CTGCAT POINTS TO CATALOG NAME    03300006
+         MVI   CTGOPTN3,CTGAM0         OS/VS2 CATALOG MGMT REQUEST      03310006
+         MVI   CTGOPTNS,CTGLTCAT       LISTCAT                          03320006
+         OI    CTGOPTN3,CTGCMS         CATALOG MGMT SERVICE             03330006
+         MVI   CTGNOFLD,1              NUMBER OF FIELDS                 03340006
+         LA    R15,CTGFL               CTGFLD                           03350006
+         MVI   0(R15),X'01'            CTGFLDNO                         03360006
+         ST    R15,CTGFIELD+0          STORE CTGFL ADDRESS              03370006
+         LA    R0,=C'ENTTYPE '         ENTTYPE=B IF GDG BASE            03380006
+         ST    R0,CTGFLDNM             CTGFLDNM                         03390006
+         LA    R14,WORK265             WORK AREA FOR SVC 26             03400006
+         ST    R14,CTGWKA              WORK AREA FOR SVC 26             03410006
+         MVC   0(4,R14),=Y(256,0)      AREA LENGTH                      03420006
+         LA    R1,CTGPL                LOAD R1 WITH CTGPL ADDRESS       03430006
+         SVC   26                      REQUEST CATALOG MGMT SERVICES    03440006
+         LTR   R15,R15                 LISTCAT ERROR ?                  03450006
+         BNZ   GDG7                    YES, QUIT                        03460006
+         L     R2,CTGFLPT              POINT TO RETURNED VALUE          03470006
+         CLI   0(R2),C'B'              CHECK ENTRY TYPE                 03480006
+         BE    NEXTSIOT                IT'S A GDG BASE, CONTINUE        03490006
+GDG7     EQU   *                                                        03500006
+         LA    R2,WTO1TEXT             start of dsname                  03510006
+         LA    R2,1(,R2)             - BUMP POINTER                     03520006
+         CLI   0(R2),C' '            - END OF MSG?                      03530006
+         BNE   *-8                   - NOT YET, TRY NEXT CHARACTER      03540006
+         MVC   09(13,R2),=C'(No GDG Base)'                              03550006
+         WTO   MF=(E,WTO1L)            '--> GDG-BASE NOT DEFINED <--'   03560006
+*                                                                       03570000
+NEXTSIOT ICM   R1,B'0111',SCTPSIOT     NEXT SIOT'S PREFIX               03580000
+         BNZ   LOOPSIOT                PROCESS NEXT DD CARD IN STEP     03590000
+*--ENDLOOP                                                              03600000
+NEXTSTEP CLI   MODE,C'O'               PARM=NEVEROPEN?                  03610001
+         BE    GOBACK                  yes, we're done                  03620000
+         ICM   R5,B'0111',SCTANSCT     NEXT SCT PREFIX                  03630000
+         BNZ   LOOPSCT                 PROCESS NEXT STEP                03640000
+*ENDLOOP                                                                03650000
+         DROP  R5,R6,R7                SCT, SIOT, JFCB                  03660000
+*                                                                       03670001
+GOBACK   CLI   DO_RECALL,C'Y'          PARM=RECALL ?                    03680002
+         BE    XCTLRCAL                yes, jump                        03690001
+         L     R13,4(,R13)             CALLER'S SAVE AREA               03700001
+         LR    R15,R10                 RETURN CODE                      03710000
+         RETURN (14,12),RC=(15)                                         03720000
+*                                                                       03730001
+XCTLRCAL L     R13,4(,R13)             CALLER'S SAVE AREA               03740001
+         L     R1,24(,R13)             R1=parm_addr                     03750005
+         L     R14,0(,R1)              R14=>AL2(L'PARM)                 03760005
+         MVI   1(R14),0                L'PARM=0                         03770005
+         XCTL  (2,12),EP=RECALL        invoke RECALL program            03780003
+*---------------------------------------------------------------------* 03790000
+*                                                                     * 03800000
+*        SUB-ROUTINE USED TO ACCESS THE SWA MANAGER                   * 03810000
+*                                                                     * 03820000
+*---------------------------------------------------------------------* 03830000
+SWAREQ   LA    R2,DSNAME               WORK AREA                        03840000
+         ST    R2,EPAPTR               STORE POINTER                    03850000
+         USING ZB505,R2                                                 03860000
+         XC    SWAEPAX,SWAEPAX         CLEAR 32 BYTES                   03870000
+         STCM  R1,B'0111',SWVA         STORE 3-BYTE SVA                 03880000
+         SWAREQ FCODE=RL,EPA=EPAPTR,MF=(E,SWAREQL1),UNAUTH=YES          03890000
+         L     R1,SWBLKPTR             LOAD SWA CONTROL BLOCK ADDRESS   03900000
+         BR    R9                                                       03910000
+         DROP  R2                      ZB505                            03920000
+*---------------------------------------------------------------------* 03930003
+*                                                                     * 03940003
+*        DATA, WORK AREAS                                             * 03950003
+*                                                                     * 03960003
+*---------------------------------------------------------------------* 03970003
+VL       EQU   X'80000000'                                              03980000
+S99RB    DC    A(X'14010000',0,S99TUPTR,0,0)                            03990000
+S99TUPTR DC    A(S99TU01,S99TU02,S99TU04,S99TU05,S99TU6C+VL)            04000000
+S99TU01  DC    AL2(X'01',1,L'DDNAME)   DDNAME KEY                       04010000
+DDNAME   DC    C'$CLEANUP'                                              04020000
+S99TU02  DC    AL2(X'02',1,L'DSNAME)   DSNAME KEY                       04030000
+DSNAME   DS    CL44                                                     04040000
+S99TU04  DC    AL2(X'04',1,1),X'01'    STATUS=OLD                       04050000
+S99TU05  DC    AL2(X'05',1,1),X'04'    DISP=DELETE                      04060000
+S99TU6C  DC    AL2(X'6C',0)            UNIT=(,,DEFER)                   04070000
+CAMLST26 CAMLST NAME,DSNAME,,*-*       CAMLST FOR LOCATE MACRO          04080000
+CAMLST28 CAMLST SEARCH,DSNAME,*-*,*-*  CAMLST FOR OBTAIN MACRO          04090000
+*                                                                       04100006
+&STR     SETC  (80)' '                                                  04110006
+WTO1L    WTO   'CLEANUP - &STR',ROUTCDE=11,MF=L                         04120006
+WTO1TEXT EQU   WTO1L+14,80                                              04130006
+*---------------------------------------------------------------------* 04140003
+*                                                                     * 04150003
+*        Dynamic storage                                              * 04160003
+*                                                                     * 04170003
+*---------------------------------------------------------------------* 04180003
+DYNAM    DSECT                                                          04190000
+         DS    18F                                                      04200000
+MODE     DS    C'F'                    FIRST/LAST/OPEN                  04210001
+DO_RECALL DS   C'N'                    PARM=RECALL                      04220002
+CAMLST2  CAMLST NAME,DSNAME,,WORK265   CAMLST FOR LOCATE MACRO          04230000
+SWAREQL1 SWAREQ MF=L                   PARM LIST FOR SWAREQ             04240000
+EPAPTR   DS    F                       POINTER TO EPA (ZB505)           04250000
+WORK265  DS    CL265                   LOCATE macro                     04260001
+         IECSDSL1 1                    F1-DSCB                          04270000
+         DS    5X,2X                   CCHHR + more in z/OS R10         04280007
+*@@      IEZCTGPL DSECT=NO             CATALOG PARAMETER LIST           04290006
+CTGPL    DS    0F                                                       04300006
+CTGOPTN1 DC    AL1(CTGNAME+CTGCNAME)   FIRST OPTION BYTE:               04310006
+CTGNAME  EQU   X'04'                     CTGENT POINTS TO ENTRY NAME    04320006
+CTGCNAME EQU   X'02'                     CTGCAT POINTS TO CATALOG NAME  04330006
+CTGOPTN2 DS    B              SECOND OPTION BYTE                        04340006
+CTGOPTN3 DS    B              THIRD OPTION BYTE                         04350006
+CTGCMS   EQU   X'80'                     REQUEST IS IN CTGOPTNS         04360006
+CTGAM0   EQU   X'01'                     OS/VS2 CTGPL, NOT A CAMLST     04370006
+         DC    B'0'                                                     04380006
+CTGENT   DC    A(*-*)                  ADDRESS OF ENTRY NAME            04390006
+CTGCAT   DC    A(*-*)                  ADDRESS OF CATALOG DSNAME        04400006
+CTGWKA   DC    A(*-*)                  ADDRESS OF CALLER'S WORK AREA    04410006
+CTGOPTNS DC    AL1(CTGLTCAT)           REQUEST:                         04420006
+CTGLTCAT EQU   X'20' 0010 0...           LISTCAT                        04430006
+         DC    B'0'                                                     04440006
+CTGTYPE  DC    C'B'                    TYPE OF CAT. RECORD (GDG BASE)   04450006
+CTGNOFLD DC    FL1'1'                  NUMBER OF POINTERS IN CTGFIELD   04460006
+CTGFDBK  DC    XL2'0'                  FEEDBACK AREA                    04470006
+CTGFBFLG DC    B'0'                                                     04480006
+         DC    X'00'                   ERROR CODE                       04490006
+CTGPSWD  DC    A(0)                    PASSWORD ADDRESS                 04500006
+CTGFIELD DC    A(CTGFL)                POINTER(S) TO CTGFL(S)           04510006
+         DS    2A             UNUSED HERE                               04520006
+*                                                                       04530006
+CTGFL    DS    0F                   +0 FIELD DESCRIPTOR                 04540006
+CTGFLDNO DS    FL1'1',5X'00'        +0 NUMBER OF FIELDS                 04550006
+CTGFLDNM DS    V(FLDNM),A(0)        +8 PTR TO FIELD NAME                04560006
+CTGFLNG  DS    F'0'                +16 LENGTH OF RETURNED DATA          04570006
+CTGFLPT  DS    A(*-*)              +20 ADDRESS OF RETURNED DATA         04580006
+CTGPLLEN EQU   *-CTGPL                                                  04590006
+*                                                                       04600006
+DYNAML   EQU   *-DYNAM                                                  04610000
+*---------------------------------------------------------------------* 04620003
+*                                                                     * 04630003
+*        DSECTS FOR VARIOUS MVS CONTROL BLOCKS                        * 04640003
+*                                                                     * 04650003
+*---------------------------------------------------------------------* 04660003
+         PRINT NOGEN                                                    04670000
+PRINT    OPSYN ANOP                                                     04680000
+         IKJTCB LIST=NO                SYS1.MODGEN                      04690000
+         IEZJSCB ,                     SYS1.MODGEN                      04700000
+JCT      DSECT                         Job Control Table                04710000
+         DS    4F                      Prefix                           04720000
+         IEFAJCTB ,                    SYS1.MODGEN                      04730000
+SCT      DSECT                         Step Control Table               04740000
+         DS    4F                      Prefix                           04750000
+         IEFASCTB ,                    SYS1.MODGEN                      04760000
+SIOT     DSECT                         Step I/O Table                   04770000
+         DS    4F                      Prefix                           04780000
+         IEFASIOT ,                    SYS1.MODGEN                      04790000
+JFCB     DSECT                         Job File Control Block           04800000
+         DS    4F                      Prefix                           04810000
+         IEFJFCBN ,                    SYS1.MODGEN                      04820000
+         CVT   LIST=NO,DSECT=YES       COMMUNICATION VECTOR TABLE       04830000
+         IEFJESCT TYPE=DSECT           JES CONTROL TABLE                04840000
+         IEFZB505 LOCEPAX=YES          EPA MAPPING FOR SWAREQ           04850000
+         YREGS                         SYS1.MACLIB                      04860000
+         END                                                            04870000
+//SYSLIB   DD DSN=SYS1.MACLIB,DISP=SHR                                  04880000
+//         DD DSN=SYS1.MODGEN,DISP=SHR         IECSDSL1 IEFASIOT OBTAIN 04890000
+//SYSUT1   DD UNIT=VIO,SPACE=(CYL,4)                                    04900003
+//SYSPRINT DD SYSOUT=*                                                  04910000
+//SYSLIN   DD UNIT=VIO,SPACE=(TRK,1),DISP=(,PASS),BLKSIZE=3200          04920000
+//*                                                                     04930000
+//LKED    EXEC PGM=IEWL,PARM=(MAP,REUS)                                 04940000
+//SYSLIN   DD DSN=*.HLASM.SYSLIN,DISP=(OLD,PASS)                        04950005
+//SYSLMOD  DD DSN=CBTTAPE.FILE183.LOAD(CLEANUP),DISP=SHR                04960005
+//SYSPRINT DD SYSOUT=*                                                  04970000
+//*                                                                     04980000
+//NEVROPEN EXEC PGM=CLEANUP,PARM=NEVEROPEN                              04990000
+//STEPLIB  DD DSN=CBTTAPE.FILE183.LOAD(CLEANUP),DISP=SHR                05000005
+//NODSORG  DD DSN=GILBERT.CLEANUP2,DISP=(,CATLG),                       05010000
+// UNIT=VIO,SPACE=(TRK,1)                                               05020000
+//*SORGPS  DD DSN=GILBERT.CLEANUP,DISP=(,CATLG),                        05030000
+//*UNIT=VIO,SPACE=(TRK,1),DSORG=PS                                      05040000
+//SYSDEBUG DD SYSOUT=*                                                  05050000
+//SYSUDUMP DD SYSOUT=*                                                  05060000
+//*                                                                     05070000
+//GO      EXEC PGM=CLEANUP                                              05080000
+//STEPLIB  DD DSN=CBTTAPE.FILE183.LOAD(CLEANUP),DISP=SHR                05090005
+//SYSDEBUG DD SYSOUT=*                                                  05100000
+//SYSUDUMP DD SYSOUT=*                                                  05110000
+//*                                                                     05120000
+//STEP1   EXEC PGM=IEFBR14                                              05130000
+//TAPEOUT  DD DSN=GILBERT.CLEANUP,DISP=(,CATLG),                        05140000
+// UNIT=VIO,SPACE=(TRK,1)                                               05150000
+//BADGDG   DD DSN=GILBERT.BADGDG(+1),DISP=(,CATLG)                      05160006
+//*TEP2   EXEC PGM=IEFBR14                                              05170000
+//*APEOUT  DD DSN=GILBERT.CLEANUP,DISP=(OLD,DELETE)                     05180000
+//*                                                                     05190000
+//HMIG    EXEC PGM=IKJEFT01                                             05200000
+//SYSTSPRT DD SYSOUT=*                                                  05210000
+//SYSTSIN  DD *                                                         05220000
+HMIG 'IBMUSER.CLEANUP' WAIT                                             05230000
+//*                                                                     05240000

@@ -1,0 +1,2049 @@
+//GILBERTB JOB (ACCT#),VSBROWSE,                                        00010000
+// NOTIFY=&SYSUID,                                                      00020000
+// CLASS=A,MSGCLASS=H,COND=(0,NE)                                       00030000
+//HLASM EXEC PGM=ASMA90,PARM=(NODECK,OBJECT,NOESD,NORLD,NOXREF)         00040000
+*process flag(nopage0)                                                  00050025
+*********************************************************************** 00060000
+*                                                                     * 00070031
+*            COPYRIGHT (C) 1988-2010 GILBERT SAINT-FLOUR              * 00080031
+*                       ALL RIGHTS RESERVED                           * 00090031
+*                                                                     * 00100000
+* MODULE NAME = BR                                                    * 00110000
+*                                                                     * 00120000
+* DESCRIPTIVE NAME = VSAM/BDAM Browse Command for ISPF/PDF            * 00130000
+*                                                                     * 00140000
+* FUNCTION = This ISPF/PDF program allows you to browse most VSAM and * 00150000
+*            BDAM data sets.  It may be invoked as a TSO command,     * 00160025
+*            as a program, or as an EDIT macro.                       * 00170025
+*                                                                     * 00180000
+* STATUS = R231                                                       * 00190031
+*                                                                     * 00200000
+* AUTHOR = Gilbert Saint-Flour <carlos@gsf-soft.com>                  * 00210023
+*          http://gsf-soft.com/Freeware/                              * 00220026
+*                                                                     * 00230000
+* NOTES = SEE BELOW                                                   * 00240000
+*                                                                     * 00250000
+*    DEPENDENCIES = OS/390 or z/OS                                    * 00260025
+*                   ISPF V4 or V5                                     * 00270025
+*                   STRING macro R510                                 * 00280024
+*                                                                     * 00290000
+*    AUTHORIZATION = NONE                                             * 00300000
+*                                                                     * 00310000
+*    RESTRICTIONS = NONE                                              * 00320000
+*                                                                     * 00330000
+* MODULE TYPE = PROCEDURE, (TSO Command Processor)                    * 00340000
+*                                                                     * 00350000
+*    PROCESSOR = IBM HIGH LEVEL ASSEMBLER/MVS                         * 00360000
+*                                                                     * 00370000
+*    MODULE SIZE = 8K                                                 * 00380000
+*                                                                     * 00390000
+*    ATTRIBUTES = REENTERABLE, RMODE 24, AMODE 31,                    * 00400016
+*                 PROBLEM STATE, KEY 8                                * 00410000
+*                                                                     * 00420000
+* SYNTAX = See Below                                                  * 00430000
+*                                                                     * 00440000
+*        BR may be invoked as a TSO command, as a program,            * 00450000
+*        or as an edit macro.                                         * 00460000
+*                                                                     * 00470000
+*        1. TSO command                                               * 00480000
+*                                                                     * 00490000
+*          Syntax:                                                    * 00500000
+*                                                                     * 00510000
+*            BR dsname                  data set name                 * 00520019
+*               VOL(volser)             volume serial (optional)      * 00530019
+*                                                                     * 00540000
+*        2. EDIT macro                                                * 00550000
+*                                                                     * 00560000
+*          Syntax:                                                    * 00570000
+*                                                                     * 00580000
+*            !BR dsname                                               * 00590000
+*                                                                     * 00600000
+*        3. Program                                                   * 00610000
+*                                                                     * 00620000
+*            BR may be invoked via the ISPF SELECT service, the       * 00630000
+*            TSO CALL command, or a LINK macro.  A fully-qualified    * 00640000
+*            dsname and a volser may be specified in the parm.        * 00650023
+*                                                                     * 00660000
+*          Syntax:                                                    * 00670023
+*                                                                     * 00680000
+*            SELECT PGM(BR) <PARM(dsname<,volser>)>                   * 00690023
+*                                                                     * 00700000
+* OPERATION = See Below                                               * 00710000
+*                                                                     * 00720000
+*        BR first determines if the specified data set is             * 00730000
+*        NOT supported by ISPF/PDF's BROWSE service, i.e. one         * 00740000
+*        of the following:                                            * 00750000
+*                                                                     * 00760000
+*          1.  VSAM (ESDS, KSDS, RRDS, VRDS, LDS)                     * 00770025
+*          2.  BDAM                                                   * 00780000
+*          3.  BLKSIZE=0 or DSORG=0 or KEYLEN>0 or DS1LSTAR=0         * 00790000
+*              or RECFM=VBS                                           * 00800000
+*                                                                     * 00810000
+*        Based on previous determination, BR will:                    * 00820000
+*                                                                     * 00830000
+*          a. Invoke the BROWSE service to process the data set,      * 00840000
+*             if BROWSE supports it.                                  * 00850000
+*                                                                     * 00860000
+*          b. allocate the data set, process it using VSAM or EXCP,   * 00870000
+*             and display the data via BRIF (the BROWSE interface),   * 00880000
+*             if BROWSE does not support it.                          * 00890000
+*                                                                     * 00900000
+*    NOTES:                                                           * 00910000
+*                                                                     * 00920000
+*      a.  The dsname is optional.  When no dsname is specified,      * 00930000
+*          BR tries to find a dsname on the screen (at the cursor     * 00940000
+*          position).  If this fails, then BR prompts the user to     * 00950000
+*          enter the dsname.                                          * 00960000
+*                                                                     * 00970000
+*      b.  If BR is invoked as a command or an edit macro             * 00980000
+*          with a dsname that is not enclosed in quotes,              * 00990000
+*          BR prefixes it with the userid.                            * 01000000
+*                                                                     * 01010000
+*      c.  A volume serial is optional.  BR assumes that the          * 01020000
+*          data set is cataloged if no volser is specified.           * 01030000
+*          If the data set is not cataloged, BR uses the ZDLVOL       * 01040000
+*          variable (set when a command is invoked on the Data Set    * 01050000
+*          List panel) to determine the volume serial.                * 01060000
+*                                                                     * 01070000
+*    Point-and-shoot Capabilities                                     * 01080000
+*                                                                     * 01090000
+*      If the user invokes BR without specifying a dsname,            * 01100000
+*      BR tries to find a dsname on the screen, at the cursor         * 01110000
+*      position; this technique, called "point-and-shoot",            * 01120000
+*      is implemented here in two flavors:                            * 01130000
+*                                                                     * 01140000
+*      1. When it is invoked as an edit macro, BR uses standard       * 01150000
+*         ISREDIT calls to retrieve the text under which the cursor   * 01160000
+*         is currently located, scans the text for specific           * 01170000
+*         delimiters, then extracts the data set name.                * 01180000
+*                                                                     * 01190000
+*      2. When it is invoked as a program or as a command,            * 01200000
+*         BR extracts the screen image and cursor position            * 01210000
+*         from the TLD, an ISPF control block that is not             * 01220000
+*         part of the standard programming interface (this            * 01230000
+*         technique may not work in future releases of ISPF).         * 01240000
+*                                                                     * 01250000
+*         Note that for this to work, it is imperative that BR        * 01260000
+*         be invoked with MODE(FSCR).  Unfortunately, if you invoke   * 01270000
+*         BR via the TSO command, the SELECT service invokes BR as    * 01280000
+*         a command and uses MODE(LINE) as a default, which           * 01290000
+*         prevents BR from retrieving the data set name.              * 01300000
+*                                                                     * 01310000
+*         So if you want use BR's point-and-shoot capabilities        * 01320000
+*         outside of an EDIT session, you must use one of the         * 01330000
+*         following options:                                          * 01340000
+*                                                                     * 01350000
+*           1. Instead of just TSO BR, type the following,            * 01360000
+*              exactly as shown (no closing parenthesis)              * 01370000
+*                                                                     * 01380000
+*                TSO BR) MODE(FSCR                                    * 01390000
+*                                                                     * 01400000
+*              not something you want to type too often, but if       * 01410000
+*              you set it up as a PFK, it's allright.                 * 01420000
+*                                                                     * 01430000
+*           2. Define BR as a command in the ISPF command table,      * 01440000
+*              for example like this:                                 * 01450000
+*                                                                     * 01460000
+*                BR     0 SELECT PGM(BR) MODE(FSCR)                   * 01470000
+*                                                                     * 01480000
+*              then you can access BR just by typing BR on the        * 01490000
+*              command line, on any screen.                           * 01500000
+*                                                                     * 01510000
+*           3. Write a simple REXX exec (or a CLIST) to invoke BR     * 01520000
+*              with MODE(FSCR):                                       * 01530000
+*                                                                     * 01540000
+*                ARG dsn                                              * 01550000
+*                "ISPEXEC SELECT CMD(BR" dsn ") MODE(FSCR)"           * 01560000
+*                                                                     * 01570000
+*              then you can access BR just by typing TSO %BR          * 01580000
+*                                                                     * 01590000
+*           4. Modify ISPCMDS to add MODE(FSCR) to the definition     * 01600000
+*              of the TSO command                                     * 01610000
+*                                                                     * 01620000
+*                SELECT SUSPEND CMD(&ZPARM) MODE(FSCR)                * 01630000
+*                                                                     * 01640000
+* CHANGE ACTIVITY                                                     * 01650000
+*                                                                     * 01660000
+* 099 First version of XBRVS in ISPF/PDS V2R3                     1988* 01670000
+*     First version of XBRDA                                      1990* 01680000
+*     XBRVS and XBRDA are merged to build the BR command          1991* 01690000
+*     BR may now be invoked as a PGM or EDIT macro                    * 01700000
+*     Fixed a couple of bugs, added comments & TRACE macro            * 01710000
+* 110 Program made re-entrant, uses EXCP instead of BDAM          1993* 01720001
+* 120 Add limited support for Linear data sets (first 64 K only)      * 01730002
+* 121 Process RECFM=VS/VBS like RECFM=U                               * 01740003
+* 122 Process data sets with null DSORG                               * 01750004
+* 130 Prevent loop if track is empty                                  * 01760005
+* 131 Issue ISRB603 message when VSAM data set is empty               * 01770006
+* 132 Do not ignore the member name, pass it to BROWSE                * 01780007
+* 133 Simplify processing of first record (ESDS/KSDS)                 * 01790008
+* 134 Use standard BROWSE to process PDSEs                            * 01800009
+* 134 Use the SDSF SVC to open VVDS's and bypass ENQ                  * 01810009
+* 135 Change APPLID to ISR if invoked under SDSF                      * 01820010
+* 136 Display program level on first screen                           * 01830011
+* 137 Finally figured out what was wrong with VSAM record #1 !!!      * 01840012
+* 138 Implement full support for linear data sets                 1994* 01850013
+* 138 Init message enhanced to help debugging                         * 01860013
+* 139 Add 8 to MAXLRECL if RECFM=U                                    * 01870014
+* 140 Display statistics at end of program                            * 01880015
+* 141 Retry with BUFSP=0 after FDBK=0C0004 error                  1995* 01890016
+* 142 Remove VVDS browse capability (it disables RACF protection)     * 01900017
+* 143 Work around ISPF V4 bug (ZDLDSORG='' for VSAM cluster)          * 01910018
+* 144 Improve dsname extraction from a window by using the            * 01920019
+*     buffer address in TLDCLSP instead of TLD+128                    * 01930019
+* 145 Remove all authorized functions                             1996* 01940020
+* 146 Use PANEL(ISRBROBA) in ISPF V4                                  * 01950021
+* 147 Use standard BROWSE to process HFS, extended format,        1997* 01960022
+*     and multi-volume (in ISPF V4)                                   * 01970022
+* 148 Re-invoke myself as a PGM when invoked as a CMD;                * 01980023
+*     this should fix the FREEMAIN problems in SO5                    * 01990023
+* 149 Use PANEL(ISRBROBA) in ISPF V5 also                         2002* 02000024
+*                                                                     * 02010000
+* 225 Remove support for MVS/XA, MVS/ESA and ISPF V3              2005* 02020025
+*     Support ALIAS Entries when calling ISPF BROWSE                  * 02030025
+*     Process a VRDS like an RRDS                                     * 02040025
+*     Support extended-addressability VSAM data sets                  * 02050025
+*     Improve EOF detection for open data sets                        * 02060025
+* 226 Allocate BUFFER on page boundary                            2008* 02070026
+* 227 Change 5X to 7X after IECSDSL1 for z/OS R10                 2009* 02080027
+* 228 Invoke VSAMVIEW when user enters V command                      * 02090028
+*     Support ISPF/PDF V3                                             * 02100028
+* 229 Invoke LISTCAT when user enters LC command                      * 02110029
+* 230 Fix VSAM error - was RPLFDBWD=2B080020 OPTCD=C440 RRN=1         * 02120030
+* 231 Add RBA Command to display RBA in pos 1                     2010* 02130031
+*     Add commands to init msg: V, LC, RBA                            * 02140031
+*     FSTSO replaces TSOFS                                            * 02150031
+*                                                                     * 02160000
+&REL     SETC  '231'                                                  * 02170031
+*********************************************************************** 02180000
+VSBROWSE CSECT                                                          02190016
+VSBROWSE AMODE 31                                                       02200016
+&YYMMDD  SETC  '&SYSDATE'(7,2)'-'.'&SYSDATE'(1,2)'-'.'&SYSDATE'(4,2)    02210026
+&XXX     SETC  '- 20&YYMMDD &SYSTIME '                                  02220026
+         SAVE  (14,12),,'GSF Utilities - VSAM/BDAM Browse R&REL &XXX'   02230026
+         LR    R10,R15                 1st base reg                     02240025
+         USING VSBROWSE,R10                                             02250025
+         LA    R11,VSBROWSE+4095       2nd base reg                     02260025
+         USING VSBROWSE+4095,R11                                        02270025
+         LA    R0,DYNAML               length of dynamic storage area   02280026
+         GETMAIN RU,LV=(0),BNDRY=PAGE  ALLOCATE DYNAMIC STORAGE AREA    02290025
+         ST    R13,4(,R1)                                               02300000
+         ST    R1,8(,R13)                                               02310000
+         LM    R13,R1,8(R13)           SET R13, RELOAD R14-R1           02320000
+         USING DYNAM,R13                                                02330000
+         LR    R9,R1                   save PARM/CPPL address           02340000
+         STM   R10,R11,BASEREGS        for read routines                02350025
+*                                                                       02360000
+         L     R1,540(,0)              PSATOLD (my TCB)                 02370000
+         L     R1,0(,R1)               TCBRBP (my PRB)                  02380000
+         ICM   R1,B'0111',13(R1)       RBCDE1 (my CDE)                  02390000
+         ST    R1,OWNCDE               keep the address of my CDE       02400000
+         USING CDENTRY,R1                                               02410000
+         TM    CDATTR,CDMIN            is this a minor CDE?             02420000
+         BZ    *+8                     no, jump                         02430000
+         L     R1,CDXLMJP              yes, point to major CDE          02440000
+         MVC   OWNNAME,CDNAME          save my true name                02450000
+         DROP  R1                                                       02460000
+*---------------------------------------------------------------------- 02470000
+         MACRO                                                    macro 02480000
+&NAME    ISPLINK &OPRNDS,&ERRET=                                  macro 02490000
+         GBLB  &IHBSWA                                            macro 02500000
+&IHBSWA  SETB  1                       VL=1                       macro 02510000
+&NAME    LA    R1,TENWORDS             parm list                  macro 02520000
+         IHBOPLST ,&OPRNDS,MF=(E,(1))                             macro 02530000
+         L     R15,ISPLINK@            ISPLINK bootstrap                02540000
+         BALR  R14,R15                 invoke ISPLINK                   02550000
+         AIF   (T'&ERRET EQ 'O').MEND                             macro 02560000
+         LTR   R15,R15                 Any error?                       02570000
+         BNZ   &ERRET                  yes, jump                        02580000
+.MEND    MEND                                                     macro 02590000
+*---------------------------------------------------------------------- 02600000
+         LOAD  EP=ISPLINK                                               02610000
+         ST    R0,ISPLINK@             save ISPLINK address             02620000
+         LOAD  EP=ISPEXEC                                               02630000
+         ST    R0,ISPEXEC@             save ISPEXEC address             02640000
+         STRING 'CONTROL ERRORS RETURN',INTO=MESSAGE                    02650013
+         BAL   R14,ISPEXEC             execute command                  02660013
+         LTR   R15,R15                 ISPF active?                     02670000
+         BNZ   QUIT16                  no, quit                         02680000
+*                                                                       02690000
+         LA    R0,L'ZAPPLID            max length of APPLID             02700000
+         ST    R0,DWD                  max length of APPLID             02710000
+         ISPLINK (=C'VCOPY ',=C'(ZAPPLID)',DWD,ZAPPLID,=C'MOVE '),     X02720000
+               ERRET=QUIT16                                             02730000
+*                                                                       02740026
+         GETMAIN R,LV=BUFFERL          ALLOCATE 64KB Buffer (A24)       02750026
+         ST    R1,BUFFERP              Address                          02760026
+         LR    R12,R1                  Address                          02770026
+         USING BUFFER,R12                                               02780026
+*                                                                       02790028
+         LA    R0,L'ZENVIR             max length of ZENVIR             02800028
+         ST    R0,DWD                  max length of ZENVIR             02810028
+         ISPLINK (=C'VCOPY ',=C'(ZENVIR)',DWD,ZENVIR,=C'MOVE ')         02820028
+*                                                                       02830021
+         MVC   PANEL,=C'ISRBROBA'      ISPF V4 panel (with action bar)  02840021
+         CLI   ZENVIR+5,C'4'           ISPF V4 or above ?               02850028
+         BNL   *+10                    yes, use ISRBROBA panel          02860028
+         STRING 1X,INTO=PANEL          default panel name (ISPF V3)     02870028
+INIT6    EQU   *                                                        02880028
+*                                                                       02890000
+         ICM   R3,B'1111',0(R9)        INVOKED AS A PGM?                02900000
+         BM    PGM000                  Yes, jump                        02910000
+         OI    SWITCH1,SW1CMD          invoked as a command             02920016
+         USING CPPL,R9                 SET UP ADDRESSABILITY TO CPPL    02930000
+*                                                                       02940000
+*        If no dsname has been specified, scan the screen buffer        02950000
+*        at the cursor position to find a dsname                        02960000
+*                                                                       02970000
+         L     R1,CPPLECT              ENVIRONMENT CONTROL TABLE        02980000
+         TM    ECTSWS-ECT(R1),ECTNOPD  any operand specified?           02990000
+         BZ    CALLPARS                yes, scan buffer                 03000000
+         BAL   R14,CURSOR           <- scan screen buffer for a dsname  03010000
+         LTR   R0,R0                   dsname found?                    03020000
+         BNZ   MOVEDSN                 yes, used it                     03030000
+*********************************************************************** 03040000
+*                                                                     * 03050000
+*        BUILD PARSE PARM LIST, CALL IKJPARS                          * 03060000
+*                                                                     * 03070000
+*********************************************************************** 03080000
+CALLPARS LA    R1,TENWORDS             POINT TO PPL                     03090000
+         USING PPL,R1                  SET UP ADDRESSABILITY TO PPL     03100000
+         L     R0,CPPLUPT              USER PROFILE TABLE               03110000
+         ST    R0,PPLUPT               STORE UPT ADDRESS IN PPL         03120000
+         L     R0,CPPLECT              ENVIRONMENT CONTROL TABLE        03130000
+         ST    R0,PPLECT               STORE ECT IN PPL                 03140000
+         LA    R0,ECB1                 EVENT CONTROL BLOCK              03150000
+         ST    R0,PPLECB               STORE ECB IN PPL                 03160000
+         MVC   PPLPCL,=A(PCLCSECT)     STORE PCL ADDR INTO PPL          03170000
+         LA    R0,DYNANSWR             ANSWER AREA                      03180000
+         ST    R0,PPLANS               STORE ANSWER ADDRESS IN PPL      03190000
+         L     R0,CPPLCBUF             COMMAND BUFFER                   03200000
+         ST    R0,PPLCBUF              STORE BUFFER ADDRESS IN PPL      03210000
+         LA    R14,=C'IKJPARS '        NAME OF PARSE ROUTINE            03220000
+         L     R15,16(,0)              CVTPTR                           03230000
+         L     R15,008(,R15)           CVTLINK                          03240000
+         STM   R14,R15,DWD             BUILD LINK PARMLIST              03250000
+         LINK  SF=(E,DWD)              CALL THE PARSE ROUTINE           03260000
+         LTR   R7,R15                  CHECK FOR ZERO PARSE RETURN      03270000
+         BNZ   QUIT16                  GO AWAY UPSET                    03280000
+         DROP  R1                      PPL                              03290023
+*********************************************************************** 03300000
+*                                                                     * 03310000
+*        PROCESS PARSED PARAMETERS                                    * 03320000
+*                                                                     * 03330000
+*********************************************************************** 03340000
+PARSE100 L     R2,DYNANSWR             LOAD PDL ADDRESS                 03350000
+         USING IKJPARMD,R2             SET UP ADDRESSABILITY TO PDL     03360000
+         L     R0,DSNPCE               GET ADDRESS                      03370000
+         LH    R1,DSNPCE+4             ACTUAL LENGTH OF DSN             03380000
+         STRING ((R0),(R1)),INTO=DSNAME MOVE DATA SET NAME              03390028
+         L     R0,DSNPCE+8             GET ADDRESS                      03400000
+         LH    R1,DSNPCE+8+4           ACTUAL LENGTH OF MEMBER NAME     03410000
+         STRING ((R0),(R1)),INTO=MEMBER MOVE MEMBER NAME                03420028
+         TM    VOLPCE2+6,X'80'         CHECK VOLSER SUBPARAMETER        03430000
+         BZ    PARSE300                JUMP IF NO SUBPARAM SPECIFIED    03440000
+         L     R1,VOLPCE2+00           GET SUBPARAM ADDRESS             03450000
+         MVC   VOLSER,0(R1)            MOVE 6-BYTE VOLUME SERIAL        03460000
+         OI    SWITCH1,SW1UVOL         VOLSER given by user             03470016
+         B     PARSE999                exit                             03480000
+         DROP  R2                                                       03490000
+*                                                                       03500000
+*        retrieve the volser from PDF 3.4 panel                         03510000
+*                                                                       03520000
+PARSE300 LA    R0,L'FULLDSN            length                           03530000
+         ST    R0,DWD                                                   03540000
+         ISPLINK (=C'VCOPY ',=C'ZDLDSN ',DWD,FULLDSN,=C'MOVE '),       X03550000
+               ERRET=PARSE999          VCOPY FAILED, QUIT               03560000
+         CLC   DSNAME,FULLDSN          same data set name?              03570000
+         BNE   PARSE999                no, exit                         03580000
+         LA    R0,L'ZDLDSORG           length                           03590000
+         ST    R0,DWD                                                   03600000
+         ISPLINK (=C'VCOPY ',=C'ZDLDSORG ',DWD,ZDLDSORG,=C'MOVE '),    X03610000
+               ERRET=PARSE999          VCOPY FAILED, QUIT               03620000
+         CLC   =C'VS',ZDLDSORG         vsam data set?                   03630000
+         BE    PARSE999                yes, exit                        03640000
+         CLI   ZDLDSORG,C' '           vsam data set?    (OW14454)      03650018
+         BE    PARSE999                yes, exit         (OW14454)      03660018
+         LA    R0,L'VOLSER             length                           03670000
+         ST    R0,DWD                                                   03680000
+         ISPLINK (=C'VCOPY ',=C'ZDLVOL ',DWD,VOLSER,=C'MOVE '),        X03690000
+               ERRET=PARSE999          VCOPY FAILED, QUIT               03700000
+         OI    SWITCH1,SW1UVOL         VOLSER given by user (faked)     03710016
+*                                                                       03720000
+PARSE999 IKJRLSA DYNANSWR              FREE PDL                         03730000
+         B     ALLOCATE                                                 03740000
+*---------------------------------------------------------------------- 03750000
+         MACRO                                                          03760000
+&LABEL   TRACE                                                          03770013
+&LABEL   LA    R1,=C'&LABEL'                                            03780000
+&L       SETA  K'&LABEL                                                 03790000
+         LA    R0,&L                   length of literal                03800000
+         SVC   93                      issue TPUT SVC                   03810000
+         MEND                                                           03820000
+         MACRO                                                          03830000
+&LABEL   TRACE ,                       (dummy macro)                    03840013
+         AIF   (T'&LABEL EQ 'O').MEND                                   03850000
+&LABEL   DS    0H                      define label                     03860000
+.MEND    MEND                                                           03870000
+*********************************************************************** 03880000
+*                                                                     * 03890000
+*        I've been invoked as a pgm, check if it is an edit macro     * 03900000
+*                                                                     * 03910000
+*********************************************************************** 03920000
+PGM000   TRACE                                                          03930013
+         LH    R0,0(,R3)               dsn length                       03940000
+         LA    R1,2(,R3)               dsn address                      03950000
+         LTR   R0,R0                   DO WE HAVE A PARM"               03960000
+         BH    SCANPARM                yes, jump                        03970023
+         STRING 'ISREDIT MACRO (VAR)',INTO=MESSAGE                      03980013
+         BAL   R14,ISPEXEC             execute command                  03990013
+         LTR   R15,R15                 OK?                              04000013
+         BNZ   PGM500                  no, jump                         04010013
+*                                                                       04020000
+*        BR has been invoked as an edit macro.  The first               04030000
+*        parameter is used as dsname if a parm has been specified;      04040000
+*        else, the dsname is picked up at the current cursor            04050000
+*        location using standard edit macro calls.                      04060000
+*                                                                       04070000
+PGM100   LA    R0,L'MESSAGE            max length of dsname             04080000
+         ST    R0,DWD                  max length of dsname             04090000
+         ISPLINK (=C'VCOPY ',=C'(VAR)',DWD,MESSAGE,=C'MOVE '),         X04100000
+               ERRET=PGM500                                             04110000
+         ICM   R0,B'1111',DWD          Actual length of dsname          04120023
+         BZ    PGM110                  no dsname, jump                  04130000
+         BCTR  R0,0                                                     04140023
+         BCTR  R0,0                                                     04150023
+         STRING (MESSAGE+1,(R0)),INTO=DSNAME                            04160023
+         CLI   MESSAGE,C''''           quoted dsn?                      04170023
+         BE    ALLOCATE                yes, jump                        04180023
+         MVC   DSNAME,MESSAGE          COPY DSNAME                      04190023
+         L     R1,CPPLUPT              USER PROFILE TABLE               04200023
+         USING UPT,R1                                                   04210023
+         SLR   R0,R0                                                    04220023
+         ICM   R0,B'0001',UPTPREFL     PREFIX LENGTH                    04230023
+         BZ    ALLOCATE                yes, jump                        04240023
+         STRING (UPTPREFX,(R0)),'.',MESSAGE,INTO=DSNAME                 04250023
+         B     ALLOCATE                There is a dsname, use it        04260000
+         DROP  R1                      UPT                              04270023
+*                                                                       04280000
+*        get the dsname at cursor location                              04290000
+*                                                                       04300000
+PGM110   TRACE                                                          04310013
+         STRING 'ISREDIT (LINE,COL) = CURSOR',INTO=MESSAGE              04320013
+         BAL   R14,ISPEXEC             execute command                  04330013
+         LTR   R15,R15                 OK?                              04340013
+         BNZ   PGM500                  no, jump                         04350013
+PGM110T  TRACE                                                          04360013
+         LA    R0,3                    max length of variable           04370000
+         ST    R0,DWD                  max length of variable           04380000
+         ISPLINK (=C'VCOPY ',=C'(COL)',DWD,MESSAGE,=C'MOVE '),         X04390000
+               ERRET=PGM500                                             04400000
+PGM120T  TRACE                                                          04410013
+         PACK  DWD,MESSAGE(3)          pack cursor position             04420000
+         CVB   R5,DWD                  cursor position                  04430000
+         LTR   R5,R5                   cursor in command line?          04440000
+         BZ    PGM500                  yes, jump                        04450000
+         STRING 'ISREDIT (VAR) = LINE .ZCSR',INTO=MESSAGE               04460013
+         BAL   R14,ISPEXEC             execute command                  04470013
+         LTR   R15,R15                 OK?                              04480013
+         BNZ   PGM500                  no, jump                         04490013
+PGM125T  TRACE                                                          04500013
+         LA    R0,255                  max length of line               04510000
+         ST    R0,DWD                  max length of line               04520000
+         LA    R4,BUFFER               work area                        04530000
+         ISPLINK (=C'VCOPY ',=C'(VAR)',DWD,(R4),=C'MOVE '),ERRET=PGM500 04540000
+*                                                                       04550000
+         BCTR  R5,0                    R5=0 if cursor is in pos 1       04560000
+         BAL   R14,CURSOR21            scan line to extract dsname      04570000
+         LTR   R0,R0                   dsname found?                    04580000
+         BP    MOVEDSN                 yes, process it                  04590000
+*                                                                       04600000
+*        This is not an edit macro or no dsname has been found          04610000
+*        at the cursor position; scan the screen buffer for a dsn       04620013
+*                                                                       04630000
+PGM500   BAL   R14,CURSOR           <- scan screen buffer for a dsname  04640000
+         LTR   R0,R0                   dsname found?                    04650000
+         BNZ   MOVEDSN                 yes, used it                     04660000
+*                                                                       04670000
+*        No dsname is available, re-invoke BR as a command,             04680000
+*        which will prompt the user for the dsname                      04690000
+*                                                                       04700000
+PGM600   STRING 'CMD(',OWNNAME,') MODE(FSCR) NEWAPPL(',ZAPPLID,')',    X04710000
+               INTO=MESSAGE                                             04720000
+         B     SELECT                                                   04730013
+S99T15   DC    X'0015,0001,0008',C'SYSALLDA'                            04740000
+*********************************************************************** 04750000
+*                                                                     * 04760000
+*        Allocate the data set                                        * 04770000
+*                                                                     * 04780000
+*********************************************************************** 04790000
+SCANPARM LR    R4,R1                   parm address                     04800023
+         LR    R5,R0                   parm length                      04810023
+         L     R15,=A(PARSE_PARM)      parse rtne addr                  04820023
+         BALR  R14,R15                 parse parm into DSNAME,VOLSER    04830023
+         DC    S(L'DSNAME,DSNAME)      first operand                    04840023
+         DC    S(L'VOLSER,VOLSER)      second operand                   04850023
+         CLI   VOLSER,C' '             VOLSER given by user ?           04860023
+         BNH   ALLOCATE                no, jump                         04870023
+         OI    SWITCH1,SW1UVOL         yes, remember it                 04880023
+         B     ALLOCATE                                                 04890023
+*                                                                       04900023
+MOVEDSN  STRING ((R1),(R0)),INTO=DSNAME  move dsname                    04910000
+*                                                                       04920000
+ALLOCATE TRACE                                                          04930013
+         LA    R0,L'DSNAME             Convert to uppercase             04940000
+         LA    R1,DSNAME               Convert to uppercase             04950000
+CAPSON   OI    0(R1),C' '              Convert to uppercase             04960000
+         LA    R1,1(,R1)               Convert to uppercase             04970000
+         BCT   R0,CAPSON               Convert to uppercase             04980000
+*                                                                       04990000
+         STRING DSNAME,INTO=FULLDSN                                     05000023
+         CLI   MEMBER,C' '             do we have a member name?        05010000
+         BNH   ALLOC100                no, jump                         05020023
+         STRING (DSNAME,,T),'(',(MEMBER,,T),')',INTO=FULLDSN            05030023
+*---------------------------------------------------------------------* 05040000
+*                                                                     * 05050000
+*        If I've been invoked as a TSO command or if ZAPPLID<>ISR,    * 05060023
+*        re-invoke myself as a program with NEWAPPL(ISR) for the      * 05070023
+*        following reasons:                                           * 05080023
+*                                                                     * 05090023
+*        1. prevent FREEMAIN errors when OPEN/GET/CLOSE are issued    * 05100023
+*           under different TCBs (LDS, IAM, SO5)                      * 05110023
+*                                                                     * 05120023
+*        2. ensure PFK consistency when invoked under applications    * 05130023
+*           (such as SDSF) that redefine the RFIND key                * 05140023
+*                                                                     * 05150023
+*---------------------------------------------------------------------* 05160000
+ALLOC100 STRING 'PGM(',(OWNNAME,,T),') PARM(',(FULLDSN,,T),',',        X05170023
+               (VOLSER,,T),')',INTO=MESSAGE                             05180023
+         CLC   =C'ISR ',ZAPPLID        APPLID=ISR?                      05190023
+         BNE   ALLOC105                no, jump                         05200023
+         TM    CPPL,X'80'              INVOKED AS A PGM?                05210023
+         BO    ALLOC200                Yes, jump                        05220023
+         B     SELECT                                                   05230023
+ALLOC105 EQU   *                                                        05240023
+         STRING (MESSAGE,,T),' NEWAPPL(ISR)',INTO=MESSAGE               05250023
+         B     SELECT                                                   05260013
+*---------------------------------------------------------------------* 05270000
+*                                                                     * 05280000
+*        Allocate the data set                                        * 05290000
+*                                                                     * 05300000
+*---------------------------------------------------------------------* 05310000
+ALLOC200 LA    R14,ACB1_M              point to ACB, RPL, DCB models    05320013
+         LA    R15,MODELS_L            length for move                  05330000
+         LA    R0,IFGACB               dynamic storage area             05340000
+         LR    R1,R15                  length                           05350000
+         MVCL  R0,R14                  move models to dynamic storage   05360000
+*                                                                       05370000
+         IHBOPLST ,(S99T1,             return ddname                   X05380000
+               S99T2,                  dsname                          X05390000
+               =X'0004,0001,0001,08',  DISP=SHR                        X05400000
+               S99T15,                 UNIT=SYSALLDA                   X05410000
+               S99T56,                 return true dsname              X05420025
+               S99T57,                 return dsorg                    X05430000
+               S99T5D),                return volser                   X05440000
+               MF=(E,S99TUPTR)                                          05450000
+         ST    R1,S99RB+8              Text unit pointers               05460000
+         MVC   S99RB,=X'14,01,2000'                                     05470000
+         MVC   S99T1(6),=X'0055,0001,0008'    return ddname             05480000
+         MVC   S99T2(6),=X'0002,0001,002C'    dsname                    05490000
+         MVC   S99T56(6),=X'0056,0001,002C'   return true dsname        05500025
+         MVC   S99T57(6),=X'0057,0001,0002'   return dsorg              05510000
+         MVC   S99T5D(6),=X'005D,0001,0006'   RETURN VOLSER             05520000
+         TM    SWITCH1,SW1UVOL         VOLSER given by user ?           05530016
+         BZ    ALLOC600                no, jump                         05540016
+         MVI   S99T5D+1,X'10'          yes, use volser                  05550000
+*                                                                       05560000
+*        Allocate the data set                                          05570000
+*                                                                       05580000
+ALLOC600 LA    R1,S99RB                build SVC99 parm list            05590000
+         ST    R1,S99RBPTR             build SVC99 parm list            05600000
+         OI    S99RBPTR,X'80'          build SVC99 parm list            05610000
+         LA    R1,S99RBPTR                                              05620000
+         DYNALLOC ,                    ALLOCATE THE DATA SET            05630000
+         LTR   R15,R15                 SVC99 went OK?                   05640020
+         BNZ   BROWSE                  no, quit                         05650020
+*                                                                       05660000
+*        allocation is successful                                       05670000
+*                                                                       05680000
+ALLOC900 CLC   DSORG,=AL2(DS1ORGAM)    DSORG=VSAM?                      05690000
+         BNE   OPENDA                  NO, JUMP                         05700000
+*---------------------------------------------------------------------* 05710000
+*                                                                     * 05720000
+*        INITIALIZE VSAM DATA SET                                     * 05730000
+*                                                                     * 05740000
+*---------------------------------------------------------------------* 05750000
+OPENVS   MVC   ACBDDNM,DDNAME          MOVE DDNAME                      05760000
+         LA    R2,IFGACB               point to ACB                     05770000
+         ST    R2,OPENLIST             build open list                  05780000
+         MVI   OPENLIST,X'80'          build open list                  05790000
+*                                                                       05800000
+         OPEN  MF=(E,OPENLIST)         OPEN VSAM data set               05810000
+         CH    R15,=H'4'               OPEN OK?                         05820000
+         BH    OPENVS7                 NO, QUIT                         05830000
+*                                                                       05840000
+         SHOWCB ACB=(R2),AREA=(S,MAXRECNO),LENGTH=12,                  X05850000
+               FIELDS=(NLOGR,LRECL,ENDRBA),MF=(G,BUFFER)                05860000
+         ICM   R0,B'1111',MAXLRECL     LRECL=0 (LDS)                    05870000
+         BZ    OPENVS3                 yes, jump                        05880000
+*                                                                       05890000
+         ST    R2,RPLDACB-IFGRPL+RPL1  STORE ACB ADDRESS INTO RPL       05900000
+         ST    R2,RPLDACB-IFGRPL+RPL2  STORE ACB ADDRESS INTO RPL       05910000
+         LA    R0,RECAD                THE RIGHT WORD                   05920000
+         ST    R0,RPLAREA-IFGRPL+RPL1  STORE AREA ADDRESS INTO RPL      05930000
+         ST    R0,RPLAREA-IFGRPL+RPL2  STORE AREA ADDRESS INTO RPL      05940000
+         LA    R0,L'RECAD              LENGTH                           05950000
+         ST    R0,RPLBUFL-IFGRPL+RPL1  STORE AREA LENGTH INTO RPL       05960000
+         ST    R0,RPLBUFL-IFGRPL+RPL2  STORE AREA LENGTH INTO RPL       05970000
+         LA    R0,LOWRBA               ARGUMENT FOR POINT               05980000
+         ST    R0,RPLARG-IFGRPL+RPL2   STORE ARG ADDR INTO RPL          05990000
+*                                                                       06000025
+         TESTCB ACB=(R2),ATRB=XADDR,MF=(G,BUFFER) extended format?      06010025
+         BNE   OPENVS19                no, jump                         06020025
+         MVI   XADDR,C'Y'              extended-addressability format   06030025
+         OI    RPLOPT4-IFGRPL+RPL1,RPLXRBA SET OPTCD=(XRBA)             06040025
+         OI    RPLOPT4-IFGRPL+RPL2,RPLXRBA SET OPTCD=(XRBA)             06050025
+         NI    RPLOPT1-IFGRPL+RPL1,255-RPLLOC OPTCD=MVE                 06060025
+         NI    RPLOPT1-IFGRPL+RPL2,255-RPLLOC OPTCD=MVE                 06070025
+         LA    R0,BUFFER               THE RIGHT WORD                   06080025
+         ST    R0,RPLAREA-IFGRPL+RPL1  STORE AREA ADDRESS INTO RPL1     06090025
+         ST    R0,RPLAREA-IFGRPL+RPL2  STORE AREA ADDRESS INTO RPL2     06100025
+         L     R0,=F'65536'            AREALEN=65536                    06110025
+         ST    R0,RPLBUFL-IFGRPL+RPL1  AREALEN=65536 INTO RPL1          06120025
+         ST    R0,RPLBUFL-IFGRPL+RPL2  AREALEN=65536 INTO RPL2          06130025
+OPENVS19 EQU   *                                                        06140025
+*                                                                       06150000
+         TESTCB ACB=(R2),ATRB=RRDS,MF=(G,BUFFER)  is this an RRDS?      06160000
+         BE    OPENVS4                 YES, JUMP                        06170000
+*                                                                       06180000
+         TESTCB ACB=(R2),ATRB=VRRDS,MF=(G,BUFFER)  is this a VRDS?      06190025
+         BE    OPENVS4                 YES, JUMP                        06200025
+*                                                                       06210000
+         ICM   R1,B'1111',MAXRECNO     MAX NUMBER OF RECORDS            06220000
+         BNZ   OPENVS2                 NOT ZERO, JUMP                   06230000
+         L     R1,=F'1000000'          file open, use 1 million         06240000
+*                                                                       06250000
+OPENVS2  SLL   R1,2                    MULT BY 4                        06260000
+         CLI   XADDR,C'Y'              EXTENDED-ADDRESSABILITY FORMAT?  06270025
+         BNE   OPENVS2B                NO, JUMP                         06280025
+         ALR   R1,R1                   8-BYTE RBA                       06290025
+OPENVS2B EQU   *                                                        06300025
+         LA    R0,0(,R1)               31-bit only                      06310000
+         L     R1,=F'1000000'          minimum value                    06320000
+         CLR   R0,R1                   more than 1 million ?            06330000
+         BL    OPENVS2G                yes, jump                        06340000
+*                                                                       06350000
+*        file has more than 256K rec, get between 1meg and nrec*4 bytes 06360000
+*                                                                       06370000
+         GETMAIN VRU,LV=((R0),(R1)),LOC=ANY,BNDRY=PAGE                  06380000
+         LR    R14,R0                  actual length gotten             06390000
+         SRL   R14,2                   convert to RECNO                 06400000
+         CLI   XADDR,C'Y'              EXTENDED-ADDRESSABILITY FORMAT?  06410025
+         BNE   OPENVS2D                NO, JUMP                         06420025
+         SRL   R14,1                   HALVE (XADDR=Y)                  06430025
+OPENVS2D EQU   *                                                        06440025
+         ST    R14,MAXRECNO            remember MAXRECNO                06450000
+         B     OPENVS2S                                                 06460000
+*                                                                       06470000
+OPENVS2G GETMAIN RU,LV=(R0),LOC=ANY,BNDRY=PAGE                          06480000
+*                                                                       06490000
+OPENVS2S STM   R0,R1,RBATABLE          STORE LENGTH, ORIGIN             06500000
+*                                                                       06510000
+*        set up RPL for ESDS/KSDS                                       06520012
+*                                                                       06530000
+OPENVS2K EQU   *                                                        06540025
+         TESTCB ACB=(R2),ATRB=KSDS,MF=(G,BUFFER)  is this a KSDS?       06550000
+         BE    OPENVS5                 YES, JUMP                        06560025
+         MVI   VS_TYPE,C'E'            Cluster is an ESDS               06570000
+         MVI   RPLOPT2-IFGRPL+RPL1,RPLADR OPTCD=ADR                     06580000
+         B     OPENVS6                                                  06590000
+*                                                                       06600000
+*        If LRECL=0, the data set is a linear data set (LDS).           06610013
+*        Use the screen width as the record length.                     06620000
+*                                                                       06630000
+OPENVS3  MVI   VS_TYPE,C'L'            Cluster is an LDS                06640000
+         CLOSE MF=(E,OPENLIST)         close the ACB, we don't need it  06650000
+*                                                                       06660013
+         LA    R0,L'MAXLRECL           length for VCOPY                 06670013
+         ST    R0,DWD                  length for VCOPY                 06680000
+         ISPLINK (=C'VCOPY ',=C'(ZSCREENW)',DWD,MAXLRECL,=C'MOVE ')     06690000
+         PACK  DWD,MAXLRECL            convert to binary                06700000
+         CVB   R0,DWD                  convert to binary                06710000
+         ST    R0,MAXLRECL             screen width (80 or 132)         06720000
+         DIV   IDENTIFY,               identify                        X06730000
+               ID=DIV_TOKN,            identifier                      X06740000
+               TYPE=DA,                data set                        X06750000
+               DDNAME=DDNAME-1,        X'08',C'ddname  '               X06760000
+               MF=(E,DIV_LIST)                                          06770000
+         LTR   R15,R15                 OK?                              06780000
+         BNE   X'800'                  no, quit                         06790000
+         DIV   ACCESS,                 access                          X06800000
+               MODE=READ,              read-only                       X06810000
+               SIZE=MAXRECNO,          size in pages                   X06820000
+               MF=(E,DIV_LIST)                                          06830000
+         CH    R15,=H'4'               OK?                              06840000
+         BH    X'804'                  no, quit                         06850000
+*                                                                       06860000
+*        calculate the number of records (display lines)                06870000
+*                                                                       06880000
+         SLR   R0,R0                                                    06890000
+         L     R1,MAXRECNO             number of pages                  06900000
+         SLDL  R0,12                   number of bytes                  06910000
+         AL    R1,MAXLRECL             round up                         06920000
+         BCTR  R1,0                    round up                         06930000
+         D     R0,MAXLRECL             round up                         06940000
+         ST    R1,MAXRECNO             number of display lines          06950000
+         MVI   LOWRBA,X'7F'            first-time switch                06960013
+         B     OPENVS6                                                  06970000
+*                                                                       06980000
+OPENVS4  MVI   VS_TYPE,C'R'            Cluster is an RRDS               06990000
+         B     OPENVS6                                                  07000025
+*                                                                       07010025
+OPENVS5  MVI   VS_TYPE,C'K'            Cluster is a KSDS                07020025
+*                                                                       07030000
+OPENVS6  LA    R1,READVS00             read routine                     07040013
+         MVI   RECFM,C'V'              dummy RECFM for message          07050013
+         B     BRIF                                                     07060013
+*                                                                       07070000
+*        VSAM OPEN error                                                07080000
+*                                                                       07090000
+OPENVS7  CLI   ACBERFLG,160            empty data set?                  07100000
+         BNE   QUIT16                  no, quit                         07110000
+         MVC   ZERRMSG,=C'ISRB603 '    "no data to browse"              07120012
+         LA    R7,4                    RC=4                             07130013
+         B     SETMSG8                 issue message                    07140012
+*********************************************************************** 07150000
+*                                                                     * 07160000
+*        INITIALIZE BDAM DATA SET                                     * 07170000
+*                                                                     * 07180000
+*********************************************************************** 07190000
+OPENDA   L     R14,=X'C1,00,00,00'     CAMLST SEARCH                    07200013
+         LA    R15,DSNAME              GET WORK AREA ADDRESS            07210000
+         LA    R0,VOLSER               GET WORK AREA ADDRESS            07220000
+         LA    R1,DS1FMTID             GET WORK AREA ADDRESS            07230000
+         STM   R14,R1,TENWORDS         STORE UPDATED CAMLST             07240000
+         OBTAIN TENWORDS               GET F1-DSCB                      07250000
+         LTR   R15,R15                 OK?                              07260000
+         BNZ   BROWSE                  NO, QUIT                         07270000
+*                                                                       07280000
+         TM    DS1SMSFG,DS1PDSE+DS1STRP+DS1PDSEX+DS1DSAE PDSE/HFS ?     07290022
+         BNZ   BROWSE                  YES, USE STANDARD BROWSE         07300022
+         TM    DS1DSORG,DS1DSGPO       DSORG=PO?                        07310023
+         BO    BROWSE                  YES, USE STANDARD BROWSE         07320023
+         TM    DS1DSORG,DS1DSGDA       DSORG=DA?                        07330000
+         BO    OPENDA2                 YES, USE BDAM                    07340000
+         OC    DS1DSORG,DS1DSORG       DSORG=0?                         07350000
+         BZ    OPENDA2                 YES, USE BDAM                    07360000
+         OC    DS1BLKL,DS1BLKL         BLKSIZE=0?                       07370000
+         BZ    OPENDA2                 YES, USE BDAM                    07380000
+         CLI   DS1KEYL,0               KEYLEN>0                         07390000
+         BH    OPENDA2                 YES, USE BDAM                    07400000
+         TM    DS1RECFM,DS1RECFV+DS1RECFS   VS/VBS?                     07410000
+         BO    OPENDA2                 YES, USE BDAM                    07420000
+         OC    DS1LSTAR,DS1LSTAR       EOF=0 ?                          07430000
+         BNZ   BROWSE                  NO, USE STANDARD BROWSE          07440025
+*                                                                       07450000
+*        determine the maximum lrecl                                    07460000
+*                                                                       07470000
+OPENDA2  DEVTYPE DDNAME,DVAREA,DEVTAB  get device type & track size     07480000
+         LTR   R15,R15                 OK?                              07490000
+         BNZ   BROWSE                  NO, QUIT                         07500000
+*                                                                       07510000
+         LA    R2,DCB1                 DCB address                      07520013
+         MVC   DCBDDNAM,DDNAME         MOVE DDNAME                      07530013
+         ST    R2,OPENLIST             build open list                  07540013
+         MVI   OPENLIST,X'80'          build open list                  07550013
+*                                                                       07560000
+         TM    DS1RECFM,DS1RECFB       RECFM=.B?                        07570013
+         BZ    OPENDA2B                no, jump                         07580013
+         LH    R0,DS1LRECL             GET LRECL                        07590000
+         LTR   R0,R0                   LRECL=0?                         07600013
+         BNZ   OPENDA2C                no, jump                         07610013
+*                                                                       07620013
+OPENDA2B ICM   R0,B'0011',DS1BLKL      GET BLKSIZE                      07630013
+         BNZ   OPENDA2C                                                 07640000
+         L     R0,DVAMAXRC             defaule blksize/lrecl            07650000
+         STH   R0,DCBBLKSI             force BLKSIZE=32760 in DCB       07660000
+*                                                                       07670000
+OPENDA2C ST    R0,MAXLRECL             PASS IT TO BRIF                  07680014
+*                                                                       07690000
+OPENDA2E CLI   DS1DSORG,DS1DSGPO       DSORG=PO?                        07700000
+         BNE   OPENDA2O                no, jump                         07710000
+         MVI   DCBDSORG,DS1DSGPO       yes, prevent S013-14 in ESA      07720000
+*                                                                       07730000
+OPENDA2O OPEN  MF=(E,OPENLIST)         OPEN DCB1                        07740000
+         LTR   R15,R15                 OK?                              07750000
+         BNZ   BROWSE                  NO, QUIT                         07760000
+*                                                                       07770000
+*        determine record format                                        07780000
+*                                                                       07790000
+OPENDA3  TM    DCBRECFM,DCBRECU        RECFM=U?                         07800000
+         BO    OPENDA3U                yes, jump                        07810000
+         MVI   RECFM,C'F'              set RECFM=F                      07820000
+         TM    DCBRECFM,DCBRECF        RECFM=F?                         07830000
+         BO    OPENDA4                 yes, jump                        07840000
+         MVI   RECFM,C'V'              set RECFM=V                      07850000
+         TM    DCBRECFM,DCBRECV        RECFM=V?                         07860000
+         BO    OPENDA4                 yes, jump                        07870000
+OPENDA3U MVI   RECFM,C'U'              RECFM=U or no RECFM              07880000
+         LA    R0,8                    add 8 to recsize                 07890014
+         AL    R0,MAXLRECL             add 8 to recsize                 07900014
+         ST    R0,MAXLRECL             add 8 to recsize                 07910014
+*                                                                       07920000
+*        build IOB                                                      07930000
+*                                                                       07940000
+OPENDA4  MVI   IOBFLAG1,IOBCMDCH+IOBSPSVC                               07950000
+         LA    R0,IOBNECB              ECB ADDRESS                      07960000
+         ST    R0,IOBECBPT             STORE ADDRESS                    07970000
+         LA    R0,CCW1                 FIRST CCW IN CHAIN               07980000
+         ST    R0,IOBSTART             STORE ADDRESS                    07990000
+         ST    R2,IOBDCBPT             DCB ADDRESS                      08000000
+         LA    R15,SECTORNO            SECTOR NUMBER X'00'              08010000
+         LA    R0,L'SECTORNO           LENGTH IS ONE BYTE               08020000
+         STM   R15,R0,CCW1             SET SECTOR CCW                   08030000
+         MVI   CCW1+0,X'23'            COMMAND: SET SECTOR              08040000
+         MVI   CCW1+4,CC               FLAGS: COMMAND CHAINING          08050000
+*                                                                       08060000
+         LA    R15,IOBCC               CCHHR ADDRESS                    08070000
+         LA    R0,5                    LENGTH IS FIVE BYTES             08080000
+         STM   R15,R0,CCW2             SET SECTOR CCW                   08090000
+         MVI   CCW2+0,X'31'            COMMAND: SEARCH ID EQUAL         08100000
+         MVI   CCW2+4,CC               FLAGS: COMMAND CHAINING          08110000
+         LA    R15,CCW2                SEARCH CCW                       08120000
+         SLR   R0,R0                   2ND WORD                         08130000
+         STM   R15,R0,CCW3             TIC CCW                          08140000
+         MVI   CCW3+0,X'08'            COMMAND: TIC                     08150000
+*                                                                       08160000
+         LA    R15,BUFFER              FIRST BLOCK                      08170000
+         SLR   R0,R0                                                    08180000
+         ICM   R0,B'0011',DVATRKLN     track length                     08190000
+         STM   R15,R0,CCW4             READ CCW                         08200000
+         MVI   CCW4,X'5E'              COMMAND CODE: READ MULTIPLE TRK  08210000
+         OI    CCW4+4,SLI              FLAGS: SLI                       08220000
+*                                                                       08230000
+*        Calculate the number of blocks per track                       08240000
+*                                                                       08250000
+         TRKCALC FUNCTN=TRKCAP,                                        X08260000
+               TYPE=DVAUNIT,                                           X08270000
+               R=1,K=DCBKEYLE,DD=DCBBLKSI,                             X08280000
+               REGSAVE=YES,                                            X08290000
+               MF=(E,BUFFER)                                            08300000
+         LTR   R15,R15                                                  08310000
+         BNZ   BROWSE                  TRKCALC ERROR                    08320000
+         ST    R0,BLKPTRK              NUMBER OF BLOCKS PER TRACK       08330000
+         CLI   RECFM,C'F'              RECFM=F?                         08340000
+         BE    OPENDA8                 yes, jump                        08350000
+*                                                                       08360000
+*        allocate RRNtable if RECFM=V or RECFM=U                        08370000
+*                                                                       08380000
+OPENDA7  SLR   R0,R0                                                    08390000
+         ICM   R0,B'0111',DCBREL       number of tracks in data set     08400000
+         SLL   R0,2                    mult by 4 (size of a word)       08410000
+         GETMAIN RU,LV=(R0),LOC=ANY,BNDRY=PAGE                          08420000
+         STM   R0,R1,RBATABLE          STORE LENGTH, ORIGIN             08430000
+         MVI   0(R1),X'7F'             end of table                     08440000
+         MVI   MAXRECNO,X'7F'          maximum record number            08450000
+         B     OPENDA9                                                  08460000
+*                                                                       08470000
+*        Calculate MAXRECNO for RECFM=F data sets                       08480000
+*                                                                       08490000
+OPENDA8  SLR   R1,R1                                                    08500000
+         ICM   R1,B'0111',DCBREL       number of tracks in data set     08510000
+         M     R0,BLKPTRK              number of blocks in data set     08520000
+         LH    R14,DCBBLKSI            get blksize                      08530000
+         MR    R0,R14                  number of bytes  in data set     08540000
+*PDUMP DCB1,ENDRBA+3                                                    08550000
+         D     R0,MAXLRECL             NUMBER OF RECORDS                08560000
+         ST    R1,MAXRECNO             number of records in data set    08570000
+*                                                                       08580013
+OPENDA9  MVI   TTTR,X'FF'              force first read                 08590000
+         LA    R1,READDA00             read routine                     08600013
+         MVI   VS_TYPE,C'*'            dummy type for message           08610013
+         B     BRIF                                                     08620013
+*********************************************************************** 08630000
+*                                                                     * 08640000
+*        Invoke ISPF/PDF BROWSE                                       * 08650000
+*                                                                     * 08660000
+*        The BROWSE function is invoked in two situations:            * 08670000
+*                                                                     * 08680000
+*          1. the data set appears to be supported by BROWSE          * 08690000
+*                                                                     * 08700000
+*          or                                                         * 08710000
+*                                                                     * 08720000
+*          2. dynamic allocation failed, BROWSE will try to allocate  * 08730000
+*             it also, will (probably) fail and issue an appropriate  * 08740000
+*             message.                                                * 08750000
+*                                                                     * 08760000
+*********************************************************************** 08770000
+BROWSE   STRING '''',(FULLDSN,,T),'''',INTO=MESSAGE                     08780023
+         TM    SWITCH1,SW1UVOL         VOLSER given by user?            08790025
+         BO    BROWSE2                 yes, jump                        08800025
+         ISPLINK (=C'BROWSE ',MESSAGE)                                  08810023
+         LR    R7,R15                  save return-code from BROWSE     08820000
+         B     SETMSG                                                   08830000
+BROWSE2  ISPLINK (=C'BROWSE ',MESSAGE,VOLSER)                           08840023
+         LR    R7,R15                  save return-code from BROWSE     08850000
+         B     SETMSG                                                   08860013
+*********************************************************************** 08870013
+*                                                                     * 08880013
+*        Invoke ISPF/PDF BRIF Service                                 * 08890013
+*                                                                     * 08900013
+*********************************************************************** 08910013
+BRIF     ST    R1,READRTNE             read routine                     08920013
+         LA    R0,SAVERRTN             DDATA FOR BRIF                   08930013
+         ST    R0,DDATA                DDATA FOR BRIF                   08940013
+*                                                                       08950014
+         CLC   MAXLRECL,=F'32760'      IS RECSIZE TOO BIG?              08960014
+         BNH   *+10                    NO, JUMP                         08970014
+         MVC   MAXLRECL,=F'32760'      YES, TRUNCATE IT                 08980014
+         MVC   VS_LRECL,=F'32760'      prime work area                  08990015
+*                                                                       09000013
+         STRING 'DSORG=',(DSORG,,X),                                   X09010013
+               ' VS_TYPE=',VS_TYPE,                                    X09020013
+               ' RECFM=',RECFM,                                        X09030013
+               ' MAXLRECL=',(MAXLRECL,F,L),                            X09040013
+               ' MAXRECNO=',(MAXRECNO,F,L),                            X09050013
+               ' VOLSER=',VOLSER,                                      X09060013
+               ' Commands: V (VIEW) LC (LISTCAT) RBA (RBA)',           X09070031
+               INTO=MESSAGE                                             09080013
+         BAL   R2,SETMSG44             issue opening message            09090015
+*                                                                       09100013
+         ISPLINK (=C'BRIF',                                            X09110021
+               DSNAME,                                                 X09120021
+               =C'V ',                                                 X09130021
+               MAXLRECL,                                               X09140021
+               READRTNE,                                               X09150021
+               =A(CMDRTNE),            process user commands           X09160028
+               DDATA,                                                  X09170021
+               PANEL)                                                   09180021
+         LR    R7,R15                  SAVE RETURN CODE FROM BRIF       09190013
+*                                                                       09200015
+*        Display min/max record sizes for KSDS/ESDS                     09210015
+*                                                                       09220015
+BRIF70   CLI   VS_TYPE,C'K'            KSDS?                            09230015
+         BE    BRIF72                  yes, jump                        09240015
+         CLI   VS_TYPE,C'E'            ESDS?                            09250015
+         BNE   SETMSG                  NO, JUMP                         09260015
+BRIF72   STRING VS_TYPE,'SDS',                                         X09270015
+               ' MAXRECNO=',(MAXRECNO,F,L),                            X09280015
+               ' Records_processed=',(VS_RECNO,F,L),                   X09290015
+               ' MINLRECL=',(VS_LRECL,F,L),                            X09300015
+               ' MAXLRECL=',(VS_LRECL+4,F,L),                          X09310015
+               INTO=MESSAGE                                             09320015
+         BAL   R2,SETMSG44             issue VSAM statistics            09330015
+*********************************************************************** 09340000
+*                                                                     * 09350000
+*        PROGRAM EXIT                                                 * 09360000
+*                                                                     * 09370000
+*           1. issue error message                                    * 09380000
+*           2. clean up                                               * 09390000
+*           3. goback to caller                                       * 09400000
+*                                                                     * 09410000
+*********************************************************************** 09420000
+SETMSG   LTR   R7,R7                   CHECK RC FROM BRIF/BROWSE        09430013
+         BZ    QUIT50                  OK, exit                         09440000
+SETMSG4  TRACE                                                          09450013
+         LA    R0,L'ZERRMSG                                             09460000
+         ST    R0,DWD                                                   09470000
+         ISPLINK (=C'VCOPY ',=C'ZERRMSG ',DWD,ZERRMSG,=C'MOVE ')        09480000
+         LTR   R15,R15                 CHECK RC                         09490013
+         BNZ   QUIT50                  bad, exit                        09500013
+*                                                                       09510012
+SETMSG8  ISPLINK (=C'SETMSG ',ZERRMSG)                                  09520012
+         B     QUIT50                                                   09530000
+*                                                                       09540015
+SETMSG44 LR    R0,R15                  save length of long message      09550015
+         STRING '    BR R&REL',INTO=SHORTMSG                            09560016
+         STM   R15,R0,DWD              lengths of short & long msgs     09570015
+         ISPLINK (=C'VREPLACE',=C'ZEDSMSG ',DWD,SHORTMSG)               09580015
+         ISPLINK (=C'VREPLACE',=C'ZEDLMSG ',DWD+4,MESSAGE)              09590015
+         ISPLINK (=C'SETMSG ',=C'ISRZ000 ')                             09600015
+         BR    R2                                                       09610015
+*---------------------------------------------------------------------* 09620013
+*                                                                     * 09630013
+*        Re-invoke myself via the SELECT service                      * 09640013
+*                                                                     * 09650013
+*---------------------------------------------------------------------* 09660013
+SELECT   ST    R15,DWD                 length                           09670013
+         BAL   R14,FREEBUFF         <- Free 64KB Buffer                 09680026
+         ISPLINK (=C'SELECT ',DWD,MESSAGE)                              09690013
+         LR    R7,R15                  SAVE RETURN CODE FROM ISPLINK    09700013
+         B     QUIT50                                                   09710013
+*                                                                       09720000
+QUIT16   LA    R7,16                   RC=16                            09730000
+*---------------------------------------------------------------------* 09740000
+*                                                                     * 09750000
+*        free work area and goback to ISPF                            * 09760000
+*                                                                     * 09770000
+*---------------------------------------------------------------------* 09780000
+QUIT50   TM    OPENLIST,X'80'          OPEN list OK?                    09790000
+         BZ    QUIT53                  no, jump                         09800013
+         CLOSE MF=(E,OPENLIST)         CLOSE ACB/DCB                    09810000
+*                                                                       09820013
+QUIT53   LM    R0,R1,RBATABLE          GET LENGTH, ORIGIN               09830013
+         LTR   R0,R0                                                    09840013
+         BZ    QUIT55                                                   09850013
+         FREEMAIN RU,LV=(0),A=(1)      FREE TABLE OF POINTERS           09860013
+*                                                                       09870000
+QUIT55   TM    S99RBPTR,X'80'          SVC 99 req blk OK?               09880000
+         BNO   QUIT60                  no, jump                         09890000
+         MVI   S99RB+1,2               VERB=FREE                        09900000
+         OI    S99TUPTR,X'80'          ONLY 1 T.U.                      09910000
+         MVI   S99T1+1,1               X'55' -> X'01'                   09920000
+         LA    R1,S99RBPTR                                              09930000
+         DYNALLOC ,                    FREE THE DATA SET                09940000
+*                                                                       09950000
+QUIT60   CLI   DIV_LIST,0              DIV in progress?                 09960000
+         BE    QUIT90                  no, jump                         09970000
+         XC    DIV_LIST(4),DIV_LIST    clear flags to prevent S08B-0005 09980000
+         DIV   UNIDENTIFY,             remove access                   X09990000
+               MF=(E,DIV_LIST)                                          10000000
+*                                                                       10010000
+QUIT90   BAL   R14,FREEBUFF         <- Free 64KB Buffer                 10020026
+*                                                                       10030026
+QUIT91   LR    R1,R13                  Work area                        10040026
+         L     R13,4(,R13)                                              10050000
+         LA    R0,DYNAML               length of dynamic storage area   10060026
+         FREEMAIN RU,LV=(0),A=(1)      free dynamic storage area        10070025
+         LR    R15,R7                  Return code                      10080000
+         RETURN (14,12),RC=(15)                                         10090000
+         DROP  R9                      CPPL                             10100023
+*                                                                       10110026
+FREEBUFF ICM   R1,B'1111',BUFFERP      Address of 64KB Buffer           10120026
+         BZR   R14                     zero, jump                       10130026
+         FREEMAIN R,LV=BUFFERL,A=(1)   Free 64KB Buffer (A24)           10140026
+         XC    BUFFERP,BUFFERP         Set Address to zero              10150026
+         BR    R14                                                      10160026
+         DROP  R12                     A(BUFFER)                        10170026
+*---------------------------------------------------------------------* 10180000
+*        Invoke ISPEXEC service                                       * 10190000
+*---------------------------------------------------------------------* 10200000
+ISPEXEC  ST    R15,DWD                 LENGTH                           10210000
+         LA    R0,DWD                  LENGTH                           10220000
+         LA    R1,MESSAGE              text                             10230000
+         STM   R0,R1,TENWORDS          build parm list                  10240000
+         OI    TENWORDS+4,X'80'        build parm list                  10250000
+         L     R15,ISPEXEC@            addr of ISPEXEC                  10260000
+         LA    R1,TENWORDS             parm list                        10270000
+         BR    R15                     invoke ISPEXEC service           10280000
+*********************************************************************** 10290000
+*                                                                     * 10300000
+*        Scan data at the cursor position for a dsname                * 10310000
+*                                                                     * 10320000
+*        Some of this code has been lifted from ISPCDSN,              * 10330000
+*        (file 270 of the CBT tape), I hope they don't mind.          * 10340000
+*                                                                     * 10350000
+*        The TLD address is retrieved from ISPTASK's register 1,      * 10360000
+*        as done by ISPEXEC and ISPLINK.  If BR is invoked as a       * 10370000
+*        program, ISPF passes the TLD address in the second word      * 10380000
+*        of the parameter list built by the SELECT service; when      * 10390000
+*        BR is invoked as a command, no TLD address is passed, as     * 10400000
+*        far as I know.                                               * 10410000
+*                                                                     * 10420000
+*********************************************************************** 10430000
+CURSOR   L     R1,X'21C'(,0)           PSATOLD (MY TCB)                 10440000
+*LOOP                                                                   10450000
+CURSOR11 L     R2,112(,R1)             TCBFSA                           10460000
+         CLI   40(R2),C'I'             R5 SLOT CONTAINS 'ISPF'          10470000
+         BNE   CURSOR14                NO, JUMP                         10480000
+         CLI   24(R2),X'00'            IS R1 A 24-BIT ADDR?             10490000
+         BNE   CURSOR14                NO, JUMP                         10500000
+         ICM   R2,B'1111',24(R2)       R1 SLOT (ADDR OF TLD PTR)        10510000
+         BZ    CURSOR14                NO, JUMP                         10520000
+         CLI   0(R2),X'00'             IS IT A CLEAN 24-BIT ADDR?       10530000
+         BNE   CURSOR14                NO, JUMP                         10540000
+         L     R2,0(,R2)               R2->TLD                          10550000
+         CLC   =C'TLD',0(R2)           IS THIS REALLY A TLD?            10560000
+         BE    CURSOR19                YES, EXIT LOOP                   10570000
+CURSOR14 L     R1,132(,R1)             TCBOTC (MOTHER TASK)             10580000
+         CL    R1,124(,R1)             IS IT THE JSTCB?                 10590000
+         BNE   CURSOR11                NO, CHECK FOR A TLD              10600000
+*ENDLOOP                                                                10610000
+         B     CURSOR98                exit with "no-dsname" rc         10620000
+*                                                                       10630000
+*        TLD located, now get the line address and cursor               10640000
+*        position.                                                      10650000
+*                                                                       10660000
+CURSOR19 SLR   R0,R0                                                    10670000
+         LH    R1,166(,R2)             get cursor offset (TLDCSR)       10680000
+         L     R3,192(,R2)             screen width (TLDCLSWD)          10690000
+         DR    R0,R3                   get line # (R0) and offset (R1)  10700000
+         LR    R5,R0                   cursor offset in line            10710000
+         MR    R0,R3                   get offset to current line       10720000
+         AL    R1,096(,R2)             change offset to addr (TLDCLSP)  10730019
+         LR    R4,R1                   Current line in screen image     10740000
+*---------------------------------------------------------------------* 10750000
+*                                                                     * 10760000
+*        Scan current line at cursor position for a dsname            * 10770000
+*                                                                     * 10780000
+*              R4: current line                                       * 10790000
+*              R5: cursor position                                    * 10800000
+*                                                                     * 10810000
+*---------------------------------------------------------------------* 10820000
+CURSOR21 MVI   TRNTBL,255                                               10830000
+         MVC   TRNTBL+1(255),TRNTBL    init table                       10840000
+         SLR   R15,R15                                                  10850000
+         SLR   R0,R0                                                    10860000
+         BAL   R1,CURSOR22             branch around table, set R1      10870000
+         DC    C'$',AL1(1)                                              10880000
+         DC    C'.',AL1(1)                                              10890000
+         DC    C'(',AL1(1)                                              10900000
+         DC    C')',AL1(1)                                              10910000
+         DC    C'#',AL1(2)             #@                               10920000
+         DC    C'a',AL1(9)                                              10930000
+         DC    C'j',AL1(9)                                              10940000
+         DC    C's',AL1(8)                                              10950000
+         DC    C'{',AL1(1)             C0                               10960021
+         DC    C'-',AL1(1)             60                               10970021
+         DC    C'A',AL1(9)                                              10980000
+         DC    C'J',AL1(9)                                              10990000
+         DC    C'S',AL1(8)                                              11000000
+         DC    C'0',AL1(10)                                             11010000
+         DC    X'00',0H'0'             end of table                     11020000
+*LOOP                                                                   11030000
+CURSOR22 IC    R15,0(,R1)              FIRST BYTE                       11040000
+         IC    R0,1(,R1)               ITERATIONS                       11050000
+*--LOOP                                                                 11060000
+CURSOR23 LA    R2,TRNTBL(R15)          point to TRNTBL+X'4A'            11070000
+         MVI   0(R2),0                 STORE X'00' INTO TRNTBL+X'4A'    11080000
+         LA    R15,1(,R15)             BUMP INDEX                       11090000
+         BCT   R0,CURSOR23             NEXT CHARACTER                   11100000
+*--ENDLOOP                                                              11110000
+         LA    R1,2(,R1)               NEXT ENTRY IN TABLE              11120000
+         CLI   0(R1),0                 END OF TABLE?                    11130000
+         BNE   CURSOR22                NEXT STRING                      11140000
+*ENDLOOP                                                                11150000
+*                                                                       11160000
+*        scan current line at cursor position to extract the dsn        11170000
+*                                                                       11180000
+         LA    R3,0(R5,R4)             R3-> cursor location             11190000
+         CLI   0(R3),C'('              Is it left paren?                11200000
+         BZ    CURSOR71                Yes, extract within parens       11210000
+         TRT   0(1,R3),TRNTBL          Are we on data set name?         11220000
+         BZ    CURSOR60                Yes, begin scanning for start    11230000
+         CLI   0(R3),C''''             Is it a quote?                   11240000
+         BNZ   CURSOR98                No, cursor invalid               11250000
+         MVI   QFLAG,X'80'             Yes, indicate left quote         11260000
+         TRT   1(1,R3),TRNTBL          Is dsn to right of quote?        11270000
+         BZ    CURSOR80                Yes, prepare to extract it       11280000
+         LTR   R5,R5                   Cursor in pos 1?                 11290000
+         BZ    CURSOR98                yes, this is bad                 11300000
+         BCTR  R3,0                    No,  check left of quote         11310000
+         TRT   0(1,R3),TRNTBL          Was it there?                    11320000
+         BNZ   CURSOR98                No,  cursor invalid              11330000
+         MVI   QFLAG,X'01'             Yes, indicate right quote        11340000
+*                                                                       11350000
+*        scan backwards to locate beginning of dsname                   11360000
+*                                                                       11370000
+CURSOR60 LTR   R5,R5                   Cursor in pos 1?                 11380000
+         BZ    CURSOR81                yes, dsn starts in pos 1         11390000
+         LR    R0,R3                   current position                 11400000
+         SR    R0,R4                   subtract addr of pos 1           11410000
+         BNP   CURSOR98                bad, quit                        11420000
+*loop                                                                   11430000
+CURSOR62 BCTR  R3,0                    R3-> cursor location             11440000
+         TRT   0(1,R3),TRNTBL          Byte in table?                   11450000
+         BNZ   CURSOR70                No,  found left delimiter        11460000
+         BCT   R0,CURSOR62             Yes, decr offset; check next     11470000
+*endloop                                                                11480000
+         B     CURSOR81                dsname starts in pos 1           11490000
+*                                                                       11500000
+*        R3 now points to start of dsname                               11510000
+*                                                                       11520000
+CURSOR70 CLI   0(R3),C'('              Was delimiter left paren?        11530000
+         BNE   CURSOR75                No, include parens in dsn        11540000
+CURSOR71 MVI   TRNTBL+C')',C')'        Make right paren a delimiter     11550000
+         MVI   TRNTBL+C'(',0           Include parens in dsn if present 11560000
+         B     CURSOR80                Extract withing parens           11570000
+CURSOR75 MVI   TRNTBL+C'(',0           Include parens in dsn if present 11580000
+         CLI   0(R3),C''''             Was delimiter a quote?           11590000
+         BNE   CURSOR80                No,  leave bits unchanged        11600000
+         OI    QFLAG,X'80'             Yes, indicate left quote         11610000
+*                                                                       11620000
+*        scan dsname to locate its right boundary                       11630000
+*                                                                       11640000
+CURSOR80 LA    R3,1(,R3)               R3-> left position of dsname     11650000
+*                                                                       11660000
+CURSOR81 TRT   0(56,R3),TRNTBL         Scan until not in table          11670000
+         BZ    CURSOR98                end dlm not found, exit          11680000
+         LR    R2,R1                   R2-> right delimiter             11690000
+         CLI   0(R2),C''''             Was delimiter a quote?           11700000
+         BNE   CURSOR90                No,  leave bits unchanged        11710000
+         OI    QFLAG,X'01'             Yes, indicate right quote        11720000
+*                                                                       11730000
+CURSOR90 TM    QFLAG,X'81'             Quotes surrounding dsname ?      11740000
+         BM    CURSOR98                no matching quotes               11750000
+         LR    R0,R2                   R0 = first byte after dsname     11760000
+         LR    R1,R3                   R1 = first byte of dsname        11770000
+         SLR   R0,R1                   R0 = length                      11780000
+         BR    R14                     exit                             11790000
+*                                                                       11800000
+CURSOR98 SLR   R0,R0                   no dsname                        11810000
+         SLR   R1,R1                   no dsname                        11820000
+*                                                                       11830000
+CURSOR99 BR    R14                     GOBACK                           11840000
+*********************************************************************** 11850023
+*                                                                     * 11860023
+*        PARSE A COMMA-DELIMITED JCL PARM                             * 11870023
+*                                                                     * 11880023
+*        LA    R4,PARM                 PARM VALUE                     * 11890023
+*        LH    R5,LENGTH               PARM LENGTH                    * 11900023
+*        L     R15,=A(PARSE_PARM)                                     * 11910023
+*        BALR  R14,R15                                                * 11920023
+*        DC    S(L'PARM1,PARM1)        LENGTH,ADDR                    * 11930023
+*        DC    S(L'PARM2,PARM2)        LENGTH,ADDR                    * 11940023
+*                                                                     * 11950023
+*********************************************************************** 11960023
+PARSE_PARM SAVE (14,12),,*                                              11970023
+         BCTR  R4,0                    START OF PARM - 1                11980023
+         ALR   R5,R4                   LAST BYTE OF PARM                11990023
+*LOOP                                                                   12000023
+PARSE_PARM1 SLR R0,R0                  R0 = 00000000                    12010023
+         ICM   R0,B'0011',2(R14)       R0 = 0000BDDD                    12020023
+         SRDL  R0,12(0)                R0 = 0000000B, R1= BBB.....      12030023
+         SRL   R1,20(0)                R1 = 00000DDD DISPLACEMENT       12040023
+         ALR   R1,R13                  ADD CALLER'S SAVE AREA ADDR      12050023
+         LR    R6,R1                   ADDR OF TARGET FIELD             12060023
+         LH    R7,0(,R14)              LENGTH OF TARGET FIELD           12070023
+*                                                                       12080023
+         LA    R2,1(,R4)               FIRST BYTE OF CURRENT PARAMETER  12090023
+*--LOOP                                                                 12100023
+PARSE_PARM2 LA R4,1(,R4)               BUMP POINTER                     12110023
+         CLR   R4,R5                   END OF PARM REACHED?             12120023
+         BH    PARSE_PARM4             YES, EXIT LOOP                   12130023
+         CLI   0(R4),C','              DELIMITER?                       12140023
+         BNE   PARSE_PARM2             NO, KEEP LOOPIN'                 12150023
+*--ENDLOOP                                                              12160023
+PARSE_PARM4 LR R3,R4                   POSITION OF ','                  12170023
+         SR    R3,R2                   LENGTH OF SOURCE PARAM           12180023
+         ICM   R3,B'1000',=C' '        PADDING                          12190023
+         MVCL  R6,R2                   MOVE SOURCE TO TARGET            12200023
+         LA    R14,2+2(,R14)           NEXT TARGET                      12210023
+         CLI   0(R14),0                IS THIS A FIELD DESCRIPTOR?      12220023
+         BE    PARSE_PARM1             YES, PROCESS IT                  12230023
+*ENDLOOP                                                                12240023
+         RETURN (0,12),T                                                12250023
+*********************************************************************** 12260000
+*                                                                     * 12270000
+*        VSAM READ ROUTINE                                            * 12280000
+*                                                                     * 12290000
+*********************************************************************** 12300000
+$FARRTNE LOCTR                                                          12310000
+READVS00 SAVE  (14,12),,'VSBROWSE - VSAM READ RTNE'                     12320016
+         LM    R4,R7,0(R1)             INPUT PARMS                      12330000
+         L     R7,0(,R7)               A(SAVERRTN)                      12340000
+         ST    R13,4(,R7)                                               12350000
+         ST    R7,8(,R13)                                               12360000
+         LR    R13,R7                                                   12370000
+         USING SAVERRTN,R13                                             12380000
+         LM    R10,R11,BASEREGS                                         12390025
+         L     R12,BUFFERP             A(BUFFER)                        12400026
+         USING BUFFER,R12                                               12410026
+*                                                                       12420000
+READVS10 TRACE                                                          12430013
+         L     R3,0(,R6)               RECORD NUMBER (FROM BROWSE)      12440000
+         C     R3,MAXRECNO             BEYOND END OF FILE?              12450000
+         BH    READVS80                YES, EXIT                        12460000
+*                                                                       12470000
+         LA    R7,RPL1                 OPTCD=SEQ                        12480000
+         USING IFGRPL,R7                                                12490000
+         CLI   VS_TYPE,C'R'            is this an RRDS?                 12500000
+         BE    RRDS00                  YES, JUMP                        12510000
+         CLI   VS_TYPE,C'L'            is this an LDS?                  12520000
+         BE    LDS000                  YES, JUMP                        12530000
+*                                                                       12540000
+*        check rbatable if record has already been read                 12550000
+*                                                                       12560000
+READVS30 LR    R2,R3                   RRN                              12570000
+         BCT   R2,READVS3B             RELATIVE TO ZERO                 12580025
+         ICM   R2,B'1111',HIGH_RRN     first time through?              12590025
+         BZ    READVS3L                yes, issue seq read              12600025
+         XC    LOWRBA,LOWRBA           RRN=1, set RBA to zero           12610025
+         B     READVS51                no, issue seq read               12620025
+READVS3B EQU   *                       XADDR=Y                          12630025
+         SLL   R2,2                    MAKE IT AN INDEX IN RBA TABLE    12640000
+         CLI   XADDR,C'Y'              extended-addressability format?  12650025
+         BE    READVS3D                no, jump                         12660025
+         AL    R2,RBATABLE+4           CHANGE OFFSET TO ADDRESS         12670000
+         ICM   R2,B'1111',0(R2)        GET RBA OF RECORD                12680000
+         BZ    READVS3L                not read, issue GET              12690025
+         ST    R2,LOWRBA               store RBA into ARG               12700025
+         B     READVS51                ALREADY READ, JUMP               12710025
+*                                                                       12720025
+READVS3D EQU   *                       XADDR=Y                          12730025
+         ALR   R2,R2                   8-byte XRBAs                     12740025
+         AL    R2,RBATABLE+4           CHANGE OFFSET TO ADDRESS         12750025
+         LM    R0,R1,0(R2)             XRBA                             12760025
+         LTR   R1,R1                   Record read already?             12770025
+         BZ    READVS3L                not read, issue GET              12780025
+         STM   R0,R1,LOWRBA            store XRBA into ARG              12790025
+         B     READVS51                ALREADY READ, JUMP               12800025
+*                                                                       12810000
+*        the record requested has never been read; read the file        12820000
+*        sequentially until the desired record is reached.              12830000
+*                                                                       12840000
+READVS3L EQU   *                                                        12850025
+         L     R8,HIGH_RRN             LAST RECORD READ SEQUENTIALLY    12860000
+*LOOP                                                                   12870000
+READVS31 TRACE                                                          12880013
+         GET   RPL=RPL1                GET NEXT RECORD                  12890000
+         LTR   R15,R15                 OK?                              12900000
+         BZ    READVS45                YES, JUMP                        12910000
+*                                                                       12920000
+*        actual end of data (should only occur when SHOWCB              12930000
+*        returned MAXRECNO=0)                                           12940000
+*                                                                       12950000
+         CLI   RPLRTNCD,X'08'          IS THIS A LOGICAL ERROR?         12960012
+         BNE   READVS38                NO, JUMP                         12970016
+         CLI   RPLFDB3,X'04'           end of data?                     12980000
+         BE    READVS81                YES, exit                        12990000
+ ORG *-4 AXB 226C                                                       13000025
+         BNE   READVS34                NO, CHECK OTHER CONDITIONS       13010025
+         CL    R8,MAXRECNO             BEYOND MAXRECNO?                 13020025
+         BNL   READVS81                YES, EXIT                        13030025
+         ST    R8,MAXRECNO             NO, ADJUST MAXRECNO              13040025
+         B     READVS80                RETURN MAXRECNO TO BRIF          13050025
+*                                                                       13060000
+*        The first time a spanned record is read (FDBK=X'84'),          13070000
+*        switch RPL1 and RPL2 from OPTCD=LOC to OPTCD=MVE.              13080000
+*        From that point on, all GETs will be move mode.                13090000
+*        Note that a cluster defined with the SPANNED attribute         13100000
+*        does not necessarily contain spanned records (ie records       13110000
+*        made up of more than one segment).                             13120000
+*                                                                       13130000
+READVS34 CLI   RPLFDB3,X'48'           OPTCD=KEY with DATA component?   13140012
+         BE    READVS35                YES, JUMP                        13150016
+*                                                                       13160000
+         CLI   RPLFDB3,X'84'           OPTCD=LOC WITH SPANNED RECORDS?  13170000
+         BNE   READVS90                no, error                        13180000
+*                                                                       13190000
+         NI    RPLOPT1,255-RPLLOC      OPTCD=MVE                        13200000
+         NI    RPLOPT1-IFGRPL+RPL2,255-RPLLOC  OPTCD=MVE                13210000
+         LA    R0,BUFFER               THE RIGHT WORD                   13220000
+         ST    R0,RPLAREA              STORE AREA ADDRESS INTO RPL      13230000
+         ST    R0,RPLAREA-IFGRPL+RPL2  STORE AREA ADDRESS INTO RPL2     13240000
+         L     R0,=F'65536'            AREALEN=65536                    13250000
+         ST    R0,RPLBUFL              AREALEN=65536                    13260000
+         ST    R0,RPLBUFL-IFGRPL+RPL2  AREALEN=65536 INTO RPL2          13270000
+         B     READVS40                                                 13280000
+*                                                                       13290000
+READVS35 MVI   VS_TYPE,C'E'            Cluster is an ESDS               13300016
+         MVI   RPLOPT2-IFGRPL+RPL1,RPLADR    OPTCD=ADR                  13310000
+         B     READVS40                                                 13320016
+*                                                                       13330016
+*        Physical error (R15=0C)                                        13340016
+*                                                                       13350016
+READVS38 CLC   RPLFDBK,=X'0C0004'      R15=0C,ERRCD=04 ?                13360016
+         BNE   READVS90                NO, exit                         13370016
+         TM    SWITCH1,SW1CMD          invoked as a command ?           13380016
+         BO    READVS90                yes, exit to prevent S30A-18     13390016
+         CLOSE MF=(E,OPENLIST)         close the ACB                    13400016
+         XC    ACBBUFSP,ACBBUFSP       BUFSP=0                          13410016
+         OPEN  MF=(E,OPENLIST)         re-open the ACB                  13420016
+*                                                                       13430000
+*        re-read a record after X'48' or X'84'                          13440000
+*                                                                       13450000
+READVS40 TRACE                                                          13460013
+         GET   RPL=RPL1                RE-READ RECORD AFTER 48 OR 84    13470000
+         LTR   R15,R15                 OK?                              13480000
+         BNZ   READVS90                NO, QUIT                         13490000
+*                                                                       13500000
+*        store RBA into RBATABLE for the next time this record is read  13510000
+*                                                                       13520000
+READVS45 LR    R2,R8                   RRN                              13530012
+         SLL   R2,2                    MAKE IT AN INDEX IN RBA TABLE    13540000
+         CLI   XADDR,C'Y'              extended-addressability format?  13550025
+         BE    READVS46                no, continue                     13560025
+         AL    R2,RBATABLE+4           CHANGE OFFSET TO ADDRESS         13570000
+         MVC   0(4,R2),RPLDDDD         SAVE RBA OF RECORD               13580000
+         B     READVS47                                                 13590025
+READVS46 EQU   *                                                        13600025
+         ALR   R2,R2                   8-byte XRBAs                     13610025
+         AL    R2,RBATABLE+4           CHANGE OFFSET TO ADDRESS         13620025
+         MVC   0(8,R2),RPLRBAR         SAVE XRBA OF RECORD              13630025
+READVS47 EQU   *                                                        13640025
+         LA    R0,1                    count records actually read      13650015
+         AL    R0,VS_RECNO             count records actually read      13660015
+         ST    R0,VS_RECNO             count records actually read      13670015
+         CH    R0,=H'1'                1st record?                      13680030
+         BNE   READVS48                no, jump                         13690030
+         MVC   LOWRBA,RPLRBAR          yes, copy RBA of 1st record      13700030
+READVS48 EQU   *                                                        13710030
+         LA    R8,1(,R8)               BUMP CURRENT RRN                 13720000
+         CR    R8,R3                   Was it the record needed?        13730000
+         BL    READVS31                no, get next                     13740000
+*ENDLOOP                                                                13750000
+         ST    R3,HIGH_RRN             SAVE RRN OF RECORD               13760000
+         L     R1,RBATABLE+4           point to rbatable                13770000
+         MVI   0(R1),X'7F'             dummy RBA for record 1           13780013
+         B     READVS70                                                 13790000
+*                                                                       13800000
+*        re-read a record already read, using the RBA kept in the table 13810000
+*                                                                       13820000
+READVS51 LA    R7,RPL2                 OPTCD=DIR                        13830012
+         LA    R0,LOWRBA               specify search argument          13840000
+         ST    R0,RPLARG               store ARG addr into RPL2         13850000
+         NI    RPLOPT1,255-RPLSEQ      clean up OPTCD=SEQ               13860000
+         OI    RPLOPT1,RPLDIR          set OPTCD=(ADR,DIR,KGE)          13870000
+         MVI   RPLOPT2,RPLADR          set OPTCD=(ADR,DIR,KGE)          13880000
+         GET   RPL=RPL2                re-read record                   13890000
+         LTR   R15,R15                 OK?                              13900000
+         BZ    READVS70                yes, jump                        13910000
+*                                                                       13920030
+*        When 1st record is deleted, 1st good record is an error:       13930030
+*        RPLFDBWD=2B080020 REQ=00 OPTCD=C440 RRN=1 RBA=0000000000000000 13940030
+*                                                                       13950030
+         CH    R15,=H'8'               R15=8 ?                          13960030
+         BNE   READVS70                yes, jump                        13970030
+         CLI   RPLERRCD,X'20'          BAD RBA ?                        13980030
+         BNE   READVS57                no, jump                         13990030
+         CH    R3,=H'1'                RRN=1 ?                          14000030
+         BNE   READVS57                no, jump                         14010030
+         CLOSE MF=(E,OPENLIST)         CLOSE VSAM data set              14020030
+         OPEN  MF=(E,OPENLIST)         OPEN VSAM data set               14030030
+         LTR   R15,R15                 OK?                              14040030
+         BNZ   READVS57                no, jump                         14050030
+         LA    R7,RPL1                 OPTCD=SEQ                        14060030
+         GET   RPL=RPL1                re-read 1st record               14070030
+         LTR   R15,R15                 OK?                              14080030
+         BNZ   READVS57                no, jump                         14090030
+         LA    R1,1                    RRN=1                            14100030
+         ST    R1,HIGH_RRN             RRN=1                            14110030
+         B     READVS70                ok, jump                         14120030
+*                                                                       14130030
+READVS57 EQU   *                                                        14140030
+         STRING '** ERROR ** RPLFDBWD=',(RPLFDBWD,,X),                 X14150012
+               ' REQ=',(RPLREQ,,X),' OPTCD=',(RPLOPTCD,2,X),           X14160000
+               ' RRN=',((R3),,L),' RBA=',(LOWRBA,,X),                  X14170000
+               INTO=MESSAGE                                             14180000
+         SLR   R15,R15                 RC=00                            14190000
+         B     READVS95                ISSUE MESSAGE                    14200000
+*                                                                       14210000
+*        KEYED ACCESS (RRDS)                                            14220000
+*                                                                       14230000
+RRDS00   ST    R3,LOWRBA               RRN                              14240000
+         LA    R7,RPL2                 OPTCD=DIR                        14250000
+         MVI   RPLOPT1,RPLLOC+RPLDIR   OPTCD=(DIR,KEQ,LOC,KEY)          14260000
+         MVI   RPLOPT2,RPLKEY          OPTCD=(DIR,KEQ,LOC,KEY)          14270000
+         GET   RPL=RPL2                GET RECORD (RRDS)                14280000
+         LTR   R15,R15                 OK?                              14290000
+         BZ    READVS70                YES, JUMP                        14300000
+         STRING '** ERROR ** RPLFDBWD=',(RPLFDBWD,,X),                 X14310012
+               ' REQ=',(RPLREQ,,X),' OPTCD=',(RPLOPTCD,2,X),           X14320012
+               ' RRN=',((R3),,L),INTO=MESSAGE                           14330000
+         SLR   R15,R15                 RC=00                            14340000
+         B     READVS95                ISSUE MESSAGE                    14350000
+*                                                                       14360013
+*        Linear data set                                                14370013
+*                                                                       14380013
+LDS000   BCTR  R3,0                    RRN relative to zero             14390013
+         MH    R3,MAXLRECL+2           make it an RBA                   14400013
+         ST    R3,TTTR                 save RBA                         14410013
+         CL    R3,LOWRBA               this page in storage?            14420013
+         BL    LDS020                  no, jump                         14430013
+         L     R1,=F'65536'            window size                      14440013
+         AL    R1,LOWRBA               first RBA after end of window    14450013
+         SL    R1,MAXLRECL             end address                      14460013
+         CLR   R3,R1                   this page in storage?            14470013
+         BL    LDS050                  yes, jump                        14480013
+*                                                                       14490013
+*        un-stage previous pages                                        14500013
+*                                                                       14510013
+LDS020   CLI   LOWRBA,X'7F'            first time?                      14520013
+         BE    LDS022                  yes, jump                        14530013
+         XC    DIV_LIST(4),DIV_LIST    prevent S08B-0005                14540013
+         DIV   UNMAP,                  unmap previous window           X14550013
+               AREA=BUFFERP,           pointer to my window            X14560026
+               MF=(E,DIV_LIST)                                          14570013
+*                                                                       14580013
+*        stage 16 pages                                                 14590013
+*                                                                       14600013
+LDS022   LR    R14,R3                  current RBA                      14610013
+         SRL   R14,12                  convert RBA to block number      14620013
+         LA    R15,16                  number of pages in window        14630013
+         STM   R14,R15,TENWORDS        store pointers                   14640013
+         XC    DIV_LIST(4),DIV_LIST    prevent S08B-0005                14650013
+         DIV   MAP,                    access                          X14660013
+               OFFSET=TENWORDS+0,      offset to 1st page              X14670013
+               SPAN=TENWORDS+4,        number of pages                 X14680013
+               AREA=BUFFERP,           pointer to my window            X14690026
+               MF=(E,DIV_LIST)                                          14700013
+         LTR   R15,R15                 OK?                              14710013
+         BNE   X'808'                  no, quit                         14720013
+*                                                                       14730013
+         ST    R3,LOWRBA               window offset                    14740013
+         NC    LOWRBA,=F'-4096'        beginning of page                14750013
+*                                                                       14760013
+LDS050   LA    R2,BUFFER(R3)           CHANGE OFFSET TO ADDRESS         14770013
+         SL    R2,LOWRBA               RBA relative to begin of window  14780013
+*STRING (LOWRBA,,X),1X,((R3),,X),1X,((R2),,X),INTO=(80-26(R2),26)       14790013
+         MVC   RPLRLEN,MAXLRECL        RECORD LENGTH                    14800013
+         B     READVS74                goback to BRIF                   14810013
+*                                                                       14820000
+*        return record just read to BRIF                                14830000
+*                                                                       14840000
+READVS70 L     R2,RPLAREA              NO, GET RECORD ADDR (OPTCD=MVE)  14850013
+         TM    RPLOPTCD,RPLLOC         OPTCD=MVE?                       14860000
+         BZ    READVS74                YES, JUMP                        14870000
+         L     R2,0(,R2)               GET RECORD ADDR (OPTCD=LOC)      14880013
+READVS74 ST    R2,0(,R4)               PASS RECORD ADDRESS TO BRIF      14890013
+         L     R0,RPLRLEN              pick up record length            14900015
+         ST    R0,0(,R5)               PASS RECORD LENGTH TO BRIF       14910015
+         CL    R0,VS_LRECL             smaller than minimum?            14920015
+         BH    *+8                     no, jump                         14930015
+         ST    R0,VS_LRECL             keep smallest length             14940015
+         CL    R0,VS_LRECL+4           larger than maximum?             14950015
+         BL    *+8                     no, jump                         14960015
+         ST    R0,VS_LRECL+4           keep largest length              14970015
+*                                                                       14980031
+         CLI   SHOWRBA,C'Y'            display RBA in pos 1 ?           14990031
+         BNE   READVS79                no, continue                     15000031
+         STRING (RPLDDDD,F,Z),1X,((R2),(R0)),INTO=TSOCMD                15010031
+         LA    R14,TSOCMD                                               15020031
+         ST    R14,0(,R4)              addr of data line                15030031
+         CLI   XADDR,C'Y'              extended-addressability format?  15040031
+         BNE   READVS78                no, continue                     15050031
+         STRING (RPLRBAR,,X),1X,((R2),(R0)),INTO=TSOCMD                 15060031
+READVS78 EQU   *                                                        15070031
+         ST    R15,0(,R5)              length of data line              15080031
+READVS79 EQU   *                                                        15090031
+         L     R13,4(,R13)                                              15100000
+         RETURN (14,12),RC=00                                           15110000
+*                                                                       15120000
+*        record number too high, return number of highest rcd to BRIF   15130000
+*                                                                       15140000
+READVS80 MVC   0(4,R6),MAXRECNO        RETURN MAX RECORD NUMBER         15150000
+READVS81 L     R13,4(,R13)                                              15160000
+         RETURN (14,12),RC=8                                            15170000
+*                                                                       15180000
+*        error in GET macro, show feedback code                         15190000
+*                                                                       15200000
+READVS90 STRING '** ERROR ** RPLFDBWD=',(RPLFDBWD,,X),                 X15210012
+               ' REQ=',(RPLREQ,,X),' OPTCD=',(RPLOPTCD,2,X),           X15220012
+               ' RRN=',((R3),,L),' HIGH_RRN=',((R8),,L),               X15230012
+               INTO=MESSAGE                                             15240000
+         ST    R3,0(,R6)               END OF FILE                      15250000
+         ST    R3,MAXRECNO             END OF FILE                      15260012
+         LA    R15,008                 RC=8 (EOF)                       15270000
+.@TEST2 SR 15,15                                                        15280000
+*                                                                       15290000
+*        return error message to BRIF                                   15300000
+*                                                                       15310000
+READVS95 LA    R0,MESSAGE              MESSAGE                          15320000
+         ST    R0,0(,R4)               PASS ADDRESS                     15330000
+         LA    R0,L'MESSAGE            LENGTH                           15340000
+         ST    R0,0(,R5)               PASS LENGTH                      15350000
+         L     R13,4(,R13)                                              15360000
+         RETURN (14,12),RC=(15)                                         15370000
+*********************************************************************** 15380000
+*                                                                     * 15390000
+*        NON-VSAM READ ROUTINE                                        * 15400000
+*                                                                     * 15410000
+*        This routine reads records from a non-vsam data-set          * 15420000
+*        by issuing EXCP macros against a BDAM DCB.                   * 15430000
+*                                                                     * 15440000
+*        This method (EXCP+BDAM DCB) offers the following advantages: * 15450000
+*                                                                     * 15460000
+*        a. the program has access to all of the volumes of a         * 15470000
+*           multi-volume data set at the same time, with a single     * 15480000
+*           OPEN, a single DCB, and no need to go through EOV         * 15490000
+*                                                                     * 15500000
+*        b. full tracks may be read, which speeds up access           * 15510000
+*           to un-blocked or poorly-blocked data sets                 * 15520000
+*                                                                     * 15530000
+*********************************************************************** 15540000
+READDA00 SAVE  (14,12),,'DABROWSE - BDAM READ RTNE'                     15550016
+         LM    R4,R7,0(R1)             parameters from BRIF             15560000
+         STM   R4,R7,TENWORDS          save them                        15570000
+         L     R7,0(,R7)               A(SAVERRTN)                      15580000
+         ST    R13,4(,R7)                                               15590000
+         ST    R7,8(,R13)                                               15600000
+         LR    R13,R7                                                   15610000
+         USING SAVERRTN,R13                                             15620000
+         LM    R10,R11,BASEREGS                                         15630025
+         L     R12,BUFFERP             A(BUFFER)                        15640026
+         USING BUFFER,R12                                               15650026
+*                                                                       15660026
+         L     R3,0(,R6)               RECORD NUMBER (FROM BROWSE)      15670000
+         CL    R3,MAXRECNO             beyond end of file?              15680000
+         BH    READDA80                yes, exit                        15690000
+         CLI   RECFM,C'F'              RECFM=F?                         15700000
+         BE    READDA30                yes, jump                        15710000
+*---------------------------------------------------------------------* 15720000
+*                                                                     * 15730000
+*        Process RECFM=V/VB/U records                                 * 15740000
+*                                                                     * 15750000
+*        This routine reads the data set sequentially and             * 15760000
+*        builds a table of high RRN (relative record number)          * 15770000
+*        for each track.  This table is used to remember which        * 15780000
+*        track holds a particular record.                             * 15790000
+*                                                                     * 15800000
+*---------------------------------------------------------------------* 15810000
+READDA20 L     R1,RBATABLE+4           point to table                   15820000
+         BAL   R15,*+8                 set R15, skip LA first time      15830000
+*--loop                                                                 15840000
+         LA    R1,4(,R1)               bump index                       15850000
+         CL    R3,0(,R1)               record on this track?            15860000
+         BHR   R15                     no, try next one                 15870000
+*--endloop                                                              15880000
+*PDUMP BUFFER,BUFFER+256                                                15890000
+         LR    R3,R1                   address of table entry           15900000
+         SH    R1,=H'4'                previous entry                   15910000
+         ST    R1,ENDRBA               save address of prev table entry 15920000
+*                                                                       15930000
+         SL    R3,RBATABLE+4           offset                           15940000
+         SRL   R3,2                    track number                     15950000
+         SLL   R3,8                    TTT0                             15960000
+         BAL   R14,EXCP00          <-- read a track                     15970000
+         LTR   R15,R15                 EOF?                             15980000
+         BZ    READDA21                no, jump                         15990000
+*                                                                       16000000
+*        out-of-extents condition                                       16010000
+*                                                                       16020000
+         L     R1,ENDRBA               load address of prev table entry 16030000
+         MVC   MAXRECNO,0(R1)          last RRN on last track           16040000
+         B     READDA80                exit with RC=8                   16050000
+*                                                                       16060000
+*        scan track buffer to count records                             16070000
+*                                                                       16080000
+READDA21 L     R1,ENDRBA               load address of table entry      16090000
+         CLI   4(R1),X'7F'             end-of-table flag?               16100000
+         BNE   READDA24                no, skip buffer scan             16110000
+         SLR   R1,R1                   start of track                   16120000
+         SLR   R2,R2                   record number on this track      16130000
+*--loop                                                                 16140000
+READDA22 BAL   R14,GETREC              scan buffer                      16150000
+         LA    R2,1(,R2)               count records on this track      16160000
+         LTR   R1,R1                   end of buffer reached?           16170000
+         BNZ   READDA22                no, get next record              16180000
+*--endloop                                                              16190000
+         BCTR  R2,0                    ignore last call                 16200000
+         STC   R2,TTTR+3               save number of records           16210000
+*                                                                       16220000
+*        store current track's RRN into rbatable                        16230000
+*                                                                       16240000
+         L     R1,ENDRBA               load address of prev table entry 16250000
+         CL    R1,RBATABLE+4           first track?                     16260000
+         BL    READDA23                yes, jump                        16270000
+         AL    R2,0(,R1)               no, add previous track's RRN     16280000
+READDA23 ST    R2,4(,R1)               fill in table entry              16290000
+         MVI   8(R1),X'7F'             set table stop                   16300000
+         L     R3,0(,R6)               RRN from BRIF                    16310000
+         B     READDA20                keep on reading sequentially     16320000
+*endloop                                                                16330000
+*                                                                       16340000
+READDA24 L     R3,0(,R6)               RRN from BRIF                    16350000
+         L     R1,ENDRBA               load address of prev table entry 16360000
+         CL    R1,RBATABLE+4           first track?                     16370000
+         BL    READDA25                yes, jump                        16380000
+         SL    R3,0(,R1)               no, subtract RRN of prev trk     16390000
+*                                                                       16400000
+READDA25 SLR   R1,R1                   start of track                   16410000
+*loop                                                                   16420000
+READDA26 BAL   R14,GETREC              scan buffer                      16430000
+         BCT   R3,READDA26             until my record is reached       16440000
+*endloop                                                                16450000
+         B     READDA70                goback                           16460000
+*---------------------------------------------------------------------* 16470000
+*                                                                     * 16480000
+*        process RECFM=F/FB records                                   * 16490000
+*                                                                     * 16500000
+*        This routine assumes that the data set is RECFM=FS or FBS,   * 16510000
+*        i.e. that it does not contain truncated records.             * 16520000
+*        This assumption allows the track address of a particular     * 16530000
+*        record to be calculated without reading the preceding        * 16540000
+*        records.  For example, to access record # 1111 in a          * 16550000
+*        data set that has 10 blocks per track and 10 records per     * 16560000
+*        block, track 11 is read, then record # 1 of the block # 2    * 16570000
+*        is returned to BRIF (1111 = 11*100 + 10 + 1)                 * 16580000
+*                                                                     * 16590000
+*---------------------------------------------------------------------* 16600000
+READDA30 BCTR  R3,0                    first record is R0               16610000
+         M     R2,MAXLRECL             OFFSET IN BYTES                  16620000
+         LH    R14,DCBBLKSI            PICK UP BLKSIZE                  16630000
+         DR    R2,R14                  BLOCK NUMBER IN R3, OFFSET IN R2 16640000
+         ST    R2,0(,R4)               save offset                      16650000
+*                                                                       16660000
+*        R3 = relative block address (first block is zero)              16670000
+*                                                                       16680000
+         SLR   R2,R2                                                    16690000
+         D     R2,BLKPTRK              get relative track number        16700000
+         LA    R2,1(,R2)               first record on track is R1      16710000
+         SLL   R3,8                    R3 = TTTTTT00                    16720000
+         OR    R3,R2                   R3 = TTTTTTRR                    16730000
+         BAL   R14,EXCP00          <-- read a track                     16740000
+         LTR   R15,R15                                                  16750000
+         BNZ   READDA80                out-of-extents                   16760000
+*                                                                       16770000
+*        scan the buffer for the right block (R3 contains record #)     16780000
+*                                                                       16790000
+         SLR   R1,R1                   start of track                   16800000
+*loop                                                                   16810000
+READDA32 BAL   R14,GETREC              scan buffer                      16820000
+         LTR   R1,R1                   end of buffer reached?           16830000
+         BZ    READDA55                yes, error                       16840000
+         CLM   R3,B'0001',4(R1)        is this my record number?        16850000
+         BNE   READDA32                no, try next block               16860000
+*endloop                                                                16870000
+         ICM   R0,B'0111',5(R1)        is this an EOF?                  16880000
+         BZ    READDA51                yes, exit                        16890000
+         L     R0,MAXLRECL             maximum record length            16900000
+         LA    R1,8(,R1)               point to the first record        16910000
+         AL    R1,0(,R4)               add record offset                16920000
+         B     READDA70                return record to BRIF            16930000
+*                                                                       16940000
+READDA51 L     R0,0(,R4)               load record offset               16950000
+         LTR   R0,R0                   first record?                    16960000
+         BNZ   READDA55                no, jump                         16970000
+         LA    R0,L'READDA52           message length                   16980000
+         BAL   R1,READDA70             branch around message            16990000
+READDA52 DC    C'**EOF**',0H'0'                                         17000000
+*                                                                       17010000
+READDA55 LA    R0,L'READDA56           message length                   17020000
+         BAL   R1,READDA70             branch around message            17030000
+READDA56 DC    C'**NO RECORD FOUND**',0H'0'                             17040000
+*                                                                       17050000
+READDA70 ST    R1,0(,R4)               PASS RECORD ADDRESS TO BRIF      17060000
+READDA71 ST    R0,0(,R5)               PASS RECORD LENGTH TO BRIF       17070000
+         L     R13,4(,R13)                                              17080000
+         RETURN (14,12),RC=00                                           17090000
+*                                                                       17100000
+*        return to BRIF with RC=8 (high RRN)                            17110000
+*                                                                       17120000
+READDA80 MVC   0(4,R6),MAXRECNO        RETURN MAX RECORD NUMBER         17130000
+         L     R13,4(,R13)                                              17140000
+         RETURN (14,12),RC=8        <- RC=8   (return highest rrn)      17150000
+*---------------------------------------------------------------------* 17160000
+*        read a track                                                 * 17170000
+*---------------------------------------------------------------------* 17180000
+EXCP00   STM   R2,R14,12(R13)                                           17190000
+         CLM   R3,B'1110',TTTR         track in buffer already?         17200000
+         BE    EXCP80                  YES, JUMP                        17210000
+         ST    R3,TTTR                 STORE TRACK ADDRESS              17220000
+*                                                                       17230000
+*        convert TTRN to IOBSEEK (MBBCCHHR)                             17240000
+*                                                                       17250000
+         L     R0,TTTR                 load TTTR                        17260000
+         SRL   R0,8                    make it 0TTT                     17270000
+         SLL   R0,16                   make it TT00                     17280000
+         L     R1,DCBDEBAD             DCBDEBAD                         17290000
+         LA    R2,IOBSEEK              MBBCCHHR FIELD                   17300000
+         LR    R6,R13                  SAVE R13                         17310000
+         L     R15,16(,0)              CVTPTR                           17320000
+         L     R15,28(,R15)            CVTPCNVT                         17330000
+         BALR  R14,R15                 CONVERT TTRN TO MBBCCHHR         17340000
+         LM    R6,R13,28(R6)           RESTORE R6-R13                   17350000
+         LTR   R15,R15                 OK?                              17360000
+         BNZ   EXCP90                  no, eof                          17370000
+         EXCP  IOBSTDRD             <- read a track                     17380000
+         WAIT  1,ECB=IOBNECB           wait for completion              17390000
+*PDUMP BUFFER,BUFFER+400                                                17400000
+EXCP80   SLR   R15,R15                 RC=00                            17410000
+         CLC   BUFFER(4),IOBSEEK+3     CHECK CCHH                       17420000
+         BE    EXCP90                  OK, exit with r15=0              17430000
+         LA    R15,4                   no, eof                          17440000
+*                                                                       17450000
+EXCP90   LM    R2,R14,12(R13)          restore registers                17460000
+         BR    R14                                                      17470000
+*---------------------------------------------------------------------* 17480000
+*                                                                     * 17490000
+*        scan read buffer                                             * 17500000
+*                                                                     * 17510000
+*---------------------------------------------------------------------* 17520000
+GETREC   CLI   RECFM,C'V'              RECFM=V?                         17530000
+         BE    GETRECV1                yes, jump                        17540000
+*                                                                       17550000
+*        RECFM=U                                                        17560000
+*                                                                       17570000
+         LTR   R1,R1                   First time?                      17580000
+         BZ    GETREC8                 yes, jump                        17590000
+         SLR   R15,R15                                                  17600000
+         ICM   R15,B'0011',6(R1)       get record length                17610000
+         SLR   R0,R0                                                    17620000
+         IC    R0,5(,R1)               get key length                   17630000
+         LA    R1,8(R15,R1)            l'count+l'data                   17640000
+         ALR   R1,R0                   add l'key                        17650000
+         CLC   0(4,R1),IOBSEEK+3       is this my CCHH?                 17660000
+         BE    GETREC9                 yes, process it                  17670000
+         SLR   R1,R1                   no, end-of-track                 17680000
+         BR    R14                                                      17690000
+GETREC8  LA    R1,BUFFER               start-of-track                   17700000
+GETREC9  SLR   R0,R0                                                    17710000
+         ICM   R0,B'0011',6(R1)        block size (from count+6)        17720000
+         AH    R0,=H'8'                add l'count                      17730013
+         CL    R0,MAXLRECL             too big?                         17740000
+         BNHR  R14                     no, goback                       17750000
+         L     R0,MAXLRECL             yes, truncate                    17760000
+         BR    R14                                                      17770000
+*                                                                       17780000
+*        RECFM=V                                                        17790000
+*                                                                       17800000
+GETRECV1 LTR   R1,R1                   First time?                      17810000
+         BZ    GETRECV5                yes, jump                        17820000
+         CLC   MAXLRECL+2(2),0(R1)     RDW length OK?              @133 17830000
+         BL    GETRECV2                no, EOF                     @133 17840000
+         AH    R1,0(,R1)               add length from RDW              17850000
+         CL    R1,RECAD                end of block?                    17860000
+         BL    GETRECV9                not yet, process this record     17870000
+         CLC   0(4,R1),IOBSEEK+3       is this my CCHH?                 17880000
+         BE    GETRECV8                yes, process it                  17890000
+GETRECV2 SLR   R1,R1                   no, end-of-track                 17900000
+         BR    R14                                                      17910000
+GETRECV5 SLR   R0,R0                                               @133 17920000
+         SLR   R1,R1                                               @133 17930000
+         ICM   R0,B'1100',BUFFER+6     get DD from CCHHRKDD        @133 17940000
+         CL    R0,BUFFER+8             is this a BDW?              @133 17950000
+         BNER  R14                     no, EOF                     @133 17960000
+         LA    R1,BUFFER               start-of-track                   17970000
+GETRECV8 SLR   R15,R15                                                  17980000
+         ICM   R15,B'0011',6(R1)       block size (from count+6)        17990000
+         LA    R0,7(R15,R1)            last byte of current block       18000000
+         ST    R0,RECAD                save end of block address        18010000
+         LA    R1,8(,R1)               skip count, point to BDW         18020000
+         LA    R1,4(,R1)               first record in this block       18030000
+GETRECV9 LH    R0,0(,R1)               length of the record from RDW    18040000
+         BR    R14                                                      18050000
+         DROP                                                           18060028
+*********************************************************************** 18070028
+*                                                                     * 18080028
+*        BRIF Command Routine                                         * 18090028
+*                                                                     * 18100028
+*        This routine is invoked by BRIF each time a command is       * 18110028
+*        entered on the BROWSE screen.  If the user enters the V      * 18120028
+*        command, then BR invokes VV to VIEW the VSAM file.           * 18130028
+*                                                                     * 18140028
+*********************************************************************** 18150028
+CMDRTNE  SAVE  (14,12),,*                                               18160028
+         L     R1,04(,R1)              PTR TO DIALOG DATA AREA (DDATA)  18170028
+         L     R1,0(,R1)               A(SAVERRTN)                      18180028
+         LA    R1,SAVE2-SAVERRTN(,R1)  A(SAVE2)                         18190028
+         ST    R1,8(,R13)              CHAIN SAVE AREAS                 18200028
+         ST    R13,4(,R1)              CHAIN SAVE AREAS                 18210028
+         LM    R13,R1,8(R13)           CALLER'S SAVE AREA               18220028
+         USING SAVE2,R13                                                18230028
+         LM    R10,R11,BASEREGS                                         18240028
+         USING VSBROWSE,R10                                             18250028
+         USING VSBROWSE+4095,R11                                        18260028
+         L     R6,00(,R1)              Function Code                    18270028
+*-       L     R9,LINE_LEN_ADDR+4      A(LINE)                          18280028
+*-       USING LINE_DSECT,R9                                            18290028
+         CLC   =F'20',0(R6)            UNKNOWN COMMAND?                 18300028
+         BNE   CMDRTNE4                NO, EXIT                         18310028
+         LA    R0,L'MESSAGE            max length of variable           18320028
+         ST    R0,DWD                  max length of variable           18330028
+         ISPLINK (=C'VCOPY ',=C'ZCMD ',DWD,MESSAGE,=C'MOVE ')           18340028
+         OI    MESSAGE+0,C' '          upper-case                       18350028
+         OI    MESSAGE+1,C' '          upper-case                       18360028
+         OI    MESSAGE+2,C' '          upper-case                       18370031
+         OI    MESSAGE+4,C' '          upper-case                       18380031
+         CLC   DSORG,=AL2(DS1ORGAM)    DSORG=VSAM?                      18390028
+         BNE   CMDRTNE4                NO, EXIT                         18400028
+         CLC   =C'V ',MESSAGE          ZCMD="V" ?                       18410028
+         BE    CMDRTNE5                yes, do it                       18420029
+         CLC   =C'LC ',MESSAGE         ZCMD="LC" ?                      18430029
+         BE    CMDRTNE6                yes, do it                       18440029
+         CLC   =C'RBA ',MESSAGE        ZCMD="RBA" ?                     18450031
+         BE    CMDRTNE7                yes, do it                       18460031
+CMDRTNE4 L     R13,4(,R13)             BRIF SAVE AREA                   18470028
+         RETURN (14,12),RC=4           ISPF will process the command    18480028
+*                                                                       18490028
+*        Invoke VSAMVIEW when user enters V during BROWSE display       18500028
+*                                                                       18510028
+CMDRTNE5 STRING 'VSAMVIEW ''',(FULLDSN,,T),'''',INTO=TSOCMD             18520029
+         STRING 'SELECT CMD(',(TSOCMD,,T),') MODE(FSCR)',INTO=MESSAGE   18530029
+         ST    R15,DWD                 LENGTH                           18540029
+         B     CMDRTNE9                exec cmd                         18550029
+*                                                                       18560029
+*        Invoke LISTCAT when user enters LC during BROWSE display       18570029
+*                                                                       18580029
+*        If the FASTPATH and STEMDISP programs are available,           18590029
+*        FASTPATH/FSTSO is invoked to display the LISTCAT output        18600031
+*        in ISPF/PDF BROWSE format.                                     18610029
+*        If FASTPATH and/or STEMDISP are not available, the LISTCAT     18620029
+*        output is displayed in TSO PUTLINE mode.                       18630029
+*                                                                       18640029
+*        If LC is already an ISPF command in one of the xxxxCMDS        18650029
+*        tables, then enter >LC instead of LC                           18660029
+*                                                                       18670029
+CMDRTNE6 STRING 'LISTCAT ENT(''',(FULLDSN,,T),''') ALL',INTO=TSOCMD     18680029
+         STRING 'SELECT CMD(',(TSOCMD,,T),') MODE(FSCR)',INTO=MESSAGE   18690029
+         ST    R15,DWD                 LENGTH                           18700029
+         LOAD  EP=FASTPATH,ERRET=CMDRTNE9                               18710029
+         LOAD  EP=STEMDISP,ERRET=CMDRTNE9                               18720029
+         STRING 'SELECT PGM(FASTPATH) PARM(FSTSO,',(TSOCMD,,T),')',    X18730031
+               INTO=MESSAGE                                             18740029
+         ST    R15,DWD                 LENGTH                           18750029
+         B     CMDRTNE9                exec cmd                         18760031
+*                                                                       18770031
+*        RBA Command ON/OFF                                             18780031
+*                                                                       18790031
+CMDRTNE7 EQU   *                                                        18800031
+         CLI   SHOWRBA,C'Y'            display RBA already ?            18810031
+         BNE   CMDRTNE7#               no, turn it ON                   18820031
+         MVI   SHOWRBA,C'N'            yes, turn it OFF                 18830031
+         B     CMDRTNE9                                                 18840031
+CMDRTNE7# EQU   *                                                       18850031
+         MVI   SHOWRBA,C'Y'            display RBA                      18860031
+*                                                                       18870029
+CMDRTNE9 EQU   *                                                        18880029
+         ISPLINK (=C'CONTROL ',=C'DISPLAY ',=C'SAVE ')                  18890029
+         LA    R0,DWD                  LENGTH                           18900028
+         LA    R1,MESSAGE              text                             18910028
+         STM   R0,R1,TENWORDS          build parm list                  18920028
+         OI    TENWORDS+4,X'80'        build parm list                  18930028
+         L     R15,ISPEXEC@            addr of ISPEXEC                  18940028
+         LA    R1,TENWORDS             parm list                        18950028
+         SYNCH (R15)                <- execute command via ISPEXEC      18960028
+         LR    R2,R15                  Save RC                          18970028
+         ISPLINK (=C'CONTROL ',=C'DISPLAY ',=C'RESTORE ')               18980028
+         L     R13,4(,R13)             BRIF SAVE AREA                   18990028
+         RETURN (14,12),RC=0           command processed                19000028
+         DROP                                                           19010028
+*---------------------------------------------------------------------* 19020000
+*        MODEL DCB, ACB, RPL                                          * 19030000
+*---------------------------------------------------------------------* 19040000
+*        PRINT NOGEN                                                    19050000
+ACB1_M   ACB   MACRF=(ADR,KEY,SEQ,DIR,IN),STRNO=2,RMODE31=ALL,         X19060012
+               BUFSP=200000                                             19070000
+RPL1_M   RPL   ACB=*-*,OPTCD=(KEY,SEQ,LOC,NSP),AREA=*-*,AREALEN=4       19080000
+RPL2_M   RPL   ACB=*-*,OPTCD=(ADR,DIR,LOC,KGE),AREA=0,AREALEN=4,ARG=0   19090000
+DCB1_M   DCB   DSORG=DA,MACRF=RIC,DDNAME=SYSUT1                         19100000
+MODELS_L EQU   *-ACB1_M                                                 19110000
+*---------------------------------------------------------------------* 19120000
+*        DEFINE INPUT PARAMETERS FOR IKJPARS                          * 19130000
+*---------------------------------------------------------------------* 19140000
+PCLCSECT IKJPARM                                                        19150000
+DSNPCE   IKJPOSIT DSNAME,USID,PROMPT='DATA SET NAME',                  X19160025
+               HELP='NAME OF THE DATA SET TO BE BROWSED'                19170000
+VOLPCE   IKJKEYWD                                                       19180000
+         IKJNAME 'VOLUME',SUBFLD=VOLSUBF,ALIAS='VOLSER'                 19190000
+VOLSUBF  IKJSUBF                                                        19200000
+VOLPCE2  IKJIDENT 'VOLUME',MAXLNTH=6,FIRST=ALPHANUM,OTHER=ALPHANUM      19210000
+         IKJENDP                                                        19220000
+*********************************************************************** 19230000
+*                                                                     * 19240013
+*        Dynamic Storage           <-- R13                            * 19250013
+*                                                                     * 19260013
+*********************************************************************** 19270000
+DYNAM    DSECT                                                          19280000
+         DS    18F                     SAVE AREA (MAIN LINE)            19290000
+SAVERRTN DS    18F                     SAVE AREA (READ ROUTINE)         19300000
+SAVE2    DS    18F                     SAVE AREA (CMD ROUTINE)          19310028
+BASEREGS DS    A(R10,R11)                                               19320026
+TENWORDS DS    10F                     LEN/ADDR OF BDAM BUFFER          19330000
+DWD      DS    D                       VCOPY                            19340000
+DIV_TOKN DS    D                       DIV token                        19350000
+DIV_LIST DIV   IDENTIFY,MF=L           DIV parm list                    19360000
+ZAPPLID  DS    C'ISR     '             current ISPF application ID      19370000
+ZDLDSORG DS    C'VS      '             data set org from PDF 3.4 panel  19380000
+ZERRMSG  DS    C'12345678'             ERROR MESSAGE                    19390000
+BRDATAID DS    C'ISR12345'             DATA ID from LMINIT              19400000
+DDATA    DS    A(SAVERRTN)             data addr for BRIF               19410013
+BUFFERP  DS    A(BUFFER)               Address of 64KB Buffer           19420026
+PANEL    DS    C'ISRBROBF'             panel name                       19430021
+READRTNE DS    A(READDA00)             read routine                     19440013
+ISPLINK@ DS    V(ISPLINK)              ISPF interface                   19450000
+ISPEXEC@ DS    V(ISPEXEC)              ISPF interface                   19460000
+RBATABLE DS    A(0,0)                  RBA TABLE                        19470000
+HIGH_RRN DS    F                       RRN OF LAST RECORD               19480000
+DYNANSWR DS    F                       LEN/ADDR OF BDAM BUFFER          19490000
+ECB1     DS    F                       LEN/ADDR OF BDAM BUFFER          19500000
+OWNCDE   DS    A(CDENTRY)              my own CDE                       19510000
+OWNNAME  DS    CL8                     my true name                     19520000
+MEMBER   DS    CL8                     MEMBER NAME                      19530025
+SWITCH1  DS    B'00000000'             switches (1)                     19540016
+SW1CMD   EQU   B'10000000'             invoked as a command             19550016
+SW1UVOL  EQU   B'01000000'             VOLSER given by user             19560016
+VS_TYPE  DS    C'K'                    VSAM type: K E R                 19570000
+XADDR    DS    C'N'                    extended-addressability format   19580025
+RECFM    DS    C'F'                    RECFM: F/V/U                     19590000
+SHOWRBA  DS    C'Y'                    display RBA in pos 1             19600031
+QFLAG    DS    X                       Quote/Apost                      19610027
+OPENLIST OPEN  IFGACB,MF=L                                              19620000
+         IFGACB DSECT=NO                                                19630000
+RPL1     RPL   ACB=IFGACB,OPTCD=(KEY,SEQ,LOC)                           19640000
+RPL2     RPL   ACB=IFGACB,OPTCD=(ADR,DIR,LOC)                           19650000
+DCB1     DCB   DSORG=DA,MACRF=RIC,OPTCD=R,DDNAME=SYSUT1                 19660000
+DCBKEYLE EQU   DCB1+16,1,C'F'          key length                       19670000
+DCBREL   EQU   DCB1+17,3,C'F'          number of tracks in data set     19680000
+DCBDSORG EQU   DCB1+26,2,C'X'          data set org                     19690000
+DCBDDNAM EQU   DCB1+40,8,C'C'          ddname                           19700000
+DCBDEBAD EQU   DCB1+44,4,C'A'          DEB pointer                      19710000
+DCBBLKSI EQU   DCB1+62,2,C'H'          BLKSIZE                          19720000
+DCBRECFM EQU   DCB1+36,1,C'X'          RECFM                            19730000
+DCBRECU  EQU   X'C0'                                                    19740000
+DCBRECF  EQU   X'80'                                                    19750000
+DCBRECV  EQU   X'40'                                                    19760000
+*                                                                       19770000
+         IEZIOB DSECT=NO                                                19780000
+CCW1     CCW   X'23',SECTORNO,CC,1     SET SECTOR                       19790000
+CCW2     CCW   X'31',IOBCC,CC,5        SEARCH ID EQUAL                  19800000
+CCW3     CCW   X'08',CCW2,0,1          TIC                              19810000
+CCW4     CCW   X'1E',BUFFER,SLI,8+256  READ KEY+DATA                    19820000
+CC       EQU   X'40'                   COMMAND CHAINING                 19830000
+SLI      EQU   X'20'                   SUPPRESS LENGTH ERROR            19840000
+SECTORNO DS    FL1'0'                  Sector number for RPS devices    19850000
+*                                                                       19860000
+         IHADVA DSECT=NO               work area for DEVTYPE macro      19870025
+RECAD    DS    A                       BLOCK NUMBER                     19880000
+LOWRBA   DS    D                       used for POINT and RRDS GET      19890025
+TTTR     DS    F                       USED FOR BDAM                    19900000
+BLKPTRK  DS    F                       Number of blocks per track       19910000
+MAXRECNO DS    F'12345678'          +0 MAX RECORD NUMBER                19920000
+MAXLRECL DS    F'32760'             +4 MAX LRECL                        19930000
+ENDRBA   DS    F'32760'             +8 ENDRBA FOR RRDS                  19940000
+*                                                                       19950000
+VS_LRECL DS    F'32760',F'0'           VSAM minimum, maximum            19960015
+VS_RECNO DS    F'1'                    VSAM records actually read       19970015
+*                                                                       19980000
+S99RBPTR DS    A(S99RB+X'80000000')                                     19990000
+S99RB    DS    A(X'14012000',0,S99TUPTR,0,0)                            20000000
+S99TUPTR DS    10A                                                      20010000
+S99T1    DS    AL2(X'0055',1,L'DDNAME) RETURN DDNAME                    20020026
+DDNAME   DS    CL8       '                                              20030000
+S99T2    DS    AL2(X'0002',1,L'DSNAME) DSNAME                           20040026
+DSNAME   DS    CL44,C                       data set name               20050000
+S99T56   DS    AL2(X'0056',1,L'DSNAME2) RETURN TRUE DSNAME              20060026
+DSNAME2  DS    CL44                                                     20070025
+S99T57   DS    AL2(X'0057',1,L'DSORG)  RETURN DSORG                     20080026
+DSORG    DS    X'0000'                                                  20090000
+S99T5D   DS    AL2(X'005D',1,L'VOLSER) RETURN VOLSER                    20100026
+VOLSER   DS    C'VOLSER'                                                20110000
+*---------------------------------------------------------------------- 20120000
+         DS    0D                                                       20130028
+         IECSDSL1 1                    F1-DSCB                          20140000
+         DS    5X,2X                   CCHHR,#DSCBs - z/OS R10          20150027
+*                                                                       20160000
+ZENVIR   DS    CL32'ISPF 3.2'          CURRENT ISPF LEVEL               20170028
+FULLDSN  DS    CL56                    'data.set(member)'               20180000
+MESSAGE  DS    CL256                                                    20190000
+TSOCMD   DS    CL256                                                    20200029
+SHORTMSG DS    CL32                                                     20210015
+TRNTBL   DS    CL256                   dsname scan                      20220000
+DYNAML   EQU   *-DYNAM                                                  20230000
+*                                                                       20240026
+BUFFER   DSECT                                                          20250026
+         DS    64CL1024                64KB                             20260026
+BUFFERL  EQU   *-BUFFER                                                 20270026
+*---------------------------------------------------------------------- 20280000
+         IKJCPPL                       Command Buffer Parm List         20290000
+         IKJPPL                        Parse Parm List (IKJPARS)        20300000
+         IKJECT                        Environment Control Table        20310000
+         IKJUPT                        User Profile Table               20320023
+IFGRPLVS OPSYN ANOP                                                     20330000
+         IFGRPL DSECT=YES                                               20340000
+         IHACDE ,                      Contents Directory Entry         20350000
+         STRING (GENERATE,,LOCTR)                                       20360027
+         YREGS                                                          20370000
+         END                                                            20380000
+//SYSLIB   DD DSN=SYS1.MACLIB,DISP=SHR            DIV                   20390000
+//         DD DSN=SYS1.MODGEN,DISP=SHR            OBTAIN/IECSDSL1       20400000
+//         DD DSN=GILBERT.FILE183.PDS,DISP=SHR    STRING                20410000
+//SYSUT1   DD UNIT=VIO,SPACE=(CYL,2)                                    20420000
+//SYSPRINT DD SYSOUT=*                                                  20430000
+//SYSLIN   DD UNIT=VIO,SPACE=(TRK,1),DISP=(,PASS),BLKSIZE=3200          20440000
+//*-------------------------------------------------------------------  20450000
+//LKED    EXEC PGM=HEWL,PARM='LIST,MAP,RENT,REFR'                       20460025
+//SYSLIN   DD DSN=*.HLASM.SYSLIN,DISP=(OLD,PASS)                        20470000
+//SYSLMOD  DD DSN=GILBERT.FILE183.LOAD(BR),DISP=SHR                     20480031
+//SYSPRINT DD SYSOUT=*                                                  20490000

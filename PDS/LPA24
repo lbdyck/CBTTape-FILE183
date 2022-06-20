@@ -1,0 +1,153 @@
+/*---------------------------------------------------------------REXX-*\00010000
+|*                                                                    *|00020000
+|* MODULE NAME = LPA24                                                *|00030000
+|*                                                                    *|00040000
+|* DESCRIPTIVE NAME = Display PLPA usage below the 16MB line.         *|00050000
+|*                                                                    *|00060000
+|* STATUS = R100                                                      *|00070000
+|*                                                                    *|00080000
+|* FUNCTION = Scan the PLPA directory and display the size of         *|00090000
+|*            the RMODE=24 modules, along with the size used by       *|00100000
+|*            each system component, based on the first three         *|00110000
+|*            characters of module names.  This command can help      *|00120000
+|*            system administrators in their efforts to reduce        *|00130000
+|*            the size of the PLPA below the 16MB line.               *|00140000
+|*                                                                    *|00150000
+|* AUTHOR   =  Gilbert Saint-Flour <carlos@gsf-soft.com>              *|00160000
+|*                                                                    *|00170000
+|* DEPENDENCIES = TSO/E V2                                            *|00180000
+|*                STEMVIEW routine R105 (optional)                    *|00190000
+|*                                                                    *|00200000
+|* SYNTAX   =  LPA24                                                  *|00210000
+|*               ALL   When the ALL option is specified, each         *|00220000
+|*                     module is displayed.  When ALL is not          *|00230000
+|*                     specified, only totals are displayed.          *|00240000
+|*                                                                    *|00250000
+|* Sample Output with ALL option:                                     *|00260000
+|*                                                                    *|00270000
+|*      Module   EntPt    Flags   Size LoadPt                         *|00280000
+|*      AMDUSRFE 00E3E040 B1 22   1808                                *|00290000
+|*      AMDUSRFF 00EBA000 B1 22  12720                                *|00300000
+|*          2 AMD modules:       14528                                *|00310000
+|*      ARCATTNW 00E0CBC0 B1 22   1320 E0CAD8                         *|00320000
+|*          1 ARC modules:        1320                                *|00330000
+|*       .  .  .  .  .  .  .  .  .  .  .  .  .                        *|00340000
+|*      SECLOADA 00CECDE8 B1 22    536                                *|00350000
+|*          1 SEC modules:         536                                *|00360000
+|*        All 307 modules:     1920272                                *|00370000
+|*                                                                    *|00380000
+\*--------------------------------------------------------------------*/00390000
+ARG parm                                                                00400000
+ispf=SYSVAR(SYSISPF)='ACTIVE'                                           00410000
+IF ispf THEN                                                            00420000
+  'ISREDIT MACRO (parm)'                                                00430000
+UPPER parm                                                              00440000
+IF parm\='' & parm\='ALL' THEN DO                                       00450000
+  SAY 'Invalid parameter, must be ALL or blank'                         00460000
+  EXIT 20                                                               00470000
+  END                                                                   00480000
+  /*----------------------------------------------------------------*\  00490000
+  |*          Retrieve RMODE=24 modules from PLPA directory         *|  00500000
+  \*----------------------------------------------------------------*/  00510000
+SAY 'LPA24 1.00 - Scanning the PLPA directory.'                         00520000
+x=TIME('R')                            /* reset timer                 */00530000
+cvt = C2D(STORAGE(10,4))               /* CVT                 CVTPTR  */00540000
+lpde = C2D(STORAGE(D2X(cvt+361),3))    /* PLPA Directory      CVTLPDIR*/00550000
+n=0                                                                     00560000
+DO FOREVER                                                              00570000
+  temp=STORAGE(D2X(lpde),40)                                            00580000
+  PARSE VAR temp WITH 1 . 9 modnm 17 ep 21 maj 25 flgs 33 len 37 ldpt   00590000
+  IF LEFT(modnm,1)='FF'X THEN LEAVE                                     00600000
+  IF LEFT(ldpt,1)='00'X & LEFT(len,1)='00'X THEN DO                     00610000
+    PARSE VAR flgs WITH 1 . 5 attr 6 attr2 7 .                          00620000
+    n=n+1                                                               00630000
+    line.n = modnm C2X(ep) C2X(attr) C2X(attr2) RIGHT(c2d(len),6)       00640000
+    IF RIGHT(ep,3)\=RIGHT(ldpt,3) THEN                                  00650000
+      line.n = line.n C2X(RIGHT(ldpt,3)) /* entry-point \= load-point */00660000
+    END                                                                 00670000
+  lpde=lpde+40                                                          00680000
+END                                                                     00690000
+SAY 'End of PLPD scan; elapsed time:' TIME('R') 'seconds.'              00700000
+SAY 'Number of RMODE=24 modules found:' n                               00710000
+CALL QSORT 1,n                         /* Sort the data lines         */00720000
+SAY 'End of SORT phase; elapsed time:' TIME('R') 'seconds.'             00730000
+  /*----------------------------------------------------------------*\  00740000
+  |*            Add up module sizes by 3-char prefix                *|  00750000
+  \*----------------------------------------------------------------*/  00760000
+"MAKEBUF"                                                               00770000
+IF parm='ALL' THEN                                                      00780000
+  QUEUE 'Module   EntPt    Flags   Size LoadPt'                         00790000
+prefix=''                                                               00800000
+total=0                                                                 00810000
+  DO i=1 TO n                                                           00820000
+    IF LEFT(line.i,3)\=prefix THEN DO                                   00830000
+      IF prefix\='' THEN DO                                             00840000
+        QUEUE RIGHT(i-j,5) prefix 'modules:' RIGHT(sum,11)              00850000
+        total=total+sum                /* grand total                 */00860000
+        END                                                             00870000
+      prefix=LEFT(line.i,3)            /* 3-char module prefix        */00880000
+      j=i                                                               00890000
+      sum=0                                                             00900000
+      END                                                               00910000
+      sum=sum+WORD(line.i,5)                                            00920000
+    IF parm='ALL' THEN                                                  00930000
+      QUEUE line.i                                                      00940000
+  END                                                                   00950000
+QUEUE RIGHT(i-j,5) prefix 'modules:' RIGHT(sum,11)                      00960000
+QUEUE '  All' n      'modules:' RIGHT(total,11)                         00970000
+  /*----------------------------------------------------------------*\  00980000
+  |*                  Display the output                            *|  00990000
+  \*----------------------------------------------------------------*/  01000000
+IF ispf THEN DO                                                         01010000
+  SIGNAL ON SYNTAX                  /* in case STEMVIEW not available */01020000
+  CALL STEMVIEW 'VIEW',,,,'RMODE=24 Modules in PLPA'                    01030000
+  END                                                                   01040000
+ELSE                                                                    01050000
+  CALL DISPLAY                      /*    not running in ISPF         */01060000
+                                                                        01070000
+"DROPBUF"                                                               01080000
+EXIT                                                                    01090000
+                                                                        01100000
+SYNTAX:                            /* STEMVIEW function not available */01110000
+  error=rc                                                              01120000
+  'ISPEXEC CONTROL DISPLAY LINE START(1)'                               01130000
+  SAY 'REXX error' error 'in line' sigl':' errortext(error)             01140000
+  SAY sourceline(sigl)                                                  01150000
+  SAY ''                                                                01160000
+                                                                        01170000
+DISPLAY:  DO WHILE QUEUED()>0; PULL line; SAY line; END                 01180000
+  "DROPBUF"                                                             01190000
+  EXIT                                                                  01200000
+  /*----------------------------------------------------------------*\  01210000
+  |*                      QuickSort Routine                         *|  01220000
+  \*----------------------------------------------------------------*/  01230000
+QSORT: PROCEDURE EXPOSE line.                                           01240000
+  ARG l,r                                                               01250000
+  i = TRUNC((l + r) / 2)                                                01260000
+  keep = line.i                                                         01270000
+  i = l                                                                 01280000
+  j = r                                                                 01290000
+  DO until i > j                                                        01300000
+    DO i = i WHILE line.i < keep; END                                   01310000
+    DO j = j BY -1 WHILE keep < line.j; END                             01320000
+    IF i <= j THEN DO                                                   01330000
+      save = line.i                                                     01340000
+      line.i = line.j                                                   01350000
+      line.j = save                                                     01360000
+      i = i + 1                                                         01370000
+      j = j - 1                                                         01380000
+      END                                                               01390000
+  END                                                                   01400000
+  IF j - l > r - i THEN DO                                              01410000
+    IF i < r THEN                                                       01420000
+      CALL QSORT i,r                                                    01430000
+    IF l < j THEN                                                       01440000
+      CALL QSORT l,j                                                    01450000
+    END                                                                 01460000
+  ELSE DO                                                               01470000
+    IF l < j THEN                                                       01480000
+      CALL QSORT l,j                                                    01490000
+    IF i < r THEN                                                       01500000
+      CALL QSORT i,r                                                    01510000
+    END                                                                 01520000
+  RETURN                                                                01530000

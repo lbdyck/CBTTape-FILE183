@@ -1,0 +1,235 @@
+/*************************************************************** REXX */00010000
+/*                                                                    */00020000
+/* MODULE NAME = EXECUTE                                              */00030000
+/*                                                                    */00040000
+/* DESCRIPTIVE NAME = Execute an in-stream CLIST or REXX EXEC         */00050000
+/*                                                                    */00060000
+/* STATUS = R205                                                      */00070005
+/*                                                                    */00080000
+/* FUNCTION = EXECUTE is a REXX EXEC which allows you to execute an   */00090000
+/*            in-stream CLIST or a REXX EXEC in a TSO batch TMP step. */00100000
+/*            Using EXECUTE, you can work around a limitation of      */00110000
+/*            standard TSO/E which can only execute a CLIST or a REXX */00120000
+/*            EXEC stored in a PDS member or a sequential data set.   */00130000
+/*                                                                    */00140000
+/*            EXECUTE can also be invoked as an EDIT macro to         */00150002
+/*            execute the current data set as a CLIST or REXX exec.   */00160002
+/*            The user can select a line or range of lines to         */00170002
+/*            execute by specifying the C, Cn or CC/CC line commands. */00180002
+/*                                                                    */00190000
+/* AUTHOR   =  Gilbert Saint-Flour <carlos@gsf-soft.com>              */00200003
+/*             http://gsf-soft.com/Freeware/                          */00210004
+/*                                                                    */00220000
+/* DEPENDENCIES = TSO/E V2                                            */00230000
+/*                                                                    */00240000
+/* SYNTAX = see below                                                 */00250000
+/*                                                                    */00260000
+/*          EXECUTE CLIST|EXEC                                        */00270000
+/*                  TRACE|NOTRACE                                     */00280002
+/*                  ISPF|ISPSTART                                    */ 00290004
+/*                                                                    */00300000
+/*     Default:     CLIST,NOTRACE                                     */00310002
+/*                                                                    */00320000
+/*     Sample JCL with PARM and a CLIST :                             */00330000
+/*                                                                    */00340000
+/*        //CLIST EXEC PGM=IKJEFT01,PARM='%EXECUTE'                   */00350000
+/*        //SYSPROC DD DSN=<Library which contains EXECUTE>,DISP=SHR  */00360000
+/*        //SYSTSPRT DD SYSOUT=*                                      */00370000
+/*        //SYSTSIN DD *                                              */00380000
+/*        WRITE In-line CLIST executed by &SYSUID                     */00390000
+/*        /*                                                       */ */00400004
+/*                                                                    */00410000
+/*     Sample JCL with in-line EXECUTE REXX command :                 */00420000
+/*                                                                    */00430000
+/*        //EXEC EXEC PGM=IKJEFT01                                    */00440000
+/*        //SYSEXEC DD DSN=<Library which contains EXECUTE>,DISP=SHR  */00450000
+/*        //SYSTSPRT DD SYSOUT=*                                      */00460000
+/*        //SYSTSIN DD *                                              */00470000
+/*        %EXECUTE EXEC                                               */00480000
+/*        SAY "In-line EXEC executed by" USERID()                     */00490000
+/*        /*                                                       */ */00500004
+/*                                                                    */00510000
+/*     Sample JCL with PARM and ISPF option :                         */00520004
+/*                                                                    */00530000
+/*        //ISPF EXEC PGM=IKJEFT01,PARM='%EXECUTE EXEC ISPF'          */00540004
+/*        //SYSEXEC DD DSN=<your EXEC library>,DISP=SHR               */00550004
+/*        //SYSTSPRT DD SYSOUT=*                                      */00560004
+/*        //SYSTSIN DD *                                              */00570004
+/*        SAY "In-line EXEC executed by" USERID() in ISPF             */00580004
+/*        SAY "That's it, it's done !"                                */00590004
+/*        /*                                                       */ */00600004
+/*        //ISPMLIB DD DSN=ISP.SISPMENU,DISP=SHR                      */00610004
+/*        //ISPTLIB DD DSN=ISP.SISPTENU,DISP=SHR                      */00620004
+/*        //ISPPROF DD UNIT=VIO,SPACE=(TRK,(1,1,1)),RECFM=FB,LRECL=80 */00630004
+/*        //ISPPLIB DD DSN=*.ISPPROF,DISP=OLD,VOL=REF=*.ISPPROF       */00640004
+/*        //ISPSLIB DD DSN=*.ISPPROF,DISP=OLD,VOL=REF=*.ISPPROF       */00650004
+/*        //ISPLOG  DD SYSOUT=*,RECFM=FB,LRECL=121,DSN=&&ISPLOG       */00660004
+/*                                                                    */00670004
+/*      BATCH mode - execute an in-line CLIST which uses REXXTRY      */00680004
+/*                   to execute an in-line REXX exec                  */00690004
+/*                                                                    */00700004
+/*        //CLISTRX EXEC PGM=IKJEFT01                                 */00710004
+/*        //STEPLIB  DD DSN=CBTTAPE.FILE183.LOAD,DISP=SHR   REXXTRY   */00720004
+/*        //SYSPROC  DD DSN=CBTTAPE.FILE183.PDS,DISP=SHR    EXECUTE   */00730004
+/*        //SYSTSPRT DD SYSOUT=*                                      */00740004
+/*        //SYSTSIN  DD *                                             */00750004
+/*        %EXECUTE CLIST                                              */00760004
+/*          /* The CLIST starts here */                               */00770004
+/*        CONTROL LIST CONLIST                             /*CLIST*/  */00780004
+/*        WRITE Start of the CLIST                         /*CLIST*/  */00790004
+/*        REXXTRY A=1;                                     /*REXX*/ + */00800004
+/*                B=2;                                     /*REXX*/ + */00810004
+/*                UID=USERID();                            /*REXX*/ + */00820004
+/*                RETURN(A+B UID)                          /*REXX*/   */00830004
+/*        WRITE LASTCC=&LASTCC RESULT='&RESULT'            /*CLIST*/  */00840004
+/*        EXIT CODE(&LASTCC)                               /*CLIST*/  */00850004
+/*                                                                    */00860000
+/* OPERATION = see below                                              */00870000
+/*                                                                    */00880000
+/*        EXECUTE can be executed from SYSPROC or SYSEXEC.            */00890004
+/*                                                                    */00900000
+/*        EXECUTE creates a temporary data set, copies the in-stream  */00910004
+/*        commands into it, then issues the TSO EXEC command.         */00920000
+/*        EXECUTE processes the in-line commands as a CLIST except    */00930000
+/*        when (1) it is invoked with the EXEC key-word or (2) the    */00940000
+/*        REXX word appears in a comment on the first line.           */00950000
+/*                                                                    */00960000
+/* CHANGES = see below                                                */00970000
+/*                                                                    */00980000
+/* 200 New packaging for the CBT tape                                 */00990000
+/* 201 Can be invoked as an EDIT macro                                */01000001
+/* 202 Add TRACE option                                               */01010002
+/* 203 Add ISPF option                                                */01020003
+/* 204 Change PULL to PARSE PULL to prevent conversion to uppercase   */01030004
+/* 205 Remove "ADDRESS ISPEXEC"                                       */01031005
+/*                                                                    */01040000
+/**********************************************************************/01050000
+ARG parms                               /* CLIST, EXEC or TRACE     */  01060002
+IF SYSVAR('SYSISPF')='ACTIVE' THEN DO                                   01070001
+  "ISPEXEC CONTROL ERRORS RETURN"                                       01090005
+  "ISREDIT MACRO (parms) NOPROCESS"                                     01100002
+  macro_rc=rc                         /* save rc from ISREDIT macro */  01110001
+  END                                                                   01120001
+  /*                                                                */  01130002
+  /*        Process Parameters                                      */  01140002
+  /*                                                                */  01150002
+trace=''                                                                01160002
+type=''                                                                 01170002
+ispf=''                                                                 01180003
+IF WORDS(parms) > 0 THEN DO i=1 to WORDS(parms)                         01190002
+    p=TRANSLATE(WORD(parms,i))                                          01200002
+    SELECT                                                              01210002
+      WHEN ABBREV('CLIST',p,1) THEN                                     01220002
+        type='CLIST'                                                    01230002
+      WHEN ABBREV('EXEC',p,1) THEN                                      01240002
+        type='EXEC'                                                     01250002
+      WHEN ABBREV('TRACE',p,1) THEN                                     01260002
+        trace='TRACE'                                                   01270002
+      WHEN ABBREV('NOTRACE',p,1) THEN                                   01280002
+        trace=''                                                        01290002
+      WHEN ABBREV('ISPF',p,1) THEN                                      01300003
+        ispf='ISPF'                                                     01310003
+      WHEN ABBREV('ISPSTART',p,1) THEN                                  01320003
+        ispf='ISPF'                                                     01330003
+      OTHERWISE DO                                                      01340002
+        SAY 'Invalid Parameters, should be CLIST, EXEC or TRACE.'       01350002
+        EXIT 20                                                         01360002
+        END                                                             01370002
+    END                                                                 01380002
+  END                                                                   01390002
+IF type='CLIST' and trace='TRACE' THEN DO                               01400002
+  SAY 'CLIST is not compatible with TRACE.'                             01410002
+  EXIT 20                                                               01420002
+  END                                                                   01430002
+  /*                                                                */  01440000
+  /*        Allocate &SYSUID..INSTREAM.TEMP                         */  01450000
+  /*                                                                */  01460000
+ADDRESS "TSO"                                                           01470001
+tempdsn="'"USERID()".INSTREAM.TEMP'"                                    01480000
+IF LISTDSI('TEMPEXEC' 'FILE')=16 THEN                                   01490001
+  "ALLOCATE DD(TEMPEXEC) DS("tempdsn") NEW DELETE",                     01500001
+         "UNIT(SYSALLDA) SPACE(1 1) TRACKS",                            01510000
+         "DSORG(PS) RECFM(V B) LRECL(255)"                              01520000
+                                                                        01530001
+IF macro_rc=0 THEN                                                      01540001
+  CALL EDIT_MACRO                       /* read EDIT data */            01550001
+ELSE                                                                    01560001
+  CALL READ_SYSTSIN                     /* read from //SYSTSIN */       01570001
+  /*                                                                */  01580000
+  /*        Copy control statements to INSTREAM.TEMP                */  01590000
+  /*                                                                */  01600000
+"EXECIO * DISKW TEMPEXEC (STEM stmt. OPEN FINIS)"                       01610001
+  /*                                                                */  01620000
+  /*        Execute &SYSUID..INSTREAM.TEMP                          */  01630000
+  /*                                                                */  01640000
+IF ispf='ISPF' THEN                                                     01650003
+  PUSH "ISPSTART CMD(EXEC" tempdsn type                                 01660003
+ELSE                                                                    01670003
+  PUSH "EXEC" tempdsn type             /* add EXEC cmd to TSO stack */  01680003
+IF trace='TRACE' THEN                  /* TRACE parameter specified */  01690002
+  PUSH "EXECUTIL TS"                                                    01700002
+EXIT rc                                                                 01710000
+                                                                        01720000
+/**********************************************************************/01730001
+/*                                                                    */01740001
+/*                      Read EDIT data set                            */01750001
+/*                                                                    */01760001
+/**********************************************************************/01770001
+EDIT_MACRO:                                                             01780001
+                                                                        01790001
+  /*----------------------------------------------------------------*/  01800001
+  /*  If the user selected a range by entering a line command such  */  01810001
+  /*  as C, Cnn or C/CC, set line1 and line2 to the first and last  */  01820001
+  /*  line numbers, respectively.  Otherwise, set line1 to 1 and    */  01830001
+  /*  line2 to the last line of the data set.                       */  01840001
+  /*----------------------------------------------------------------*/  01850001
+                                                                        01860001
+  'ISREDIT PROCESS RANGE C'                                             01870001
+  SELECT                                                                01880001
+    WHEN rc=0 THEN DO                                                   01890001
+      "ISREDIT (line1) = LINENUM .ZFRANGE"         /* First line  */    01900001
+      "ISREDIT (line2) = LINENUM .ZLRANGE"         /* Last line   */    01910001
+      END                                                               01920001
+    WHEN rc=4 THEN DO                                                   01930001
+      line1=1                                    /*   DEFAULTS  */      01940001
+      "ISREDIT (line2) = LINENUM .ZLAST"         /*   DEFAULTS  */      01950001
+      END                                                               01960001
+    WHEN rc=20 THEN                       /* All lines deleted        */01970001
+      SIGNAL Empty_dataset                /* No lines to ROUTE        */01980001
+    OTHERWISE DO                          /* Line command conflict    */01990001
+      Pgmrc=rc                            /* Save ISREDIT Return code */02000001
+      IF zerrmsg\='' THEN                                               02010001
+        'SETMSG MSG('zerrmsg')'           /* Edit has created message */02020001
+      EXIT Pgmrc                                                        02030001
+      END                                                               02040001
+  END                                                                   02050001
+  i=0                                                                   02060001
+  DO line1=line1 to line2                                               02070001
+    "ISREDIT (line) = LINE" line1                                       02080001
+    i=i+1                                                               02090001
+    stmt.i=line                                                         02100001
+  END                                                                   02110001
+  RETURN                                                                02120001
+                                                                        02130001
+Empty_dataset:                                                          02140001
+  zedsmsg='Empty data set'                                              02150001
+  zedlmsg='There are no lines to execute'                               02160001
+  'ISPEXEC SETMSG MSG(ISRZ001)'                                         02170005
+  EXIT 12                                                               02180001
+                                                                        02190001
+  /******************************************************************/  02200001
+  /*  Read control statements from SYSTSIN into a stemmed variable  */  02210001
+  /*  Assume EOF after ten consecutive null strings are returned.   */  02220001
+  /******************************************************************/  02230001
+READ_SYSTSIN:                                                           02240001
+  n=0                                                                   02250000
+  DO i = 1 by 1 until n=10                                              02260000
+    PARSE PULL stmt.i                   /* read a line from SYSTSIN */  02270004
+    IF stmt.i='' THEN DO                /* blank line or EOF        */  02280000
+      n=n+1                             /* count blank lines        */  02290000
+      stmt.i=' '                        /* one blank                */  02300000
+      END                                                               02310000
+    ELSE                                /* non-blank line           */  02320000
+      n=0                               /* reset blank lines ctr    */  02330000
+  END                                                                   02340000
+  RETURN                                                                02350001

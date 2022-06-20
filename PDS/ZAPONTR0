@@ -1,0 +1,176 @@
+//GILBERTO JOB (ACCT#),ILBONTR,                                         00010000
+// NOTIFY=&SYSUID,                                                      00020000
+//*RESTART=COB,                                                         00030000
+// CLASS=A,MSGCLASS=H,COND=(4,LT)                                       00040000
+//*                                                                     00050000
+//*      THIS JOB PRODUCES A CUSTOMIZED VERSION OF THE ILBONTR          00060000
+//*      MODULE THAT BYPASSES THE STEPLIB/JOBLIB FOR ALL ILBOXXX        00070000
+//*      SUBROUTINES.                                                   00080000
+//*                                                                     00090000
+//COPY    EXEC PGM=IEBCOPY                                              00100000
+//SYSPRINT DD SYSOUT=*                                                  00110000
+//VSCLLIB  DD DSN=SYS1.R2M4.VSCLLIB,DISP=SHR                            00120000
+//TEMPLMOD DD UNIT=VIO,DISP=(,PASS),SPACE=(1,(1,,1))                    00130000
+//SYSIN    DD *                                                         00140000
+ COPYMOD I=VSCLLIB,O=TEMPLMOD                                           00150000
+ SELECT  MEMBER=ILBONTR                                                 00160000
+//*                                                                     00170000
+//ZAP     EXEC PGM=AMASPZAP                                             00180002
+//SYSLIB   DD DSN=*.COPY.TEMPLMOD,DISP=(OLD,PASS)                       00190002
+//SYSPRINT DD SYSOUT=*                                                  00200000
+//SYSIN    DD *                 101988 UPDATE                           00210001
+ NAME ILBONTR ILBONTR                                                   00220000
+ VER  0052 C9D3C2D6,C3D4D4F0           DC    C'ILBOCMM0'                00230000
+ VER  006C C9D3C2D6,E2D94040           DC    C'ILBOSR  '                00240000
+ VER  0208 4100B20E,47F0B216           LA    R0,*+8                     00250000
+ VER  09E8 50E0,D0C8,1803,1B11         ST    R14,200(,R13)              00260000
+ VER  0A7C C9D3C2D6                    DC    C'ILBO'                    00270001
+ VER  0C30 0000,0000,0000,0000         PATCH AREA                       00280000
+*                                                                       00290000
+ REP  004A 5880,0010                   L     R8,CVTPTR                  00300000
+ REP  004E 5880,8008                   L     R8,CVTLINK-CVT(,R8)        00310000
+ REP  0052 4100,B06C                   LA    R0,=C'ILBOCMM0'            00320000
+ REP  0056 1818                        LR    R1,R8                      00330000
+ REP  0058 0A08                        SVC   8                          00340000
+ REP  005A 5000,20AC                   ST    R0,172(,R2)                00350000
+ REP  005E 4100,B074                   LA    R0,=C'ILBOSR  '            00360000
+ REP  0062 1818                        LR    R1,R8                      00370000
+ REP  0064 0A08                        SVC   8                          00380000
+ REP  0066 5000,2038                   ST    R0,56(,R2)                 00390000
+ REP  006A 47F0,B07C                   B     *+20                       00400000
+ REP  006E C9D3C2D6,C3D4D4F0           DC    C'ILBOCMM0'                00410000
+ REP  0076 C9D3C2D6,E2D94040           DC    C'ILBOSR  '                00420000
+*                                                                       00430000
+ REP  0208 4100,B222                   LA    R0,A000224    =C'ILBOPRM0' 00440001
+ REP  020C 5810,0010                   L     R1,CVTPTR                  00450000
+ REP  0210 5810,1008                   L     R0,CVTLINK-CVT(,R1)        00460000
+ REP  0214 0707,0707,0707              NOPR  7                          00470001
+*                                                                       00480000
+ REP  09EC 45E0,BC2E                   BAL   R14,A000C30                00490000
+*                                                                       00500000
+ REP  0C30 1803                        LR    R0,R3                      00510001
+ REP  0C32 1B11                        SR    R1,R1                      00520001
+ REP  0C34 D503,BA7A,3000              CLC   A000A7C,0(R3)   =C'ILBO'   00530001
+ REP  0C3A 077E                        BNER  R14                        00540001
+ REP  0C3C 5810,0010                   L     R1,CVTPTR                  00550001
+ REP  0C40 5810,1008                   L     R1,CVTLINK-CVT(,R1)        00560001
+ REP  0C44 07FE                        BR    R14                        00570001
+/*                                                                      00580000
+//OLDZAP   DD *                                                         00590000
+ NAME ILBONTR ILBONTR                                                   00600000
+ VER  0052 C9D3C2D6,C3D4D4F0           DC    C'ILBOCMM0'                00610000
+ VER  006C C9D3C2D6,E2D94040           DC    C'ILBOSR  '                00620000
+ VER  01FE 4100,B204                   LA    R0,*+8                     00630000
+ VER  0210 0A08                        SVC   8                          00640000
+ VER  09DC 50E0,D0C8,1803,1B11         ST    R14,200(,R13)              00650000
+ VER  0C00 0000,0000,0000,0000         PATCH AREA                       00660000
+*                                                                       00670000
+ REP  004A 5880,0010                   L     R8,CVTPTR                  00680000
+ REP  004E 5880,8008                   L     R8,CVTLINK-CVT(,R8)        00690000
+ REP  0052 4100,B06C                   LA    R0,=C'ILBOCMM0'            00700000
+ REP  0056 1818                        LR    R1,R8                      00710000
+ REP  0058 0A08                        SVC   8                          00720000
+ REP  005A 5000,20AC                   ST    R0,172(,R2)                00730000
+ REP  005E 4100,B074                   LA    R0,=C'ILBOSR  '            00740000
+ REP  0062 1818                        LR    R1,R8                      00750000
+ REP  0064 0A08                        SVC   8                          00760000
+ REP  0066 5000,2038                   ST    R0,56(,R2)                 00770000
+ REP  006A 47F0,B07C                   B     *+20                       00780000
+ REP  006E C9D3C2D6,C3D4D4F0           DC    C'ILBOCMM0'                00790000
+ REP  0076 C9D3C2D6,E2D94040           DC    C'ILBOSR  '                00800000
+*                                                                       00810000
+ REP  01FE 4100,B218                   LA    R0,*+8                     00820000
+ REP  0202 0700,0700                   NOPR                             00830000
+ REP  0206 5810,0010                   L     R1,CVTPTR                  00840000
+ REP  020A 5810,1008                   L     R0,CVTLINK-CVT(,R1)        00850000
+ REP  020E 0700                        NOPR                             00860000
+*                                                                       00870000
+ REP  09DC 4100,3000                   LA    R0,0(,R3)                  00880000
+ REP  09E0 5810,0010                   L     R1,CVTPTR                  00890000
+ REP  09E4 5810,1008                   L     R1,CVTLINK-CVT(,R1)        00900000
+ REP  09E8 47F0,BBFE                   B     A000C00                    00910000
+ REP  0C00 D503,BA6E,3000              CLC   =C'ILBO',0(R3)             00920000
+ REP  0C06 4780,BC0A                   BE    A000C0A                    00930000
+ REP  0C0A 1B11                        SR    R1,R1                      00940000
+ REP  0C0C 0A08                        SVC   8                          00950000
+ REP  0C0E 07FE                        BR    R14                        00960000
+/*                                                                      00970000
+//DISASM  EXEC PGM=DISASM0,REGION=1000K                                 00980002
+//STEPLIB  DD DSN=GILBERT.LOAD,DISP=SHR                                 00990003
+//SYSLIB   DD DSN=*.COPY.TEMPLMOD,DISP=(OLD,PASS)                       01000002
+//SYSPRINT DD SYSOUT=*                                                  01010000
+//SYSPUNCH DD DUMMY                                                     01020000
+ILBONTR  ILBONTR                                                        01030000
+USING 000006 000016 F P 000002                                          01040000
+USING 000018 000B94 B P 000002                                          01050000
+USING 000B14 000B80 F P 000B14           ESTAE EXIT 1                   01060000
+USING 000B94 000BE6 B P 000B94           ESTAE EXIT 2                   01070000
+USING 000BEE 000C48 B P 000002           PATCH AREA                     01080000
+DATA 000C4A 000C83                       MODULE STATUS                  01090000
+/*                                                                      01100000
+WORKA    DSECT 0001                                                     01110000
+WORKA6   0000 0033                                                      01120000
+USING 000128 000E00 D D WORKA                                           01130000
+DATA 000BBA 000FFF                                                      01140000
+/*                                                                      01150000
+USING FROM-- TO---- R P CONT..                                          01160000
+USING FROM-- TO---- R D DSECTNME                                        01170000
+ULABL LABELNME OFFSET LLL                                               01180000
+DSECTNME DSECT NNN                                                      01190000
+FIELDNME OOOO LLL                                                       01200000
+DATA SSSSSS EEEEEE                                                      01210000
+//*                                                                     01220000
+//COB  EXEC PGM=IKFCBL00,REGION=1000K,                                  01230000
+// PARM='OBJECT,NODECK,RES,QUOTE,NOLIB,NOXREF,BATCH,NAME'               01240002
+//STEPLIB DD DSN=SYS1.R2M4.VSCOLIB,DISP=SHR                             01250002
+000300 ID DIVISION.                                                     01260000
+000500  PROGRAM-ID.  TESTNTR.                                           01270000
+001400 ENVIRONMENT DIVISION.                                            01280000
+001700  INPUT-OUTPUT SECTION.                                           01290000
+002100 DATA DIVISION.                                                   01300000
+002200  LINKAGE SECTION.                                                01310000
+002300   01 JCL-PARM.                                                   01320000
+002400     02 PARM-LENGTH PIC S999 COMP.                                01330000
+002500     02 PARM-TEXT.                                                01340000
+002600       04 FILLER PIC X OCCURS 100 DEPENDING ON PARM-LENGTH.       01350000
+004100 PROCEDURE DIVISION USING JCL-PARM.                               01360000
+004200     DISPLAY "LOOKS OK  "  PARM-TEXT.                             01370000
+004300     STOP RUN.                                                    01380000
+//SYSUT1   DD UNIT=VIO,SPACE=(CYL,5)                                    01390002
+//SYSUT2   DD UNIT=VIO,SPACE=(CYL,5)                                    01400002
+//SYSUT3   DD UNIT=VIO,SPACE=(CYL,5)                                    01410002
+//SYSUT4   DD UNIT=VIO,SPACE=(CYL,5)                                    01420002
+//SYSPRINT DD SYSOUT=*                                                  01430002
+//SYSLIN   DD UNIT=VIO,SPACE=(TRK,1),DISP=(,PASS),DCB=BLKSIZE=3200      01440002
+//*                                                                     01450000
+//LKEDCOB EXEC PGM=HEWL                                                 01460000
+//SYSLIN   DD DSN=*.COB.SYSLIN,DISP=(OLD,PASS)                          01470002
+//SYSLMOD  DD UNIT=VIO,DISP=(,PASS),SPACE=(TRK,(1,,1))                  01480002
+//SYSPRINT DD SYSOUT=*                                                  01490002
+//*                                                                     01500000
+//GO1     EXEC PGM=TESTNTR,PARM='WITHOUT ZAP'                           01510000
+//STEPLIB  DD DSN=*.LKEDCOB.SYSLMOD,DISP=(OLD,PASS)                     01520002
+//         DD UNIT=VIO,SPACE=(TRK,(1,,1))                               01530002
+//         DD UNIT=VIO,SPACE=(TRK,(1,,1))                               01540002
+//         DD UNIT=VIO,SPACE=(TRK,(1,,1))                               01550002
+//SYSOUT   DD SYSOUT=*                                                  01560002
+//SYSUDUMP DD SYSOUT=*                                                  01570002
+//*                                                                     01580000
+//GO2     EXEC PGM=TESTNTR,PARM='WITH ZAP'                              01590000
+//STEPLIB  DD DSN=*.COPY.TEMPLMOD,DISP=(OLD,PASS)                       01600002
+//         DD DSN=*.LKEDCOB.SYSLMOD,DISP=(OLD,PASS)                     01610002
+//         DD UNIT=VIO,SPACE=(TRK,(1,,1))                               01620002
+//         DD UNIT=VIO,SPACE=(TRK,(1,,1))                               01630002
+//SYSOUT   DD SYSOUT=*                                                  01640002
+//SYSUDUMP DD SYSOUT=*                                                  01650002
+//*                                                                     01660000
+//RELINK   EXEC PGM=HEWL,PARM=(LIST,MAP,RENT)                           01670002
+//SYSPRINT DD SYSOUT=*                                                  01680002
+//TEMPLMOD DD DSN=*.COPY.TEMPLMOD,DISP=(OLD,PASS)                       01690002
+//*YSLMOD  DD UNIT=VIO,SPACE=(TRK,(8,,2))                               01700002
+//SYSLMOD  DD DSN=GILBERT.LOAD,DISP=SHR                                 01710003
+//SYSLIN   DD *                                                         01720000
+ INCLUDE TEMPLMOD(ILBONTR)      ZAPPED LOAD MODULE                      01730000
+ LIBRARY (ILBOCMM0)             DO NOT RESOLVE                          01740000
+ ALIAS   ILBONTR0                                                       01750000
+ NAME    ILBONTR(R)                                                     01760000

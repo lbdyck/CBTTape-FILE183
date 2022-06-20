@@ -1,0 +1,234 @@
+//GILBERTC JOB (ACCT#),IRXEHCIR,                                        00010001
+//*RESTART=UPDTE,                                                       00020002
+//*RESTART=COB2,                                                        00030002
+// CLASS=A,MSGCLASS=H,COND=(0,NE),                                      00040001
+// NOTIFY=&SYSUID                                                       00050000
+//HLASM EXEC PGM=ASMA90,PARM=(OBJECT,NODECK,NOESD,NORLD,NOXREF)         00060002
+*********************************************************************** 00070000
+*                                                                     * 00080000
+* MODULE NAME = IRXEHCIR                                              * 00090000
+*                                                                     * 00100000
+* DESCRIPTIVE NAME = Interface to IKJEHCIR for REXX and COBOL         * 00110000
+*                                                                     * 00120000
+* FUNCTION = This module allows a REXX EXEC or a COBOL program to     * 00130000
+*            invoke IKJEHCIR, the TSO/E Catalog Information Routine.  * 00140000
+*            IKJEHCIR is described in TSO/E Programming Services.     * 00150000
+*                                                                     * 00160000
+* STATUS = R101                                                       * 00170001
+*                                                                     * 00180000
+* AUTHOR = Gilbert Saint-Flour <carlos@gsf-soft.com>                  * 00190001
+*                                                                     * 00200000
+* NOTES = SEE BELOW                                                   * 00210000
+*                                                                     * 00220000
+*    DEPENDENCIES = MVS/370, MVS/XA, MVS/ESA or OS/390                * 00230000
+*                                                                     * 00240000
+*    AUTHORIZATION = NONE                                             * 00250000
+*                                                                     * 00260000
+*    RESTRICTIONS = NONE                                              * 00270000
+*                                                                     * 00280000
+* MODULE TYPE = PROCEDURE (CSECT type)                                * 00290000
+*                                                                     * 00300000
+*    PROCESSOR = OS/VS Assembler (XF) or,                             * 00310000
+*                IBM OS/ASSEMBLER H VERSION 2 or                      * 00320000
+*                IBM HIGH LEVEL ASSEMBLER/MVS                         * 00330000
+*                                                                     * 00340000
+*    MODULE SIZE = 1K                                                 * 00350000
+*                                                                     * 00360000
+*    ATTRIBUTES = REENTERABLE, RMODE ANY, AMODE 31,                   * 00370000
+*                 PROBLEM STATE, KEY 8                                * 00380000
+*                                                                     * 00390000
+* SYNTAX = See below                                                  * 00400000
+*                                                                     * 00410000
+*      REXX:                                                          * 00420000
+*                                                                     * 00430000
+*        ADDRESS LINKPGM                                              * 00440000
+*        "IRXEHCIR OPTIONS DSNAME CATNAME WORKAREA SAVEAREA PASSWORD" * 00450000
+*                                                                     * 00460000
+*      COBOL:                                                         * 00470000
+*                                                                     * 00480000
+*        CALL "IRXEHCIR" USING OPTIONS                                * 00490000
+*                              DSNAME                                 * 00500000
+*                              CATNAME                                * 00510000
+*                              WORKAREA                               * 00520000
+*                              SAVEAREA                               * 00530000
+*                              PASS-WORD                              * 00540000
+*                                                                     * 00550000
+* OPERATION = See Below                                               * 00560000
+*                                                                     * 00570000
+*        IRXEHCIR moves the first parameter to the first word         * 00580000
+*        of the user's parameter list and passes control to           * 00590000
+*        the IKJEHCIR module.                                         * 00600000
+*                                                                     * 00610000
+*********************************************************************** 00620000
+IRXEHCIR CSECT                                                          00630000
+IRXEHCIR RMODE ANY                                                      00640000
+         L     R15,0(,R1)              A(OPTIONS)                       00650001
+         MVC   0(4,R1),0(R15)          MOVE OPTIONS TO PARM LIST        00660001
+         L     R15,CVTPTR              CVT pointer                      00670001
+         L     R15,CVTEHCIR-CVTMAP(,R15) V(IKJEHCIR)                    00680001
+         BR    R15                     CALL THE CIR                     00690001
+         DC    C'GSF UTILITIES - IRXEHCIR R101'                         00700001
+         PRINT NOGEN                                                    00710000
+         CVT   DSECT=YES               Communication Vector Table       00720000
+         YREGS                         Register Equates                 00730000
+         END                                                            00740000
+//SYSLIB   DD DSN=SYS1.MACLIB,DISP=SHR                                  00750000
+//SYSUT1   DD UNIT=VIO,SPACE=(CYL,1)                                    00760000
+//SYSPRINT DD SYSOUT=*                                                  00770000
+//SYSLIN   DD UNIT=VIO,SPACE=(TRK,1),DISP=(,PASS),DCB=BLKSIZE=3200      00780000
+//*                                                                     00790000
+//*       LINK IRXEHCIR into private loadlib                            00800000
+//*                                                                     00810000
+//LKED    EXEC PGM=IEWL,PARM=(RENT,REFR)                                00820001
+//SYSLIN   DD DSN=*.HLASM.SYSLIN,DISP=(OLD,PASS)                        00830002
+//SYSLMOD  DD DSN=CBTTAPE.FILE183.LOAD(IRXEHCIR),DISP=SHR               00840002
+//SYSPRINT DD SYSOUT=*                                                  00850000
+//*--------------------------------------------------------------------*00860000
+//*                                                                    *00870000
+//*       Load sample EXEC into temp PDS                               *00880000
+//*                                                                    *00890000
+//*--------------------------------------------------------------------*00900000
+//UPDTE   EXEC PGM=IEBUPDTE,PARM=NEW                                    00910001
+//SYSUT2   DD UNIT=VIO,SPACE=(TRK,(1,,1)),DISP=(,PASS),BLKSIZE=3200     00920000
+//SYSPRINT DD SYSOUT=*                                                  00930000
+//SYSIN    DD *                                                         00940000
+./ ADD NAME=SAMPLE                                                      00950000
+ /* This sample REXX EXEC demonstrates how the IRXEHCIR routine     */  00960000
+ /* can be used to retrieve data set names and volume information   */  00970000
+ /* from the catalog for a given high-level qualifier such as       */  00980000
+ /* "SYS1" or "GILBERT.TEMP".                                       */  00990001
+ARG HLQ                             /*  GET SEARCH ARGUMENT         */  01000000
+DSNAME = LEFT(HLQ,44)               /*  make it a 44-char name      */  01010000
+CATNAME = COPIES(' ',44)            /*  CATALOG NAME                */  01020001
+                                                                        01030000
+     /* Note: for format-2 work-area, see OW16574 */                    01040001
+                                                                        01050001
+WORKALEN = 65535                    /*  LENGTH OF THE WORK-AREA     */  01060000
+WORKAREA = LEFT(D2C(WORKALEN,2),WORKALEN,'00'X)                         01070000
+SAVEAREA = COPIES('00000000'X,18)                                       01080000
+PASSWORD = '0000000000000000'X                                          01090000
+OPTIONS  = '06000000'X              /* FUNCTION CODE 06             */  01100000
+                                                                        01110000
+ADDRESS LINKPGM,                                                        01120000
+  "IRXEHCIR OPTIONS DSNAME CATNAME WORKAREA SAVEAREA PASSWORD"          01130000
+IF RC>0 THEN DO                                                         01140000
+  SAY 'RC='RC 'RSN='C2X(OPTIONS)                                        01150000
+  EXIT RC                                                               01160000
+  END                                                                   01170000
+ /*                                                                 */  01180000
+ /* PROCESS DATA RETURNED IN WORK AREA                              */  01190000
+ /*                                                                 */  01200000
+USEDLEN = C2D(SUBSTR(WORKAREA,3,2)) /* GET AMOUNT OF WORK AREA USED */  01210000
+POS1=5                            /* STARTING POSITION             */   01220000
+DO WHILE POS1 < USEDLEN           /* DO UNTIL ALL DATA IS PROCESSED*/   01230000
+                                                                        01240000
+  TYPE = SUBSTR(WORKAREA,POS1,1)    /* EXTRACT ENTRY TYPE         */    01250000
+  DSNAME = SUBSTR(WORKAREA,POS1+1,44)  /* EXTRACT ENTRY NAME      */    01260000
+  NUMVOL = SUBSTR(WORKAREA,POS1+45,1)  /* EXTRACT NUMBER OF VOLS  */    01270000
+  NUMVOL = C2D(NUMVOL)                 /* convert to decimal      */    01280000
+  DEVTYPE= SUBSTR(WORKAREA,POS1+46,4)  /* EXTRACT DEVICE TYPE     */    01290000
+  VOLSER = SUBSTR(WORKAREA,POS1+50,6)  /* EXTRACT VOLSER          */    01300000
+  FILESEQ= SUBSTR(WORKAREA,POS1+56,2)  /* EXTRACT VOLSER          */    01310000
+    SAY TYPE DSNAME C2X(DEVTYPE) VOLSER C2X(FILESEQ)                    01320000
+  POS1 = POS1+1+44+1+4+6+2          /* NEXT ENTRY                 */    01330000
+END    /*  DO WHILE POS1 < USEDLEN    */                                01340000
+/*                                                                      01350000
+//*--------------------------------------------------------------------*01360000
+//*                                                                    *01370000
+//*       Execute sample EXEC                                          *01380000
+//*                                                                    *01390000
+//*--------------------------------------------------------------------*01400000
+//GO      EXEC PGM=IKJEFT01                                             01410000
+//STEPLIB  DD DSN=*.LKED.SYSLMOD,DISP=SHR                               01420000
+//SYSPROC  DD DSN=*.UPDTE.SYSUT2,DISP=(OLD,PASS)                        01430001
+//SYSTSPRT DD SYSOUT=*                                                  01440000
+//SYSTSIN  DD *                                                         01450000
+%SAMPLE GILBERT                                 /* high-level qualifier 01460002
+//*--------------------------------------------------------------------*01470000
+//*                                                                    *01480000
+//*       Compile COBOL sample program                                 *01490000
+//*                                                                    *01500000
+//*--------------------------------------------------------------------*01510000
+//COB2 EXEC PGM=IGYCRCTL,                                               01520001
+// PARM='QUOTE,DYNAM,RES,NOSEQ,DATA(24),BUF(10000),NAME'                01530002
+       IDENTIFICATION DIVISION.                                         01540000
+        PROGRAM-ID. CB2EHCIR.                                           01550002
+       ENVIRONMENT DIVISION.                                            01560000
+     ***   This sample COBOL program demonstrates how the IRXEHCIR      01570000
+     ***   routine can be used to retrieve data set names and           01580000
+     ***   volume information from the catalog for a given              01590000
+     ***   high-level qualifier such as "SYS1" or "GILBERT.TEMP".       01600001
+       DATA DIVISION.                                                   01610000
+        WORKING-STORAGE SECTION.                                        01620000
+         01 OPTIONS.                                                    01630000
+            05 FILLER  PIC X VALUE X"06".                               01640000
+            05 FILLER  PIC X VALUE X"00".                               01650000
+            05 FILLER  PIC X VALUE X"00".                               01660000
+            05 RETCODE PIC X VALUE X"00".                               01670000
+         01 DSNAME  PIC X(44).                                          01680000
+         01 CATNAME PIC X(44) VALUE SPACES.                             01690000
+         01 WORKAREA.                                                   01700000
+            05 WORKALEN PIC XX VALUE HIGH-VALUES.                       01710000
+            05 USEDLEN  PIC XX VALUE LOW-VALUES.                        01720000
+            05 FILLER OCCURS 1000 INDEXED BY I.                         01730000
+               10 ENTRY-TYPE PIC X.                                     01740000
+               10 ENTRY-NAME PIC X(44).                                 01750000
+               10 ENTRY-VOLCT   PIC X.                                  01760002
+               10 ENTRY-DEVTYPE PIC X(4).                               01770000
+               10 ENTRY-VOLSER  PIC X(6).                               01780000
+               10 ENTRY-FILESEQ PIC S999 COMP.                          01790000
+         01 SAVEAREA PIC X(72).                                         01800000
+         01 PASS-WORD PIC X(8).                                         01810000
+         01 VOLCT-X.                                                    01820002
+            02 VOLCT  PIC S999 COMP.                                    01830002
+       PROCEDURE DIVISION.                                              01840000
+           ACCEPT DSNAME FROM SYSIN.                                    01850000
+           DISPLAY 'CB2EHCIR started - About to CALL IRXEHCIR'          01860002
+           CALL "IRXEHCIR" USING OPTIONS                                01870000
+                                 DSNAME                                 01880000
+                                 CATNAME                                01890000
+                                 WORKAREA                               01900000
+                                 SAVEAREA                               01910000
+                                 PASS-WORD.                             01920000
+           DISPLAY 'Returned from IRXEHCIR - RC=' RETURN-CODE           01930002
+           IF RETURN-CODE = 0 THEN                                      01940002
+             PERFORM VARYING I FROM 1 BY 1                              01950002
+                     UNTIL ENTRY-TYPE(I) = HIGH-VALUES                  01960002
+               MOVE ENTRY-VOLCT(I) TO VOLCT-X(2:1)                      01970002
+               DISPLAY ENTRY-TYPE(I) " "                                01980002
+                       ENTRY-NAME(I) " "                                01990002
+                       VOLCT " "                                        02000002
+                       ENTRY-VOLSER(I) " "                              02010002
+                       ENTRY-FILESEQ(I)                                 02011002
+             END-PERFORM                                                02020002
+           END-IF                                                       02030002
+           STOP RUN.                                                    02040000
+//*                                                                     02050000
+//SYSPRINT DD SYSOUT=*                                                  02060000
+//SYSUT1   DD UNIT=VIO,SPACE=(CYL,1)                                    02070000
+//SYSUT2   DD UNIT=VIO,SPACE=(CYL,1)                                    02080000
+//SYSUT3   DD UNIT=VIO,SPACE=(CYL,1)                                    02090000
+//SYSUT4   DD UNIT=VIO,SPACE=(CYL,1)                                    02100000
+//SYSUT5   DD UNIT=VIO,SPACE=(CYL,1)                                    02110000
+//SYSUT6   DD UNIT=VIO,SPACE=(CYL,1)                                    02120000
+//SYSUT7   DD UNIT=VIO,SPACE=(CYL,1)                                    02130000
+//SYSLIN   DD DISP=(,PASS),UNIT=VIO,SPACE=(TRK,1),DCB=BLKSIZE=3200      02140000
+//*                                                                     02150000
+//LKED   EXEC PGM=HEWLKED,PARM=(REUS,MAP)                               02160002
+//SYSLIN   DD DSN=*.COB2.SYSLIN,DISP=(OLD,PASS)                         02170002
+//SYSLIB   DD DSN=CEE.SCEELKED,DISP=SHR                                 02180002
+//SYSUT1   DD UNIT=VIO,SPACE=(CYL,1)                                    02190002
+//SYSLMOD  DD DSN=&&SYSLMOD,DISP=(,PASS),UNIT=VIO,SPACE=(TRK,(1,,1))    02200002
+//SYSPRINT DD SYSOUT=*                                                  02210002
+//*                                                                     02220002
+//*      Execute COBOL program                                          02230002
+//*                                                                     02240002
+//*      PARM='/STACK(,,BELOW)' is required in z/OS                     02250002
+//*                                                                     02260002
+//GO     EXEC PGM=CB2EHCIR,PARM='/STACK(,,BELOW)'                       02270002
+//STEPLIB  DD DSN=&&SYSLMOD,DISP=(OLD,DELETE)                CB2EHCIR   02280002
+//         DD DSN=CBTTAPE.FILE183.LOAD,DISP=SHR              IRXEHCIR   02290002
+//SYSOUT   DD SYSOUT=*                                                  02300002
+//CEEDUMP  DD SYSOUT=*                                                  02310002
+//*YSUDUMP DD SYSOUT=*                                                  02320002
+GILBERT.CTC                                     <- high-level qualifier 02330002

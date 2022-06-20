@@ -1,0 +1,540 @@
+//GILBERTR JOB (ACCT#),REXXTRY,                                         00010000
+// NOTIFY=&SYSUID,                                                      00020000
+// CLASS=A,MSGCLASS=H,COND=(1,LT)                                       00030002
+//HLASM EXEC PGM=ASMA90,PARM=(OBJECT,NODECK,NOESD,NORLD,NOXREF)         00040001
+*********************************************************************** 00050000
+*                                                                     * 00060004
+*            COPYRIGHT (C) 1991-2009 GILBERT SAINT-FLOUR              * 00070004
+*                       ALL RIGHTS RESERVED                           * 00080004
+*                                                                     * 00090000
+* MODULE NAME = REXXTRY                                               * 00100000
+*                                                                     * 00110000
+* DESCRIPTIVE NAME = Execute a line of REXX code and set &result      * 00120000
+*                                                                     * 00130000
+* STATUS = R104                                                       * 00140004
+*                                                                     * 00150000
+* FUNCTION = This TSO command processor can be used to execute a      * 00160000
+*            one-line REXX exec as a sub-routine. The REXX exec,      * 00170000
+*            which can be a single REXX instruction or multiple       * 00180000
+*            instructions separated by semi-colons, must be           * 00190000
+*            specified as an argument in the REXXTRY command,         * 00200000
+*            for example:                                             * 00210000
+*                                                                     * 00220000
+*               REXXTRY a='A'; b='B'; RETURN a || b                   * 00230000
+*                                                                     * 00240000
+*            REXXTRY can be invoked anywhere a TSO command can be     * 00250000
+*            entered: READY prompt, PDF opt 6, ISPF TSO command,      * 00260000
+*            CLIST, ISPF panel, ISPF command table, etc.              * 00270000
+*                                                                     * 00280000
+*            If the REXX exec ends with a RETURN instruction (as      * 00290000
+*            shown in the example above), the returned value is       * 00300000
+*            stored into the &RESULT variable.  The length of the     * 00310000
+*            data returned by the exec is limited to 256 bytes.       * 00320000
+*                                                                     * 00330000
+*            In the ISPF environment, if the REXX exec needs to       * 00340000
+*            access ISPF variables using VGET and VPUT, REXXTRY       * 00350000
+*            must be invoked with LANG(CREX).  However, specifying    * 00360000
+*            LANG(CREX) prevents REXXTRY from storing the data        * 00370000
+*            returned by the REXX exec into &RESULT.  Consequently,   * 00380000
+*            the REXX exec must be designed to use RETURN or          * 00390000
+*            VGET/VPUT, but not both.  This restriction is imposed    * 00400000
+*            by the method ISPF uses to handle variables in the       * 00410000
+*            compiled REXX environment.                               * 00420000
+*                                                                     * 00430001
+*            REXXTRY can also be invoked in batch mode, in which      * 00440001
+*            case the REXX code is (1) an argument to the command,      00450003
+*            or (2) all the input lines present in SYSTSIN after      * 00460003
+*            the REXXTRY command.                                     * 00470003
+*                                                                     * 00480000
+*            Note that in batch mode, REXXTRY invokes the REXX        * 00490001
+*            code as a command and does not set &RESULT.              * 00500001
+*                                                                     * 00510000
+* AUTHOR = Gilbert Saint-Flour <carlos@gsf-soft.com>                  * 00520001
+*          http://gsf-soft.com/Freeware/                              * 00530001
+*                                                                     * 00540000
+* ENVIRONMENT = SEE BELOW                                             * 00550000
+*                                                                     * 00560000
+*    DEPENDENCIES: MVS/ESA, OS/390 or z/OS                            * 00570001
+*                                                                     * 00580000
+* MODULE TYPE = PROCEDURE, (CSECT TYPE)                               * 00590000
+*                                                                     * 00600000
+*    PROCESSOR = IBM HIGH LEVEL ASSEMBLER/MVS                         * 00610001
+*                                                                     * 00620000
+*    MODULE SIZE = 2K                                                 * 00630000
+*                                                                     * 00640000
+*    ATTRIBUTES = REENTERABLE, RMODE ANY, AMODE 31,                   * 00650000
+*                 PROBLEM STATE, KEY 8                                * 00660000
+*                 APF AUTHORIZATION: NONE                             * 00670000
+*                                                                     * 00680000
+* OPERATION = See Examples below:                                     * 00690000
+*                                                                     * 00700000
+*   Invocation in a CLIST:                                            * 00710000
+*                                                                     * 00720000
+*     SET string = ABC DEF GHI JKL                                    * 00730000
+*     REXXTRY parm="&string"; +                                       * 00740000
+*             n=WORDS(parm); +                                        * 00750000
+*             RETURN WORD(parm,n)                                     * 00760000
+*     WRITE LASTCC=&LASTCC RESULT=&RESULT                             * 00770000
+*                                                                     * 00780000
+*   Invocation in an ISPF Panel; the REXX code ends with RETURN:      * 00790000
+*                                                                     * 00800000
+*     %RESULT=&result                                                 * 00810000
+*     )INIT                                                           * 00820000
+*       IF (&result=&Z) &result=0                                     * 00830000
+*     )PROC                                                           * 00840000
+*       &ZSEL='CMD(REXXTRY RETURN &result+1) MODE(FSCR)'              * 00850000
+*     )END                                                            * 00860000
+*                                                                     * 00870000
+*   Invocation in an ISPF Panel; the REXX code uses VGET and VPUT:    * 00880000
+*                                                                     * 00890000
+*     %RESULT=&result                                                 * 00900000
+*     )INIT                                                           * 00910000
+*       IF (&result=&Z) &result=0                                     * 00920000
+*     )PROC                                                           * 00930000
+*       &rexx='"VGET result"; result=&result+1; "VPUT result"'        * 00940000
+*       &ZSEL='CMD(REXXTRY ADDRESS ISPEXEC; &rexx) LANG(CREX)'        * 00950000
+*     )END                                                            * 00960000
+*                                                                     * 00970001
+*   Invocation in BATCH mode.                                         * 00980001
+*                                                                     * 00990001
+*     //TMP     EXEC PGM=IKJEFT01                                     * 01000001
+*     //SYSTSPRT DD SYSOUT=*                                          * 01010001
+*     //SYSTSIN  DD *                                                 * 01020001
+*     REXXTRY                                                         * 01030001
+*     SAY "this is my REXX exec (line 1)"                             * 01040001
+*     SAY "this is my REXX exec (line 2)"                             * 01050001
+*     EXIT 3                                                          * 01060001
+*                                                                     * 01070001
+*   BATCH mode - execute an in-line CLIST which uses REXXTRY          * 01080001
+*                to execute an in-line REXX exec                      * 01090001
+*                                                                     * 01100001
+*     //CLISTRX EXEC PGM=IKJEFT01                                     * 01110001
+*     //STEPLIB  DD DSN=CBTTAPE.FILE183.LOAD,DISP=SHR    REXXTRY      * 01120001
+*     //SYSPROC  DD DSN=CBTTAPE.FILE183.PDS,DISP=SHR     EXECUTE      * 01130001
+*     //SYSTSPRT DD SYSOUT=*                                          * 01140001
+*     //SYSTSIN  DD *                                                 * 01150001
+*     %EXECUTE CLIST                                                  * 01160001
+*       /* The CLIST starts here */                                   * 01170001
+*     CONTROL LIST CONLIST                              /*CLIST*/     * 01180001
+*     WRITE Start of the CLIST                          /*CLIST*/     * 01190001
+*     REXXTRY A=1;                                      /*REXX*/ +    * 01200001
+*             B=2;                                      /*REXX*/ +    * 01210001
+*             UID=USERID();                             /*REXX*/ +    * 01220001
+*             RETURN(A+B UID)                           /*REXX*/      * 01230001
+*     WRITE LASTCC=&LASTCC RESULT='&RESULT'             /*CLIST*/     * 01240001
+*     EXIT CODE(&LASTCC)                                /*CLIST*/     * 01250001
+*                                                                     * 01260002
+*   Invocation via a CALL command                                     * 01270002
+*                                                                     * 01280002
+*     //VIACALL EXEC PGM=IKJEFT01                                     * 01290002
+*     //SYSTSPRT DD SYSOUT=*                                          * 01300002
+*     //SYSTSIN  DD *                                                 * 01310002
+*     CALL 'CBTTAPE.FILE183.LOAD(REXXTRY)' 'SAY XXX; SAY YYY'         * 01320002
+*     /*                                                              * 01330003
+*     //VIACALL2 EXEC PGM=IKJEFT01                                    * 01340003
+*     //SYSTSPRT DD SYSOUT=*                                          * 01350003
+*     //SYSTSIN  DD *                                                 * 01360003
+*     CALL 'CBTTAPE.FILE183.LOAD(REXXTRY)'                            * 01370003
+*     SAY XXX                                                         * 01380003
+*     SAY YYY                                                         * 01390003
+*     /*                                                              * 01400003
+*                                                                     * 01410002
+* PARAMETERS = None                                                   * 01420000
+*                                                                     * 01430003
+* ABENDS = SEE BELOW                                                  * 01440003
+*                                                                     * 01450003
+*        U0020       PARM missing in CALL *(REXXTRY) in TSO On-Line   * 01460003
+*                                                                     * 01470000
+* RETURN-CODES = SEE BELOW                                            * 01480000
+*                                                                     * 01490000
+*        nnn         Return-code nnn from the REXX interpreter        * 01500000
+*                                                                     * 01510000
+* CHANGE ACTIVITY                                                     * 01520000
+*                                                                     * 01530000
+* 100 Packaging for distribution on CBT Tape                     1998 * 01540000
+* 101 In BATCH mode, REXXTRY reads REXX code from SYSTSIN        1999 * 01550001
+* 102 CALL FILE183.LOAD(REXXTRY) 'SAY XXX; SAY YYY'              2009 * 01560002
+* 103 CALL FILE183.LOAD(REXXTRY) /* read SYSTSIN */                   * 01570003
+* 104 Quit if there is no cmd and we're not in TSO/Batch              * 01580004
+*                                                                     * 01590000
+&REL     SETC  'R104'                                                 * 01600004
+*********************************************************************** 01610000
+REXXTRY  CSECT                                                          01620000
+REXXTRY  RMODE ANY                                                      01630000
+&D       SETC  '&SYSDATE'(7,2)'-'.'&SYSDATE'(1,2)'-'.'&SYSDATE'(4,2)    01640002
+         SAVE  (14,12),,'GSF Utilities - REXXTRY &REL - 20&D &SYSTIME'  01650002
+         LR    R12,R15                                                  01660000
+         USING REXXTRY,R12                                              01670000
+*                                                                       01680000
+*        Initialization                                                 01690000
+*                                                                       01700000
+         GETMAIN R,LV=DYNAML           GET DYNAMIC STORAGE              01710000
+         ST    R13,4(,R1)              chain save areas                 01720000
+         ST    R1,8(,R13)              chain save areas                 01730000
+         LM    R13,R1,8(R13)           load R13, reload R1              01740000
+         USING DYNAM,R13                                                01750000
+         XC    DYNAM+72(256),DYNAM+72  CLEAR DYNAMIC STORAGE            01760000
+         MVC   DYNCPPL(16),0(R1)       A(CPPL)                          01770002
+         USING CPPL,DYNCPPL                                             01780002
+         L     R10,CVTPTR(,0)          CVT ADDRESS                      01790001
+         L     R10,CVTTVT-CVTMAP(,R10) TSO/E VECTOR TABLE               01800000
+         USING TSVT,R10                                                 01810000
+         L     R9,CPPLECT              pick up ECT address              01820003
+         USING ECT,R9                                                   01830003
+*                                                                       01840002
+*        BUILD CPPL IF INVOKED VIA CALL                                 01850002
+*                                                                       01860002
+         TM    CPPL,X'80'              CPPL or PARM ?                   01870002
+         BZ    STEP2                   CPPL, jump                       01880002
+         L     R1,X'0224'(,0)          PSAAOLD   A(ASCB)                01890003
+         L     R1,X'006C'(,R1)         ASCBASXB  A(ASXB)                01900003
+         L     R1,X'0014'(,R1)         ASXBLWA   A(LWA)                 01910003
+         L     R9,X'0020'(,R1)         LWAPECT   A(ECT)                 01920003
+         ST    R9,CPPLECT              Store ECT address                01930003
+         L     R1,X'0018'(,R1)         LWAPSCB   A(PSCB)                01940003
+         ST    R1,CPPLPSCB             A(PSCB)                          01950003
+         MVC   CPPLUPT,X'0034'(R1)     PSCBUPT   A(UPT)                 01960003
+         L     R2,CPPLCBUF             addr of command buffer           01970002
+         LA    R4,2(,R2)               R4: first byte of REXX code      01980002
+         LH    R5,0(,R2)               R5: length of REXX code          01990002
+         LTR   R5,R5                   PARM specified?                  02000003
+         BNZ   STEP25                  YES, process PARM                02010003
+*                                                                       02020003
+*        CALL *(REXXTRY) with no PARM only works in batch               02030003
+*                                                                       02040003
+         TM    ECTSWS,ECTBKGRD         Running in a batch job?          02050003
+         BO    STEP4                   YES, read SYSTSIN                02060003
+         ABEND 0020                    NO, ABEND U0020                  02070003
+*                                                                       02080000
+*        Build address/length array                                     02090000
+*                                                                       02100000
+STEP2    L     R2,CPPLCBUF             addr of command buffer           02110000
+         LH    R3,0(,R2)               length of command buffer         02120000
+         LA    R4,4(,R2)               addr of REXXTRY command          02130000
+         AH    R4,2(,R2)               R4: first byte of REXX code      02140000
+         LA    R5,0(R3,R2)             end of command buffer            02150000
+         SR    R5,R4                   R5: length of REXX code          02160000
+         BZ    STEP4                   no REXX code, use GETLINE        02170001
+STEP25   EQU   *                                                        02180002
+         CLC   =C'/*',0(R4)            just a comment?                  02190001
+         BNE   STEP5                   no, use REXX code                02200001
+*                                                                       02210001
+*        Read REXX statements from SYSTSIN                              02220001
+*                                                                       02230001
+         USING IOPL,DYNIOPL            SET UP ADDRESSABILITY TO IOPL    02240001
+STEP4    MVC   IOPLUPT,CPPLUPT         MOVE UPT ADDRESS INTO IOPL       02250001
+         ST    R9,IOPLECT              store ECT address into IOPL      02260003
+         LA    R0,DYNECB               EVENT CONTROL BLOCK              02270001
+         ST    R0,IOPLECB              STORE ECB INTO IOPL              02280001
+         USING GTPB,DYNGTPB                                             02290001
+*                                                                       02300004
+*        if I'm not in TSO/Batch, display hdr and quit with rc=20       02310004
+*                                                                       02320004
+         TM    ECTSWS,ECTBKGRD         Running in a batch job?          02330004
+         BO    STEP4D                  YES, read SYSTSIN                02340004
+         SLR   R6,R6                                                    02350004
+         IC    R6,REXXTRY+4            hdr length                       02360004
+         MVC   VECTORS(64),REXXTRY+5   copy hdr to R24 for TPUT         02370004
+         TPUT  VECTORS,(R6)            Issue error message              02380004
+         LA    R6,20                   RC=20                            02390004
+         B     STEP9                   QUIT                             02400004
+*                                                                       02410004
+STEP4D   EQU   *                                                        02420004
+         LA    R5,VECTORS              FIRST VECTOR                     02430001
+         TM    ECTSWS,ECTBKGRD         Running in a batch job?          02440004
+*LOOP                                                                   02450001
+STEP4G   MVI   DYNECB,0                RESET POST BIT                   02460001
+         GETLINE INPUT=ISTACK,         READ FROM STACK                 X02470001
+               TERMGET=(EDIT,WAIT),                                    X02480001
+               PARM=GTPB,                                              X02490001
+               MF=(E,IOPL)                                              02500001
+         CH    R15,=H'16'              EOD?                             02510001
+         BE    STEP4X                  YES, EXIT                        02520001
+         TM    ECTSWS,ECTLOGF          EOD?                             02530001
+         BO    STEP4X                  YES, EXIT                        02540001
+         L     R2,GTPBIBUF             INPUT BUFFER                     02550001
+         LH    R3,0(,R2)               LENGTH                           02560001
+         LA    R2,4(,R2)               POINT PAST LENGTH                02570001
+         SH    R3,=H'4'                SUBTRACT LENGTH                  02580001
+         STM   R2,R3,0(R5)             STORE ADDRESS, LENGTH            02590001
+         LA    R5,8(,R5)               NEXT VECTOR                      02600001
+         B     STEP4G                                                   02610001
+*ENDLOOP                                                                02620001
+STEP4X   LR    R0,R5                   addr/len array                   02630001
+         MVI   IRXFLAGS,X'80'          invoke as a command              02640001
+         B     STEP6                                                    02650001
+         DROP  R9                      ECT                              02660003
+*                                                                       02670001
+*        Execute REXX code specified in the command                     02680001
+*                                                                       02690001
+STEP5    STM   R4,R5,VECTORS           build addr/len array             02700001
+         LA    R0,VECTORS+4*2          addr/len array                   02710001
+         MVI   IRXFLAGS,X'40'          invoke as an external function   02720001
+*                                                                       02730000
+*        Execute the REXX code as a sub-routine                         02740000
+*                                                                       02750000
+STEP6    LA    R1,VECTORS              first vector in R1               02760001
+         SLR   R0,R1                   calc length of vectors           02770001
+         BAL   R14,RUNEXEC          <- Run the EXEC                     02780001
+         LR    R6,R15                  save return code                 02790003
+*                                                                       02800000
+*        Set the TSO/E and ISPF variables                               02810000
+*                                                                       02820000
+STEP7    CLI   IRXFLAGS,X'80'          exec invoked as a command?       02830001
+         BE    STEP9                   yes, skip SETVAR                 02840001
+ ORG STEP7                                                              02850001
+         BAL   R14,SETVAR           <- SET VARIABLE                     02860001
+         SLR   R6,R6                   RC=0                             02870003
+*                                                                       02880000
+*        Clean up and exit                                              02890000
+*                                                                       02900000
+STEP9    LR    R1,R13                  ADDRESS OF DYNAMIC AREA          02910000
+         L     R13,4(,R13)             CALLER'S SAVE AREA               02920000
+         FREEMAIN R,LV=DYNAML,A=(1)    FREE DYNAMIC AREA                02930000
+         LR    R15,R6                  PASS RETURN CODE                 02940003
+         RETURN (14,12),RC=(15)        GOBACK, PASS RC IN R15           02950000
+*********************************************************************** 02960000
+*                                                                     * 02970000
+*        Execute the in-storage REXX exec as a sub-routine.           * 02980000
+*                                                                     * 02990000
+*********************************************************************** 03000000
+RUNEXEC  BAKR  R14,0                   Save Registers                   03010000
+*                                                                       03020000
+*        Build the In-storage block (INSTBLK)                           03030000
+*                                                                       03040000
+         LA    R6,DYNAM_INSTBLK_HEADER ADDR OF IN-STORAGE BLOCK         03050000
+         USING INSTBLK_HEADER,R6                                        03060000
+         ST    R6,PTR_INSTBLK          ADDR OF IN-STORAGE BLOCK         03070001
+         ST    R1,INSTBLK_ADDRESS      STORE INTO IN-STORAGE BLOCK      03080000
+         ST    R0,INSTBLK_USEDLEN      STORE INTO IN-STORAGE BLOCK      03090001
+         MVC   INSTBLK_ACRONYM,=C'IRXINSTB'                             03100000
+         MVC   INSTBLK_HDRLEN,=A(L'INSTBLK_HEADER)                      03110000
+         MVC   INSTBLK_MEMBER,=CL8' '                                   03120000
+         MVC   INSTBLK_DDNAME,=C'SYSIN   '                              03130000
+         MVC   INSTBLK_SUBCOM,=CL8' '                                   03140000
+*                                                                       03150000
+*        Build the Evaluation Block (EVALBLOCK)                         03160000
+*                                                                       03170000
+         LA    R7,DYNAM_EVALBLOCK      ADDR OF EVAL BLOCK               03180000
+         USING EVALBLOCK,R7                                             03190000
+         ST    R7,PTR_EVALBLOCK        ADDR OF EXEC BLOCK               03200000
+         LA    R0,EVALBLOCK_LENGTH/8   LENGTH IN DOUBLE-WORDS           03210000
+         ST    R0,EVALBLOCK_EVSIZE     LENGTH IN DOUBLE-WORDS           03220000
+         LA    R0,DATA_LENGTH          LENGTH OF DATA IN BYTES          03230000
+         ST    R0,EVALBLOCK_EVLEN      LENGTH OF DATA IN BYTES          03240000
+*                                                                       03250000
+*        Invoke the REXX Interpreter (IRXEXEC)                          03260000
+*                                                                       03270000
+         LA    R14,DUMMY               no EXEC block                    03280000
+         SLR   R15,R15                 no arguments                     03290000
+         LA    R0,IRXFLAGS             flags for IRXEXEC                03300001
+         LA    R1,PTR_INSTBLK          IN-STORAGE BLOCK                 03310000
+         LA    R2,DUMMY                CPPL                             03320000
+         LA    R3,PTR_EVALBLOCK        EVAL BLOCK                       03330000
+         LA    R4,DUMMY                WORK AREA                        03340000
+         LA    R5,DUMMY                USER WORK AREA                   03350000
+         STM   R14,R5,PARMLIST         build parm list                  03360000
+         OI    PARMLIST+28,X'80'       eol flag                         03370000
+         L     R15,TSVTEXE             A(IRXEXEC)                       03380000
+         LA    R1,PARMLIST             PARM LIST ADDRESS                03390000
+         SYNCH (R15)                <- CALL IRXEXEC                     03400000
+*                                                                       03410000
+*        Check the completion-code from the REXX interpreter            03420000
+*                                                                       03430000
+         LTR   R15,R15                 check return code                03440000
+         BNZ   RUNEXEC9                non-zero, exit                   03450000
+*                                                                       03460000
+*        Retrieve the data returned by the REXX EXEC                    03470000
+*                                                                       03480000
+         LA    R1,EVALBLOCK_EVDATA     data passed in the RETURN instr  03490000
+         L     R2,EVALBLOCK_EVLEN      length of the returned data      03500000
+         STM   R1,R2,VARVALUE          store address and length         03510000
+*                                                                       03520001
+*        If the in-line exec was invoked as a command,                  03530001
+*        use the returned value as REXXTRY's return-code                03540001
+*                                                                       03550001
+         LTR   R2,R2                   anything returned?               03560001
+         BNP   RUNEXEC9                no, exit                         03570001
+         CLI   IRXFLAGS,X'80'          exec invoked as a command?       03580001
+         BNE   RUNEXEC9                no, exit                         03590001
+         BCTR  R2,0                    for EX                           03600001
+         PACK  DWD,0(*-*,R1)           PACK VALUE                       03610001
+         EX    R2,*-6                  PACK VALUE                       03620001
+         CVB   R15,DWD                 get rc in R15                    03630001
+*                                                                       03640000
+RUNEXEC9 PR                            Restore registers, go back       03650000
+         DROP  R6,R7                   INSTBLK,EVALBLK                  03660000
+*********************************************************************** 03670000
+*                                                                     * 03680000
+*        Set ISPF and TSO/E variables                                 * 03690000
+*                                                                     * 03700000
+*********************************************************************** 03710000
+SETVAR   BAKR  R14,0                   Save Registers                   03720000
+*                                                                       03730000
+*        Invoke ISPLINK to VREPLACE/VPUT the ISPF variable              03740000
+*                                                                       03750000
+         ICM   R15,B'1111',=V(ISPQRY)  ISPF SERVICES AVAILABLE?         03760000
+         BZ    SETVAR60                NO, QUIT                         03770000
+         BALR  R14,R15              <- CALL ISPQRY                      03780000
+         LTR   R15,R15                 ISPF SERVICES AVAILABLE?         03790000
+         BNZ   SETVAR60                NO, QUIT                         03800000
+* ISPEXEC CONTROL ERRORS RETURN                                         03810000
+         LA    R1,=A(SETVAR54,SETVAR55+X'80000000')                     03820000
+         L     R15,=V(ISPEXEC)         EXEC INTERFACE                   03830000
+         BALR  R14,R15              <- CALL ISPEXEC                     03840000
+* ISPLINK VREPLACE RESULT LENGTH DATA                                   03850000
+SETVAR40 LA    R14,=C'VREPLACE'        SERVICE                          03860000
+         L     R15,VARNAME+0           VARIABLE NAME                    03870000
+         LA    R0,VARVALUE+4           VALUE LENGTH                     03880000
+         L     R1,VARVALUE+0           ADDR OF VARIABLE VALUE           03890000
+         STM   R14,R1,PARMLIST         STORE PARM LIST                  03900000
+         OI    PARMLIST+12,X'80'       MARK END OF LIST                 03910000
+         LA    R1,PARMLIST             PARM LIST ADDRESS                03920000
+         L     R15,=V(ISPLINK)         ISPF SERVICES                    03930000
+         BALR  R14,R15              <- CALL ISPLINK                     03940000
+         LTR   R15,R15                 If VREPLACE fails, it's probably 03950000
+         BNZ   SETVAR90                because of LANG(CREX).           03960000
+* ISPEXEC VPUT RESULT SHARED                                            03970000
+         LA    R1,=A(SETVAR56,SETVAR57+X'80000000')                     03980000
+         L     R15,=V(ISPEXEC)         EXEC INTERFACE                   03990000
+         BALR  R14,R15              <- CALL ISPEXEC                     04000000
+*                                                                       04010000
+*        Invoke IKJCT441 to replace/create the &RESULT variable         04020000
+*                                                                       04030000
+SETVAR60 LA    R14,=A(TSVEUPDT)        CT441 FUNCTION                   04040000
+         LA    R15,VARNAME+0           POINTER TO VARIABLE NAME         04050000
+         LA    R0,VARNAME+4            LENGTH OF VARIABLE NAME          04060000
+         LA    R1,VARVALUE+0           POINTER TO VARIABLE VALUE        04070000
+         LA    R2,VARVALUE+4           LENGTH OF VARIABLE VALUE         04080000
+         SLR   R3,R3                   null token                       04090000
+         STM   R14,R3,PARMLIST         STORE PARAMETER LIST             04100000
+         OI    PARMLIST+20,X'80'       MARK END OF LIST                 04110000
+         L     R15,TSVTVACC            A(IKJCT441)                      04120000
+         LA    R1,PARMLIST             PARM LIST ADDRESS                04130000
+         SYNCH (R15)                <- CALL IKJCT441                    04140000
+SETVAR90 PR                            Restore registers, go back       04150000
+*********************************************************************** 04160000
+*        Constants                                                    * 04170000
+*********************************************************************** 04180000
+         CNOP  0,4                                                      04190000
+VARNAME  DC    A(SETVAR57+5,6)         ADDR/LEN OF VARIABLE NAME        04200000
+SETVAR54 DC    A(L'SETVAR55)           LENGTH                           04210000
+SETVAR56 DC    A(L'SETVAR57)           LENGTH                           04220000
+SETVAR55 DC    C'CONTROL ERRORS RETURN'                                 04230000
+SETVAR57 DC    C'VPUT RESULT SHARED'                                    04240000
+*********************************************************************** 04250000
+*        Dynamic Storage                                              * 04260000
+*********************************************************************** 04270000
+DYNAM    DSECT                                                          04280000
+         DS    18F                     standard save area               04290000
+DWD      DS    D                       work area                        04300001
+VARVALUE DS    A,F                     addr/len (variable value)        04310000
+PARMLIST DS    8A                      parm list                        04320000
+IRXFLAGS DS    X'40000000'             flags for IRXEXEC                04330001
+DUMMY    DS    F                       Dummy parm for IRXEXEC           04340000
+DYNECB   DS    F                       ECB FOR IKJPARS                  04350001
+DYNCPPL  DS    4F                      CPPL if invoked via CALL         04360002
+DYNIOPL  DS    XL(IOPL_LENGTH)                                          04370001
+DYNGTPB  DS    XL(GTPB_LENGTH)                                          04380001
+PTR_INSTBLK DS A(DYNAM_INSTBLK_HEADER)                                  04390000
+DYNAM_INSTBLK_HEADER DS XL(L'INSTBLK_HEADER)                            04400000
+PTR_EVALBLOCK DS A(DYNAM_EVALBLOCK)                                     04410000
+DYNAM_EVALBLOCK DS XL(EVALBLOCK_LENGTH)                                 04420000
+VECTORS  DS    4096A(0,0)              4096 addr/len pairs              04430001
+DYNAML   EQU   *-DYNAM                 LENGTH OF WORK AREA              04440000
+*********************************************************************** 04450000
+*        Control block definitions (DSECTs)                           * 04460000
+*********************************************************************** 04470000
+         IKJCPPL                                                        04480000
+         IKJECT                                                         04490001
+         IKJIOPL                       I/O ROUTINES                     04500001
+IOPL_LENGTH EQU *-IOPL                                                  04510001
+         IKJGTPB                       GETLINE                          04520001
+GTPB_LENGTH EQU *-GTPB                                                  04530001
+         IRXINSTB                      IN-STORAGE BLOCK                 04540000
+         IRXEVALB                      EVALUATION BLOCK                 04550000
+DATA_LENGTH EQU 256                    256 bytes of data                04560000
+         ORG   EVALBLOCK_EVDATA+DATA_LENGTH                             04570000
+EVALBLOCK_LENGTH EQU *-EVALBLOCK                                        04580000
+         PRINT NOGEN                                                    04590000
+PRINT    OPSYN ANOP                                                     04600000
+         CVT   DSECT=YES,LIST=NO                                        04610000
+         IKJTSVT                                                        04620000
+         YREGS                                                          04630000
+         END                                                            04640000
+//SYSLIB   DD DSN=SYS1.MACLIB,DISP=SHR                                  04650000
+//SYSUT1   DD UNIT=VIO,SPACE=(CYL,2)                                    04660000
+//SYSPRINT DD SYSOUT=*                                                  04670000
+//SYSLIN   DD UNIT=VIO,SPACE=(TRK,1),DISP=(,PASS),BLKSIZE=3200          04680000
+//*                                                                     04690000
+//LKED    EXEC PGM=HEWL,PARM=(MAP,RENT)                                 04700002
+//SYSPRINT DD SYSOUT=*                                                  04710000
+//SYSLIN   DD DSN=*.HLASM.SYSLIN,DISP=(OLD,PASS)                        04720001
+//SYSLIB   DD DSN=ISP.SISPLOAD(ISPLINK),DISP=SHR                        04730000
+//SYSLMOD  DD DSN=GILBERT.FILE183.LOAD(REXXTRY),DISP=SHR                04740002
+//*                                                                     04750000
+//GO      EXEC PGM=IKJEFT01                                             04760000
+//SYSTSPRT DD SYSOUT=*                                                  04770000
+//SYSSNAP  DD SYSOUT=*                                                  04780003
+//SYSTSIN  DD *                                                         04790000
+TSOLIB ACT DS('GILBERT.FILE183.LOAD')                                   04800002
+CALL *(REXXTRY) 'SAY XXX; SAY YYY'                                      04810002
+EXEC 'GILBERT.FILE183.PDS(EXECUTE)'                                     04820001
+CONTROL LIST ASIS                                                       04830001
+SET string = ABC DEF GHI JKL                                            04840001
+ /* format #1: REXXTRY receives a long REXX line as an argument */      04850001
+REXXTRY TRACE 'R'; +                                                    04860001
+        parm='&string'; +                                               04870001
+        n=WORDS(parm); +                                                04880001
+        RETURN WORD(parm,n)                                             04890001
+WRITE LASTCC=&LASTCC RESULT=&RESULT                                     04900001
+ /* format #2: REXXTRY reads REXX code from the rest of the CLIST */    04910001
+REXXTRY           /* add your comment here                              04920001
+  DATA                                                                  04930001
+    TRACE 'R'                                                           04940001
+    parm='&string'                                                      04950001
+    n=WORDS(parm)                                                       04960001
+    SAY WORD(parm,n)                                                    04970001
+    RETURN 1                                                            04980002
+    /*                                                                  04990001
+    EXIT 003                                                            05000001
+    */                                                                  05010001
+  ENDDATA                                                               05020001
+WRITE this stmt executes after the last REXXTRY                         05030001
+WRITE RESULT=&RESULT                                                    05040001
+/*                                                                      05050003
+//GO2     EXEC PGM=IKJEFT01                                             05060003
+//SYSTSPRT DD SYSOUT=*                                                  05070003
+//SYSSNAP  DD SYSOUT=*                                                  05080003
+//SYSTSIN  DD *                                                         05090003
+TSOLIB ACT DS('GILBERT.FILE183.LOAD')                                   05100003
+CALL *(REXXTRY)                                                         05110003
+SAY XXX                                                                 05120003
+SAY YYY                                                                 05130003
+//                                                                      05140001
+//                                                                      05150001
+//*                                                                     05160001
+//GO1     EXEC PGM=IKJEFT01                                             05170001
+//SYSUT2   DD DSN=&&TEMPPDS(REXXEXEC),UNIT=VIO,SPACE=(TRK,(1,,1))       05180001
+//SYSPRINT DD SYSOUT=*                                                  05190001
+//SYSIN    DD DUMMY                                                     05200001
+//SYSEXEC  DD DSN=&&TEMPPDS,VOL=REF=*.SYSUT2,DISP=(OLD,DELETE)          05210001
+//SYSTSPRT DD SYSOUT=*                                                  05220001
+//SYSTSIN  DD *                                                         05230001
+CALL *(IEBGENER)                                                        05240001
+%REXXEXEC                                                               05250001
+//*                                                                     05260001
+//SYSUT1   DD *                                                         05270001
+SAY 'Hello!'                                                            05280001
+//*                                                                     05290001
+//GO2     EXEC PGM=IKJEFT01,PARM='%EXECUTE EXEC'                        05300001
+//SYSPROC  DD DSN=GILBERT.FILE183.PDS,DISP=SHR                          05310001
+//SYSTSPRT DD SYSOUT=*                                                  05320001
+//SYSTSIN  DD *                                                         05330001
+SAY 'Hello!'                                                            05340001
+//*                                                                     05350001
+//GO3     EXEC PGM=IKJEFT01,PARM=REXXTRY                                05360001
+//STEPLIB  DD DSN=GILBERT.FILE183.LOAD,DISP=SHR                         05370001
+//SYSTSPRT DD SYSOUT=*                                                  05380001
+//SYSTSIN  DD *                                                         05390001
+SAY 'Hello!'                                                            05400001

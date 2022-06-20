@@ -1,0 +1,158 @@
+//GILBERTN JOB (ACCT#),NOTIFY=&SYSUID,CLASS=A,MSGCLASS=H,COND=(0,NE)    00010000
+//HLASM EXEC PGM=ASMA90,PARM=(OBJECT,NODECK,NOESD,NORLD,NOXREF)         00020000
+*********************************************************************** 00030000
+*                                                                     * 00040000
+* MODULE NAME = FULLDSN                                               * 00050000
+*                                                                     * 00060000
+* DESCRIPTIVE NAME = REXX function: returns fully-qualified dsname.   * 00070000
+*                                                                     * 00080000
+* STATUS = R100                                                       * 00090000
+*                                                                     * 00100000
+* FUNCTION = This assembler sub-routine can be invoked in a REXX      * 00110000
+*            EXEC to convert an alias name into the corresponding     * 00120000
+*            real dsname, or a dsname with a relative generation      * 00130000
+*            number such as PROD.MASTER(-2) into a fully-qualified    * 00140000
+*            dsname such as PROD.MASTER.G12345V00.                    * 00150000
+*                                                                     * 00160000
+* AUTHOR = Gilbert Saint-Flour <carlos@gsf-soft.com>                  * 00170000
+*          http://gsf-soft.com/Freeware/                              * 00180000
+*                                                                     * 00190000
+*        Note: This is a rewrite of Doug Nadel's REALNAME program     * 00200000
+*              to make it re-entrant and improve performance when     * 00210000
+*              FULLDSN is invoked multiple times in the same exec.    * 00220000
+*                                                                     * 00230000
+* ENVIRONMENT = SEE BELOW                                             * 00240000
+*                                                                     * 00250000
+*    DEPENDENCIES: TSO/E V2                                           * 00260000
+*                                                                     * 00270000
+* MODULE TYPE = PROCEDURE, (CSECT TYPE)                               * 00280000
+*                                                                     * 00290000
+*    PROCESSOR = IBM OS/ASSEMBLER H VERSION 2 or                      * 00300000
+*                IBM HIGH LEVEL ASSEMBLER/MVS                         * 00310000
+*                                                                     * 00320000
+*    MODULE SIZE = 2K                                                 * 00330000
+*                                                                     * 00340000
+*    ATTRIBUTES = REENTERABLE, RMODE ANY, AMODE 31,                   * 00350000
+*                 PROBLEM STATE, KEY 8                                * 00360000
+*                 APF AUTHORIZATION: NONE                             * 00370000
+*                                                                     * 00380000
+* SYNTAX  =  See below                                                * 00390000
+*                                                                     * 00400000
+*         fdsn=FULLDSN(dsname)                                        * 00410000
+*                                                                     * 00420000
+*    Arguments:                                                       * 00430000
+*                                                                     * 00440000
+*         dsname    This is the input data set name which will be     * 00450000
+*                   converted to a real dsname or a fully-qualified   * 00460000
+*                   GDS name such as PROD.MASTER.G12345V00.           * 00470000
+*                                                                     * 00480000
+*********************************************************************** 00490000
+FULLDSN  RSECT                                                          00500000
+FULLDSN  RMODE ANY                                                      00510000
+         SAVE  (14,12),,FULLDSN                                         00520000
+         LR    R12,R15                                                  00530000
+         USING FULLDSN,R12                                              00540000
+         LM    R2,R3,16(R1)        R2/R3                                00550000
+*                                                                       00560000
+*        Allocate dynamic storage                                       00570000
+*                                                                       00580000
+         GETMAIN R,LV=DYNAML                                            00590000
+         LR    R11,R1              A(DYNAM)                             00600000
+         USING DYNAM,R11                                                00610000
+*                                                                       00620000
+*        Make sure I stay in memory for the life of the exec            00630000
+*                                                                       00640000
+         L     R4,PSATOLD-PSA(0,0) my TCB                               00650000
+         USING TCB,R4                                                   00660000
+         L     R4,TCBJSTCB         job-step TCB                         00670000
+         L     R5,TCBJPQ           my CDE                               00680000
+         USING CDENTRY,R5                                               00690000
+         CLI   CDUSE+1,1           first time through?                  00700000
+         BNE   PIN99               no, jump                             00710000
+         TM    CDATTR,CDREN        reentrant module?                    00720000
+         BZ    PIN99               no, jump                             00730000
+         CL    R12,CDENTPT         is this my CDE?                      00740000
+         BNE   PIN99               no, jump                             00750000
+         LOAD  EPLOC=CDNAME        bump my own use count                00760000
+PIN99    EQU   *                                                        00770000
+         DROP  R5                  CDENTRY                              00780000
+*                                                                       00790000
+         L     R3,0(,R3)           R3 = address REXX eval block         00800000
+         USING EVALBLOCK,R3                                             00810000
+*                                                                       00820000
+*        Move dsname to result area                                     00830000
+*                                                                       00840000
+         LM    R4,R5,0(R2)         R6/R7 = Addr/Length of input dsn     00850000
+         LA    R6,EVALBLOCK_EVDATA R4 = addr(evalblock_evdata);         00860000
+         LA    R7,44               R5 = length(evalblock_evdata);       00870000
+         ST    R7,EVALBLOCK_EVLEN  Result length=44                     00880000
+         ICM   R5,B'1000',=C' '    padding character                    00890000
+         MVCL  R6,R4               evalblock_evdata(1:44) = input dsn   00900000
+*                                                                       00910000
+*        Look up dsname in the catalog                                  00920000
+*                                                                       00930000
+         L     R14,CAMLST1         CAMLST flags                         00940000
+         LA    R15,EVALBLOCK_EVDATA R15 = addr(dsname)                  00950000
+         SLR   R0,R0               CVOL addr                            00960000
+         LA    R1,WORKAREA         addr of LOCATE work-area             00970000
+         STM   R14,R1,CAMLST2      build CAMLST in dynamic storage      00980000
+         LOCATE CAMLST2            Issue locate                         00990000
+         LTR   R15,R15             IF r15 = 0 THEN                      01000000
+         BZ    EXIT                  goto exit                          01010000
+*                                                                       01020000
+*        Set up error code                                              01030000
+*                                                                       01040000
+         LA    R0,7                RESULT length=7                      01050000
+         ST    R0,EVALBLOCK_EVLEN  RESULT length=7                      01060000
+         MVC   EVALBLOCK_EVDATA(7),=CL7'UNKNOWN'  RESULT='UNKNOWN'      01070000
+*                                                                       01080000
+*        Clean up and exit                                              01090000
+*                                                                       01100000
+EXIT     FREEMAIN R,LV=DYNAML,A=(R11)                                   01110000
+         RETURN (14,12),RC=0       Return code(0)                       01120000
+*                                                                       01130000
+*        Model catalog parm list                                        01140000
+*                                                                       01150000
+CAMLST1  CAMLST NAME,*-*,,*-*                                           01160000
+*                                                                       01170000
+*        Dynamic storage area                                           01180000
+*                                                                       01190000
+DYNAM    DSECT                                                          01200000
+CAMLST2  CAMLST NAME,EVALBLOCK_EVDATA,,WORKAREA                         01210000
+WORKAREA DS    32D                                                      01220000
+DYNAML   EQU   *-DYNAM                                                  01230000
+*                                                                       01240000
+*        Control Block Definitions                                      01250000
+*                                                                       01260000
+*        IKJTCB DSECT=YES                                               01270000
+TCB      DSECT                                                          01280000
+TCBJPQ   EQU   *+44,4                  last CDE                         01290000
+TCBJSTCB EQU   *+124,4                 JS TCB                           01300000
+*        IHAPSA DSECT=YES                                               01310000
+PSA      DSECT                                                          01320000
+PSATOLD  EQU   *+540,4                 own TCB                          01330000
+         IHACDE                                                         01340000
+         IRXEVALB                                                       01350000
+         YREGS                                                          01360000
+         END   FULLDSN                                                  01370000
+//SYSLIB   DD DSN=SYS1.MACLIB,DISP=SHR                IRXEVALB          01380000
+//         DD DSN=SYS1.MODGEN,DISP=SHR                IHACDE            01390000
+//SYSPRINT DD SYSOUT=*                                                  01400000
+//SYSUT1   DD UNIT=VIO,SPACE=(CYL,1)                                    01410000
+//SYSLIN   DD UNIT=VIO,SPACE=(TRK,1),DISP=(,PASS),DCB=BLKSIZE=3200      01420000
+//*                                                                     01430000
+//LKED    EXEC PGM=IEWL,PARM=RENT                                       01440000
+//SYSLIN   DD DSN=*.HLASM.SYSLIN,DISP=(OLD,PASS)                        01450000
+//SYSLMOD  DD DSN=GILBERT.LOAD(FULLDSN),DISP=SHR                        01460000
+//SYSPRINT DD SYSOUT=*                                                  01470000
+//*                                                                     01480000
+//GO      EXEC PGM=IKJEFT01                                             01490000
+//STEPLIB  DD DSN=CBTTAPE.FILE183.LOAD,DISP=SHR       REXXTRY           01500000
+//         DD DSN=GILBERT.LOAD,DISP=SHR               FULLDSN           01510000
+//SYSTSPRT DD SYSOUT=*                                                  01520000
+//SYSTSIN  DD *                                                         01530000
+REXXTRY                                                                 01540000
+SAY FULLDSN('GILBERT.CTC(0)')                                           01550000
+SAY FULLDSN('GILBERT.CTC(0)')                                           01560000
+SAY FULLDSN('GILBERT.CTC(0)')                                           01570000
+/*                                                                      01580000

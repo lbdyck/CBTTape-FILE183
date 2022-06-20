@@ -1,0 +1,50 @@
+/************************************************************** CLIST */00010000
+/*                                                                    */00020000
+/* MODULE NAME = FILE183                                              */00030000
+/*                                                                    */00040000
+/* DESCRIPTIVE NAME = Connect FILE183 libraries to ISPF environment   */00050000
+/*                                                                    */00060000
+/* STATUS = R100                                                      */00070000
+/*                                                                    */00080000
+/* Author: Gilbert Saint-Flour <carlos@gsf-soft.com>                  */00090000
+/*         http://gsf-soft.com/Freeware/                              */00100000
+/*                                                                    */00110000
+/* FUNCTION = This CLIST connects the FILE183 source and load         */00120000
+/*            libraries to ISPF. It allows TSO/ISPF users to execute  */00130000
+/*            REXX execs and programs present in FILE183 libraries,   */00140000
+/*            even if these libraries were not allocated to SYSEXEC   */00150000
+/*            and ISPLLIB before ISPF started.                        */00160000
+/*                                                                    */00170000
+/*          This CLIST does two things;                               */00180000
+/*                                                                    */00190000
+/*          1. It executes the CONCAT exec supplied in FILE183 to     */00200000
+/*             concatenate the FILE183 source library to SYSEXEC.     */00210000
+/*             If SYSEXEC is not already allocated, then CONCAT       */00220000
+/*             allocates and activates it.                            */00230000
+/*                                                                    */00240000
+/*          2. It CALLs the FASTPATH program to LOAD all the modules  */00250000
+/*             present in FILE183.LOAD and executed in the REXX execs */00260000
+/*             present in the FILE183.PDS library.                    */00270000
+/*                                                                    */00280000
+/*          This CLIST gives TSO/ISPF users access to the REXX execs  */00290000
+/*          or programs present in FILE183 when the source and load   */00300000
+/*          libraries are not properly allocated when ISPF starts.    */00310000
+/*                                                                    */00320000
+/* EXECUTION = TSO EXEC 'cbttape.FILE183.PDS(FILE183)'                */00330000
+/*                                                                    */00340000
+/**********************************************************************/00350000
+                                                                        00360000
+PROC 0 EXEC(cbttape.FILE183.PDS) LOAD(cbttape.FILE183.LOAD)             00370000
+                                                                        00380000
+CONTROL LIST                                                            00390000
+                                                                        00400000
+     /* Concatenate the EXEC library to SYSEXEC */                      00410000
+                                                                        00420000
+EXEC '&EXEC.(CONCAT)' 'DS(''&EXEC'') DD(SYSEXEC) AFTER'                 00430000
+                                                                        00440000
+     /* Pre-load Programs                       */                      00450000
+                                                                        00460000
+CALL '&LOAD.(FASTPATH)'                                                 00470000
+                                                                        00480000
+EXIT                                                                    00490000
+                                                                        00500000
